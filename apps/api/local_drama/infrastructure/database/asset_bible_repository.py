@@ -446,6 +446,44 @@ class SqliteAssetBibleRepository:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def identity_readiness(self, asset_id: str) -> dict[str, Any]:
+        """Project-level identity facts; episode production remains the final gate."""
+        pack_rows = self.connection.execute(
+            """SELECT p.id,p.asset_state_id,p.current_version_id,v.status AS current_version_status
+            FROM character_identity_packs p
+            LEFT JOIN character_identity_pack_versions v ON v.id=p.current_version_id
+            WHERE p.story_asset_id=? AND p.status='ACTIVE'
+            ORDER BY p.created_at,p.id""",
+            (asset_id,),
+        ).fetchall()
+        binding_rows = self.connection.execute(
+            """SELECT b.shot_id,b.identity_pack_version_id,v.status AS bound_version_status,
+            p.current_version_id
+            FROM shot_asset_bindings b
+            JOIN shots s ON s.id=b.shot_id AND s.archived_at IS NULL
+            LEFT JOIN character_identity_pack_versions v ON v.id=b.identity_pack_version_id
+            LEFT JOIN character_identity_packs p ON p.id=v.pack_id
+            WHERE b.asset_id=?""",
+            (asset_id,),
+        ).fetchall()
+        approved = [row for row in pack_rows if row["current_version_id"] and row["current_version_status"] == "APPROVED"]
+        missing_bindings = [row for row in binding_rows if not row["identity_pack_version_id"]]
+        stale_bindings = [
+            row for row in binding_rows
+            if row["identity_pack_version_id"] and (
+                row["bound_version_status"] != "APPROVED"
+                or not row["current_version_id"]
+                or row["identity_pack_version_id"] != row["current_version_id"]
+            )
+        ]
+        return {
+            "active_pack_count": len(pack_rows),
+            "approved_pack_count": len(approved),
+            "referenced_shot_count": len(binding_rows),
+            "missing_shot_binding_count": len(missing_bindings),
+            "stale_shot_binding_count": len(stale_bindings),
+        }
+
     # ---- audit ------------------------------------------------------------
 
     def audit(self, *, actor: str, role_context: str, action: str, subject_type: str, subject_id: str, summary: str, metadata: dict[str, Any]) -> None:

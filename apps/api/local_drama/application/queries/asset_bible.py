@@ -123,4 +123,46 @@ class AssetBibleQueryService:
         level = "READY" if not missing else "BASIC" if has_hero else "EMPTY"
         if str(asset["status"]) == "ARCHIVED":
             level = "STALE"
-        return {"level": level, "required": list(required_kinds), "missing": missing}
+        kind = str(asset.get("kind") or "").upper()
+        identity = self.repository.identity_readiness(str(asset["id"])) if kind == "CHARACTER" else None
+        blockers: list[dict[str, str]] = []
+        if not has_hero:
+            blockers.append({"code": "ASSET_HERO_MISSING", "message": "缺少主参考图"})
+        if identity and identity["approved_pack_count"] == 0:
+            blockers.append({
+                "code": "IDENTITY_PACK_NOT_APPROVED",
+                "message": "身份包待补齐或批准" if identity["active_pack_count"] else "尚未创建身份包",
+            })
+        if identity and identity["missing_shot_binding_count"]:
+            blockers.append({"code": "SHOT_IDENTITY_PACK_MISSING", "message": f"{identity['missing_shot_binding_count']} 个镜头尚未绑定身份包"})
+        if identity and identity["stale_shot_binding_count"]:
+            blockers.append({"code": "SHOT_IDENTITY_PACK_STALE", "message": f"{identity['stale_shot_binding_count']} 个镜头仍绑定旧版身份包"})
+        if kind != "CHARACTER":
+            identity_state = "NOT_APPLICABLE"
+            binding_state = "NOT_APPLICABLE"
+        else:
+            identity_state = (
+                "MISSING" if not identity or identity["active_pack_count"] == 0
+                else "PENDING" if identity["approved_pack_count"] == 0
+                else "APPROVED_MULTIPLE" if identity["approved_pack_count"] > 1
+                else "APPROVED"
+            )
+            binding_state = (
+                "NOT_REFERENCED" if not identity or identity["referenced_shot_count"] == 0
+                else "MIXED" if identity["missing_shot_binding_count"] and identity["stale_shot_binding_count"]
+                else "MISSING" if identity["missing_shot_binding_count"]
+                else "STALE" if identity["stale_shot_binding_count"]
+                else "CURRENT"
+            )
+        return {
+            "level": level,
+            "required": list(required_kinds),
+            "missing": missing,
+            "asset_visual_state": "READY" if has_hero else "MISSING",
+            "identity_pack_state": identity_state,
+            "episode_binding_state": binding_state,
+            "generation_gate_state": "NOT_CHECKED",
+            "checked_revision": int(asset["revision"]),
+            "blockers": blockers,
+            "repair_target": {"section": "IDENTITY_PACK" if kind == "CHARACTER" and identity_state != "APPROVED" else "HERO"},
+        }

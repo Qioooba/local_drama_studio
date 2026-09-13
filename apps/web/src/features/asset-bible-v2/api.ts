@@ -7,7 +7,18 @@ export type AssetBibleItem = {
   active_state_id: string | null;
   voice: { voice_profile_version_id: string; voice_code: string; voice_title: string; status: string } | null;
   usage: { episode_ids: string[]; episodes: string[]; shots: Array<{ binding_id?: string; role_in_shot?: string; asset_state_id?: string | null; shot_id?: string; shot_code?: string; shot_status?: string; episode_id?: string; episode_code?: string; scene_id?: string | null; scene_code?: string | null; scene_title?: string | null } & Record<string, unknown>>; shot_count: number };
-  readiness: { level: "READY" | "BASIC" | "EMPTY" | "STALE"; required?: string[]; missing: string[] };
+  readiness: {
+    level: "READY" | "BASIC" | "EMPTY" | "STALE";
+    required?: string[];
+    missing: string[];
+    asset_visual_state?: "READY" | "MISSING" | "UNKNOWN";
+    identity_pack_state?: "NOT_APPLICABLE" | "MISSING" | "PENDING" | "APPROVED" | "APPROVED_MULTIPLE" | "UNKNOWN";
+    episode_binding_state?: "NOT_APPLICABLE" | "NOT_REFERENCED" | "CURRENT" | "MISSING" | "STALE" | "MIXED" | "UNKNOWN";
+    generation_gate_state?: "PASS" | "BLOCKED" | "NOT_CHECKED";
+    checked_revision?: number;
+    blockers?: Array<{ code: string; message: string }>;
+    repair_target?: { section: string };
+  };
   multiview_generations?: import("./multiviewClient").MultiViewBatch[];
   expression_generations?: import("./expressionClient").ExpressionBatch[];
   detail_generations?: import("./detailClient").DetailBatch[];

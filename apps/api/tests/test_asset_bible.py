@@ -253,6 +253,12 @@ def test_asset_bible_read_model_groups_references_by_state(workspace, database) 
     detail = bible["items"][0]
     assert detail["asset"]["name"] == "角色丁"
     assert detail["readiness"]["missing"] == ["LEFT", "RIGHT"]
+    assert detail["readiness"]["asset_visual_state"] == "READY"
+    assert detail["readiness"]["identity_pack_state"] == "MISSING"
+    assert detail["readiness"]["episode_binding_state"] == "NOT_REFERENCED"
+    assert detail["readiness"]["generation_gate_state"] == "NOT_CHECKED"
+    assert detail["readiness"]["checked_revision"] == detail["asset"]["revision"]
+    assert {item["code"] for item in detail["readiness"]["blockers"]} == {"IDENTITY_PACK_NOT_APPROVED"}
     base_refs = [item for state in detail["states"] if state["code"] == "BASE" for item in state["references"]]
     assert len(base_refs) == 1
     assert base_refs[0]["reference_kind"] == "FRONT"

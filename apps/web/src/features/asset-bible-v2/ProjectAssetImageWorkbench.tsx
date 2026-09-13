@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import type { AssetBibleItem } from "./api";
 import {
   planAssetImageBatch,
+  listAssetImageBatches,
   submitAssetImageBatch,
+  type AssetImageBatch,
   type AssetImageBatchPlan,
   type AssetImageKind,
 } from "./assetImageBatchClient";
@@ -22,6 +23,17 @@ function commandKey(kind: string): string {
 }
 
 type PlannedGroup = { kind: AssetImageKind; ids: string[]; plan: AssetImageBatchPlan };
+type GroupReceipt = PlannedGroup & {
+  idempotencyKey: string;
+  state: "PREVIEWED" | "SUBMITTING" | "ACCEPTED" | "REJECTED" | "UNKNOWN";
+  batch?: AssetImageBatch;
+  error?: string;
+};
+
+function resultState(error: unknown): "REJECTED" | "UNKNOWN" {
+  const status = typeof error === "object" && error && "status" in error ? Number((error as { status?: unknown }).status) : 0;
+  return status >= 400 && status < 500 ? "REJECTED" : "UNKNOWN";
+}
 
 export function ProjectAssetImageWorkbench({ projectId, items, onChanged }: {
   projectId: string;
@@ -40,11 +52,15 @@ export function ProjectAssetImageWorkbench({ projectId, items, onChanged }: {
   }), [items]);
   const groups = stats.filter((group) => group.ids.length > 0);
   const [plans, setPlans] = useState<PlannedGroup[]>([]);
+  const [receipts, setReceipts] = useState<GroupReceipt[]>([]);
+  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
-  const generate = useMutation({
-    mutationFn: async () => {
-      const nextPlans = await Promise.all(groups.map(async (group) => ({
+  const generate = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const planned = await Promise.allSettled(groups.map(async (group) => ({
         ...group,
         plan: (await planAssetImageBatch(projectId, {
           asset_kind: group.kind,
@@ -53,24 +69,67 @@ export function ProjectAssetImageWorkbench({ projectId, items, onChanged }: {
           mode: "MISSING_ONLY",
         })).plan,
       })));
+      const nextPlans = planned.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
       setPlans(nextPlans);
-      const executable = nextPlans.filter((group) => group.plan.valid && group.plan.summary.jobs > 0);
-      if (!executable.length) throw new Error("AI 没有找到当前可直接生成的核心资产，请展开异常提示。");
-      return Promise.all(executable.map((group) => submitAssetImageBatch(projectId, {
+      const planFailures: GroupReceipt[] = planned.flatMap((result, index) => result.status === "rejected" ? [{
+        kind: groups[index].kind,
+        ids: groups[index].ids,
+        plan: { project_id: projectId, asset_kind: groups[index].kind, capability: "", mode: "MISSING_ONLY", profile_version_id: null, plan_hash: "", valid: false, issues: [], items: [], summary: { selected: groups[index].ids.length, ready: 0, skipped: 0, blocked: groups[index].ids.length, jobs: 0 } },
+        idempotencyKey: commandKey(groups[index].kind),
+        state: "REJECTED" as const,
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      }] : []);
+      const executable: GroupReceipt[] = nextPlans.filter((group) => group.plan.valid && group.plan.summary.jobs > 0).map((group) => ({
+        ...group,
+        idempotencyKey: commandKey(group.kind),
+        state: "PREVIEWED",
+      }));
+      const invalid: GroupReceipt[] = nextPlans.filter((group) => !group.plan.valid || group.plan.summary.jobs <= 0).map((group) => ({
+        ...group,
+        idempotencyKey: commandKey(group.kind),
+        state: "REJECTED",
+        error: group.plan.issues[0]?.message ?? "当前组没有可执行的主图任务",
+      }));
+      setReceipts([...executable.map((item) => ({ ...item, state: "SUBMITTING" as const })), ...invalid, ...planFailures]);
+      const submitted = await Promise.allSettled(executable.map((group) => submitAssetImageBatch(projectId, {
         asset_kind: group.kind,
         asset_ids: group.ids,
         profile_version_id: null,
         mode: "MISSING_ONLY",
-      }, group.plan.plan_hash, commandKey(group.kind))));
-    },
-    onSuccess: async (results) => {
-      const active = results.reduce((sum, result) => sum + result.batch.summary.active, 0);
-      const succeeded = results.reduce((sum, result) => sum + result.batch.summary.succeeded, 0);
-      const failed = results.reduce((sum, result) => sum + result.batch.summary.failed, 0);
-      setMessage(`已提交 ${active} 张主图，已完成 ${succeeded} 张${failed ? `，${failed} 张提交失败，请在对应资产类别查看原因并重试` : ""}。成功结果会自动选择为对应资产的主参考。`);
+      }, group.plan.plan_hash, group.idempotencyKey)));
+      const completed = executable.map((group, index): GroupReceipt => submitted[index].status === "fulfilled"
+        ? { ...group, state: "ACCEPTED", batch: submitted[index].value.batch }
+        : { ...group, state: resultState(submitted[index].reason), error: submitted[index].reason instanceof Error ? submitted[index].reason.message : String(submitted[index].reason) });
+      const finalReceipts = [...completed, ...invalid, ...planFailures];
+      setReceipts(finalReceipts);
+      const accepted = finalReceipts.filter((item) => item.state === "ACCEPTED").length;
+      const rejected = finalReceipts.filter((item) => item.state === "REJECTED").length;
+      const unknown = finalReceipts.filter((item) => item.state === "UNKNOWN").length;
+      setMessage(`按类别提交完成：${accepted} 组已受理${rejected ? `，${rejected} 组未受理` : ""}${unknown ? `，${unknown} 组结果待确认` : ""}。`);
+    } finally {
       await onChanged();
-    },
-  });
+      setBusy(false);
+    }
+  };
+
+  const recoverUnknown = async (receipt: GroupReceipt) => {
+    setBusy(true);
+    try {
+      const existing = (await listAssetImageBatches(projectId, receipt.kind)).find((batch) => batch.plan_hash === receipt.plan.plan_hash);
+      const response = existing ? { batch: existing } : await submitAssetImageBatch(projectId, {
+        asset_kind: receipt.kind,
+        asset_ids: receipt.ids,
+        profile_version_id: null,
+        mode: "MISSING_ONLY",
+      }, receipt.plan.plan_hash, receipt.idempotencyKey);
+      setReceipts((current) => current.map((item) => item.kind === receipt.kind ? { ...item, state: "ACCEPTED", batch: response.batch, error: undefined } : item));
+    } catch (error) {
+      setReceipts((current) => current.map((item) => item.kind === receipt.kind ? { ...item, state: resultState(error), error: error instanceof Error ? error.message : String(error) } : item));
+    } finally {
+      await onChanged();
+      setBusy(false);
+    }
+  };
 
   const total = groups.reduce((sum, group) => sum + group.ids.length, 0);
   const issues = plans.flatMap((group) => group.plan.issues.map((issue) => ({
@@ -89,11 +148,20 @@ export function ProjectAssetImageWorkbench({ projectId, items, onChanged }: {
         <div className="asset-image-batch__summary"><strong>{total}</strong><span>项待生成</span></div>
       </div>
       <div className="asset-image-batch__actions">
-        <button type="button" className="primary-action" disabled={!total || generate.isPending} onClick={() => generate.mutate()}>
-          {generate.isPending ? "AI 正在检查并生成…" : total ? "生成缺少的主图" : "核心资产主图已齐全"}
+        <button type="button" className="primary-action" disabled={!total || busy} onClick={() => void generate()}>
+          {busy ? "AI 正在检查并生成…" : total ? "生成缺少的主图" : "核心资产主图已齐全"}
         </button>
-        {generate.isPending && <Link to={`/system/jobs?project=${encodeURIComponent(projectId)}`}>查看任务进度</Link>}
+        {busy && <Link to={`/system/jobs?project=${encodeURIComponent(projectId)}`}>查看任务进度</Link>}
       </div>
+      {receipts.length > 0 && <div className="asset-image-batch__receipts" aria-label="按类别提交回执">
+        {receipts.map((receipt) => <article key={receipt.kind} data-state={receipt.state}>
+          <strong>{LABELS[receipt.kind]}</strong>
+          <span>{receipt.state === "ACCEPTED" ? `已受理${receipt.batch ? ` · 批次 ${receipt.batch.id.slice(0, 8)}` : ""}` : receipt.state === "UNKNOWN" ? "结果待确认" : receipt.state === "REJECTED" ? "未受理" : "提交中"}</span>
+          {receipt.batch?.items.some((item) => item.job_id) ? <small>任务：{receipt.batch.items.filter((item) => item.job_id).map((item) => item.job_id!.slice(0, 8)).join("、")}</small> : null}
+          {receipt.error ? <small role={receipt.state === "UNKNOWN" ? "status" : "alert"}>{receipt.error}</small> : null}
+          {receipt.state === "UNKNOWN" ? <button type="button" className="secondary" disabled={busy} onClick={() => void recoverUnknown(receipt)}>先核对回执，再继续</button> : null}
+        </article>)}
+      </div>}
       {issues.length > 0 && (
         <details className="asset-image-batch__plan is-blocked">
           <summary>{issues.length} 项需要处理</summary>
@@ -101,7 +169,6 @@ export function ProjectAssetImageWorkbench({ projectId, items, onChanged }: {
         </details>
       )}
       {message && <p className="review-success" role="status" aria-live="polite">{message}</p>}
-      {generate.error && <p className="inline-error" role="alert">{generate.error instanceof Error ? generate.error.message : String(generate.error)}</p>}
     </section>
   );
 }

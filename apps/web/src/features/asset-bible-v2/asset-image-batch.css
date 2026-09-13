@@ -94,3 +94,23 @@
 @media (prefers-reduced-motion: reduce) {
   .asset-image-batch__progress span { transition: none; }
 }
+.asset-image-batch__receipts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.asset-image-batch__receipts article {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.asset-image-batch__receipts article[data-state="ACCEPTED"] { border-left-color: var(--success); }
+.asset-image-batch__receipts article[data-state="REJECTED"] { border-left-color: var(--danger); }
+.asset-image-batch__receipts article[data-state="UNKNOWN"] { border-left-color: var(--warning); }
+.asset-image-batch__receipts small { color: var(--text-muted); overflow-wrap: anywhere; }

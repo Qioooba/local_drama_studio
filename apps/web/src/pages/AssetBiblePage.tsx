@@ -22,6 +22,30 @@ type AssetKind = (typeof KIND_TABS)[number]["kind"];
 
 const KIND_LABELS: Record<AssetKind, string> = { CHARACTER: "人物", SCENE: "场景", PROP: "道具" };
 
+function readinessFacts(item: import("../features/asset-bible-v2/api").AssetBibleItem) {
+  const readiness = item.readiness;
+  const character = item.asset.kind === "CHARACTER";
+  const identityLabel = !character ? "不适用"
+    : readiness.identity_pack_state === "APPROVED" ? "身份包已批准"
+    : readiness.identity_pack_state === "APPROVED_MULTIPLE" ? "多个已批准造型"
+    : readiness.identity_pack_state === "PENDING" ? "身份包待审核"
+    : readiness.identity_pack_state === "MISSING" ? "身份包待创建"
+    : "尚未检查";
+  const bindingLabel = !character ? "不适用"
+    : readiness.episode_binding_state === "CURRENT" ? "镜头引用已同步"
+    : readiness.episode_binding_state === "NOT_REFERENCED" ? "暂无镜头引用"
+    : readiness.episode_binding_state === "STALE" ? "镜头仍引用旧版本"
+    : readiness.episode_binding_state === "MISSING" ? "镜头缺少身份绑定"
+    : readiness.episode_binding_state === "MIXED" ? "部分镜头待同步"
+    : "尚未检查";
+  return {
+    visual: readiness.asset_visual_state === "READY" ? "主图已就绪" : readiness.asset_visual_state === "MISSING" ? "缺少主图" : "主图尚未检查",
+    identity: identityLabel,
+    binding: bindingLabel,
+    gate: readiness.generation_gate_state === "PASS" ? "当前生产检查通过" : readiness.generation_gate_state === "BLOCKED" ? "当前生产检查未通过" : "生产条件尚未检查",
+  };
+}
+
 function thumbnailUrl(mediaVersionId: string): string {
   return `/api/v1/media-versions/${encodeURIComponent(mediaVersionId)}/thumbnail?size=medium&frame=poster`;
 }
@@ -133,7 +157,7 @@ export function AssetBiblePage() {
                     <button key={item.asset.id} type="button" className={`bible-asset-row${selected?.asset.id === item.asset.id ? " selected" : ""}`} onClick={() => setAssetContext(tab, item.asset.id)}>
                       <MediaThumb className="bible-asset-thumbnail" src={heroId ? thumbnailUrl(heroId) : null} alt={`${item.asset.name} 资产缩略图`} emptyLabel="待生成" aspectRatio="1 / 1" />
                       <span className="bible-asset-name">{item.asset.name}</span>
-                      <small>{heroId ? "主图已就绪" : "AI 待生成"}</small>
+                      <small>{readinessFacts(item).visual} · {item.usage.shot_count ? `用于 ${item.usage.shot_count} 个镜头` : "暂未用于镜头"}</small>
                     </button>
                   );
                 })}
@@ -147,12 +171,20 @@ export function AssetBiblePage() {
                   const heroId = selected.asset.canonical_media_version_id
                     || selected.base_references.find((reference) => reference.reference_kind === "HERO")?.media_version_id
                     || null;
+                  const readiness = readinessFacts(selected);
                   return (
                     <>
                       <div className="bible-detail-head">
                         <div><p className="eyebrow">{KIND_LABELS[selected.asset.kind as AssetKind]}</p><h4>{selected.asset.name}</h4><p className="muted">{selected.asset.description || "AI 会结合原稿上下文生成视觉描述。"}</p></div>
-                        <StatusBadge tone={heroId ? "success" : "attention"}>{heroId ? "可用于生成" : "缺少主图"}</StatusBadge>
+                        <StatusBadge tone={heroId ? "success" : "attention"}>{readiness.visual}</StatusBadge>
                       </div>
+                      <section className="asset-readiness-path" aria-label="资产就绪状态">
+                        <div><StatusBadge tone={heroId ? "success" : "attention"}>1</StatusBadge><strong>视觉资产</strong><small>{readiness.visual}</small></div>
+                        <div><StatusBadge tone={selected.asset.kind !== "CHARACTER" ? "neutral" : selected.readiness.identity_pack_state?.startsWith("APPROVED") ? "success" : "attention"}>2</StatusBadge><strong>身份包</strong><small>{readiness.identity}</small></div>
+                        <div><StatusBadge tone={selected.asset.kind !== "CHARACTER" || selected.readiness.episode_binding_state === "CURRENT" ? "success" : selected.readiness.episode_binding_state === "NOT_REFERENCED" ? "neutral" : "attention"}>3</StatusBadge><strong>本集/镜头引用</strong><small>{readiness.binding}</small></div>
+                        <div className="pending"><StatusBadge tone={selected.readiness.generation_gate_state === "PASS" ? "success" : "neutral"}>4</StatusBadge><strong>生产检查</strong><small>{readiness.gate}</small></div>
+                      </section>
+                      {selected.readiness.blockers?.length ? <details><summary>{selected.readiness.blockers.length} 项待处理</summary><ul>{selected.readiness.blockers.map((blocker) => <li key={blocker.code}>{blocker.message}</li>)}</ul></details> : null}
                       <AssetDescriptionEditor key={selected.asset.id} asset={selected.asset} onChanged={refresh} />
                       <div className="bible-main-visual">
                         <MediaThumb src={heroId ? thumbnailUrl(heroId) : null} alt={`${selected.asset.name} 主参考`} emptyLabel="主参考将在批量生成后自动出现" aspectRatio="4 / 3" />
