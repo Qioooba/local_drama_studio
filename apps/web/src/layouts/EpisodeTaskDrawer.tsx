@@ -1,14 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Drawer } from "../components/ui";
-import { requestJson, retryJob, type Job } from "../generated/api";
+import { listEpisodeJobs, retryJob } from "../generated/api";
 
 export const episodeJobsKey = (projectId: string, episodeId: string) => ["jobs", "episode", projectId, episodeId] as const;
-
-export function listEpisodeJobs(projectId: string, episodeId: string): Promise<{ items: Job[] }> {
-  const query = new URLSearchParams({ project_id: projectId, episode_id: episodeId, limit: "100" });
-  return requestJson(`/api/v1/jobs?${query.toString()}`);
-}
 
 export function EpisodeTaskDrawer({ open, onClose, projectId, episodeId }: { open: boolean; onClose: () => void; projectId: string; episodeId: string }) {
   const jobs = useQuery({

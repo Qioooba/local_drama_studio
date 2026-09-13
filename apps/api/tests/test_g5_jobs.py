@@ -256,8 +256,8 @@ def test_jobs_can_be_filtered_by_project_and_episode_on_the_server(workspace, da
         str(ProjectService(database, workspace.projects_root).list_seasons(project_id)[0]["id"])
     )
     service = JobService(database, workspace)
-    first = _create(service, project_id, "episode-filter-1", scope_kind="EPISODE", scope_episode_id=str(episodes[0]["id"]))
-    _create(service, project_id, "episode-filter-2", scope_kind="EPISODE", scope_episode_id=str(episodes[1]["id"]))
+    first = _create(service, project_id, "episode-filter-1", scope_kind="PROJECT", scope_episode_id=str(episodes[0]["id"]))
+    _create(service, project_id, "episode-filter-2", scope_kind="PROJECT", scope_episode_id=str(episodes[1]["id"]))
     page = service.list_jobs_page(project_id, cursor=0, limit=100, episode_id=str(episodes[0]["id"]))
     assert [item["id"] for item in page["items"]] == [first["id"]]
     assert page["items"][0]["scope_episode_id"] == episodes[0]["id"]

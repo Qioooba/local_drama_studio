@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryRouter, Link, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -132,8 +132,10 @@ describe("AppShell collapsible sidebar", () => {
   it("aggregates multiple draft owners and does not let an old cleanup clear a newer registration", async () => {
     renderDraftShell();
     fireEvent.click(screen.getByRole("button", { name: "注册 A" }));
-    notifyDraftDirty(true, { ownerId: "a", entityKey: "草稿 A", registrationToken: "a2", version: 2, save: async () => ({ status: "saved", savedVersion: 2 }), discard: () => true });
-    notifyDraftDirty(false, { ownerId: "a", entityKey: "草稿 A", registrationToken: "a1", version: 1 });
+    act(() => {
+      notifyDraftDirty(true, { ownerId: "a", entityKey: "草稿 A", registrationToken: "a2", version: 2, save: async () => ({ status: "saved", savedVersion: 2 }), discard: () => true });
+      notifyDraftDirty(false, { ownerId: "a", entityKey: "草稿 A", registrationToken: "a1", version: 1 });
+    });
     fireEvent.click(screen.getByRole("link", { name: "下一页" }));
     expect(await screen.findByRole("dialog", { name: "当前页面有未保存内容" })).toBeInTheDocument();
   });

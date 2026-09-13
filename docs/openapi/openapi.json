@@ -8546,6 +8546,22 @@
             }
           },
           {
+            "name": "episode_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Episode Id"
+            }
+          },
+          {
             "name": "cursor",
             "in": "query",
             "required": false,

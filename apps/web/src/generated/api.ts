@@ -773,6 +773,11 @@ export async function listJobsPage(projectId: string | undefined, cursor = 0, li
   return requestJson(`/api/v1/jobs?${query.toString()}`, undefined, baseUrl);
 }
 
+export async function listEpisodeJobs(projectId: string, episodeId: string, cursor = 0, limit = 100, baseUrl = ''): Promise<{ items: Job[]; next_cursor: number | null; cursor: number; limit: number }> {
+  const query = new URLSearchParams({ project_id: projectId, episode_id: episodeId, cursor: String(cursor), limit: String(limit) });
+  return requestJson(`/api/v1/jobs?${query.toString()}`, undefined, baseUrl);
+}
+
 export async function getJob(jobId: string, baseUrl = ''): Promise<{ job: Job & { attempts: JobAttempt[]; depends_on_job_ids: string[] } }> {
   return requestJson(`/api/v1/jobs/${encodeURIComponent(jobId)}`, undefined, baseUrl);
 }
