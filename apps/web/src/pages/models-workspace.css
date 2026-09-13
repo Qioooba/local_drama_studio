@@ -279,3 +279,6 @@
   .model-platform-candidate__capability-action > span { text-align: left; }
   .model-platform-validation-history li small { width: 100%; margin-left: 0; }
 }
+.models-context-return { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.models-context-return > div { display: grid; gap: 4px; }
+.models-context-return > p { grid-column: 1 / -1; margin: 0; }

@@ -19,7 +19,7 @@ function item(id: string, kind: "CHARACTER" | "SCENE" | "PROP"): AssetBibleItem 
   };
 }
 
-function plan(kind: "CHARACTER" | "SCENE" | "PROP") {
+function plan(kind: import("./assetImageBatchClient").AssetImageKind) {
   return { plan: {
     project_id: "p1", asset_kind: kind, capability: `IMAGE_${kind}`, mode: "MISSING_ONLY" as const,
     profile_version_id: null, plan_hash: kind.repeat(8), valid: true, issues: [], items: [],

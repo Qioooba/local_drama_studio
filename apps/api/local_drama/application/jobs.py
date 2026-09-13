@@ -335,12 +335,15 @@ class JobService:
             "depends_on_job_ids": [item["depends_on_job_id"] for item in dependencies],
         }
 
-    def list_jobs(self, project_id: str | None = None, states: list[str] | None = None, limit: int = 100) -> list[dict[str, Any]]:
+    def list_jobs(self, project_id: str | None = None, states: list[str] | None = None, limit: int = 100, episode_id: str | None = None) -> list[dict[str, Any]]:
         where: list[str] = ["deleted_at IS NULL"]
         params: list[Any] = []
         if project_id:
             where.append("project_id=?")
             params.append(project_id)
+        if episode_id:
+            where.append("scope_episode_id=?")
+            params.append(episode_id)
         if states:
             where.append(f"state IN ({','.join('?' for _ in states)})")
             params.extend(states)
@@ -350,13 +353,16 @@ class JobService:
             rows = connection.execute(f"SELECT * FROM jobs {clause} ORDER BY created_at DESC LIMIT ?", params).fetchall()
         return [self._job_response(row) for row in rows]
 
-    def list_jobs_page(self, project_id: str | None = None, states: list[str] | None = None, cursor: int = 0, limit: int = 100) -> dict[str, Any]:
+    def list_jobs_page(self, project_id: str | None = None, states: list[str] | None = None, cursor: int = 0, limit: int = 100, episode_id: str | None = None) -> dict[str, Any]:
         """Return a bounded server-side window and a deterministic offset cursor."""
         where: list[str] = ["deleted_at IS NULL"]
         params: list[Any] = []
         if project_id:
             where.append("project_id=?")
             params.append(project_id)
+        if episode_id:
+            where.append("scope_episode_id=?")
+            params.append(episode_id)
         if states:
             where.append(f"state IN ({','.join('?' for _ in states)})")
             params.extend(states)

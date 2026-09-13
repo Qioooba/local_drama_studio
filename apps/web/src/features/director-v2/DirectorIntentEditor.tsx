@@ -312,7 +312,7 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
     try {
       if (storageKey) window.localStorage.removeItem(storageKey);
       setStorageError(null);
-      return { status: "saved" as const, savedVersion: draftVersion };
+      return true;
     } catch {
       setStorageError("修改已在表单中放弃，但浏览器未能清理本地草稿。");
       return false;
@@ -330,7 +330,7 @@ export function DirectorIntentEditor({ shotId, shotCode, currentRevision, target
       setBaseline(JSON.stringify(draft));
       setMessage(`已保存为第 ${revision.revision_no} 版${revision.is_frozen ? "（已冻结）" : ""}`);
       await onSaved?.(revision);
-      return true;
+      return { status: "saved" as const, savedVersion: draftVersion };
     } catch (error) {
       if (error instanceof ApiRequestError && error.status === 409) {
         const current = error.details?.current_revision_no;

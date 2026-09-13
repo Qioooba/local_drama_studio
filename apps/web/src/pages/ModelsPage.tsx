@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, ErrorState, Skeleton, TabPanel, Tabs } from "../components/ui";
 import { ProviderConnectionsPanel } from "../features/model-config/ProviderConnectionsPanel";
 import { canonicalCapabilityLabel, creatorProfileTitle } from "../features/preferences-v2/canonicalCapabilities";
@@ -9,7 +9,7 @@ import type { ProfilePublicationReceiptData } from "../features/profiles/Profile
 import { ProfileConfigurationPanel } from "../features/profiles/ProfileConfigurationPanel";
 import { ModelCompatibilityPanel } from "../features/status/ReadinessPanels";
 import { ModelPlatformCenter } from "../features/model-platform-v2/ModelPlatformCenter";
-import { getGlobalModelRegistry, listProfiles, listWorkflowVersions, type Profile } from "../generated/api";
+import { getGlobalModelRegistry, listProfiles, listWorkflowVersions, putGenerationPreference, type Profile } from "../generated/api";
 import { queryKeys } from "../query/queryKeys";
 import "./system-workspaces.css";
 import "./models-workspace.css";
@@ -40,8 +40,8 @@ function publishedProfileElementId(profileVersionId: string) {
   return `published-profile-${profileVersionId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
-function CapabilityCatalog({ profiles, focusedProfileVersionId }: { profiles: Profile[]; focusedProfileVersionId?: string | null }) {
-  const published = profiles.filter((item) => item.status === "PUBLISHED");
+function CapabilityCatalog({ profiles, focusedProfileVersionId, contextCapability, onSelect, selectingId }: { profiles: Profile[]; focusedProfileVersionId?: string | null; contextCapability?: string | null; onSelect?: (profile: Profile) => void; selectingId?: string | null }) {
+  const published = profiles.filter((item) => item.status === "PUBLISHED" && (!contextCapability || item.capability === contextCapability));
   const groups = useMemo(() => {
     const result = new Map<string, Profile[]>();
     for (const profile of published) {
@@ -64,7 +64,7 @@ function CapabilityCatalog({ profiles, focusedProfileVersionId }: { profiles: Pr
       <div><p className="eyebrow">已发布</p><h3 id="capability-catalog-title">可用的创作能力</h3></div>
       <span className="status-pill">{published.length} 个已发布版本</span>
     </div>
-    <p className="muted">能力按创作用途组织；同一个模型可以承担多个用途。</p>
+    <p className="muted">{contextCapability ? `正在为当前创作上下文选择 ${canonicalCapabilityLabel(contextCapability)}；只列出已发布版本。` : "能力按创作用途组织；同一个模型可以承担多个用途。"}</p>
     {focusedProfile ? <p className="models-catalog-location" role="status"><strong>已定位到刚发布的版本</strong><span>{canonicalCapabilityLabel(focusedProfile.capability)} · {creatorProfileTitle(focusedProfile.title)} · v{focusedProfile.version_no ?? "?"}</span></p> : null}
     {published.length === 0 ? <div className="models-catalog-empty"><strong>还没有已发布能力</strong><span>前往“模型与服务”添加资源，再由专家工具发布执行版本。</span></div> : <div className="models-capability-groups">
       {[...groups.entries()].map(([family, items]) => <section key={family} className="models-capability-group" aria-label={family}>
@@ -74,7 +74,7 @@ function CapabilityCatalog({ profiles, focusedProfileVersionId }: { profiles: Pr
             const focused = item.version_id === focusedProfile?.version_id;
             return <article key={item.version_id} id={publishedProfileElementId(item.version_id)} tabIndex={-1} aria-current={focused ? "true" : undefined} className={`models-capability-item${focused ? " is-focused" : ""}`}>
               <div><strong>{canonicalCapabilityLabel(item.capability)}</strong><small>{creatorProfileTitle(item.title)}</small></div>
-              <span className="status-pill">v{item.version_no ?? "?"} · 已发布</span>
+              <span className="status-pill">v{item.version_no ?? "?"} · 已发布</span>{onSelect ? <button type="button" className="secondary" disabled={Boolean(selectingId)} onClick={() => onSelect(item)}>{selectingId === item.version_id ? "正在应用…" : "用于当前集"}</button> : null}
             </article>;
           })}
         </div>
@@ -91,6 +91,27 @@ export function ModelsPage() {
   const expertOpen = searchParams.get("view") === "profile-contracts";
   const [expertReturnView, setExpertReturnView] = useState<ModelView>(activeView);
   const [expertDirty, setExpertDirty] = useState(false);
+  const queryClient = useQueryClient();
+  const contextProjectId = searchParams.get("project");
+  const contextEpisodeId = searchParams.get("episode");
+  const contextCapability = searchParams.get("capability");
+  const rawReturnTo = searchParams.get("returnTo");
+  const returnTo = rawReturnTo?.startsWith("/projects/") ? rawReturnTo : null;
+  const [contextMessage, setContextMessage] = useState("");
+  const selectForEpisode = useMutation({
+    mutationFn: (profile: Profile) => putGenerationPreference(contextProjectId!, {
+      owner_type: "EPISODE",
+      owner_id: contextEpisodeId!,
+      capability: profile.capability,
+      resolution_mode: "EXPLICIT",
+      execution_profile_version_id: profile.version_id,
+      reason: "从当前分集能力摘要选择已发布版本",
+    }),
+    onSuccess: async (_result, profile) => {
+      setContextMessage(`${canonicalCapabilityLabel(profile.capability)}已切换为 ${creatorProfileTitle(profile.title)} v${profile.version_no ?? "?"}；只影响后续新任务。`);
+      await queryClient.invalidateQueries({ queryKey: ["capability-options", profile.capability, contextProjectId ?? "", contextEpisodeId ?? ""] });
+    },
+  });
 
   const locatePublishedProfile = (receipt: ProfilePublicationReceiptData) => {
     const next = new URLSearchParams(searchParams);
@@ -147,6 +168,12 @@ export function ModelsPage() {
       <div><p className="eyebrow">系统资源</p><h3>能力与模型</h3></div>
     </div>
     <p className="muted models-page-summary">接入本机模型或模型服务，验证后发布为创作能力。</p>
+    {contextProjectId && contextEpisodeId && contextCapability ? <section className="panel models-context-return" aria-label="创作上下文">
+      <div><strong>为当前分集选择能力</strong><span>{canonicalCapabilityLabel(contextCapability)} · 变更仅影响后续新任务，已冻结运行保持原配置。</span></div>
+      {returnTo ? <Link className="secondary v2-inline-link" to={returnTo}>返回当前分集</Link> : null}
+      {contextMessage ? <p role="status">{contextMessage}</p> : null}
+      {selectForEpisode.error ? <p className="inline-error" role="alert">应用失败：{selectForEpisode.error instanceof Error ? selectForEpisode.error.message : String(selectForEpisode.error)}</p> : null}
+    </section> : null}
 
     <div className="models-view-bar">
       <div className="system-workspace-tabs models-task-tabs"><Tabs items={CREATOR_VIEWS} selectedId={activeView} onChange={setActiveView} ariaLabel="能力与模型" /></div>
@@ -158,7 +185,7 @@ export function ModelsPage() {
     </TabPanel>
 
     <TabPanel id="catalog" selectedId={activeView}>
-      {profiles.isPending ? <Skeleton label="正在读取全局能力目录" lines={5} /> : profiles.error ? <ErrorState description={`全局能力目录读取失败：${String(profiles.error)}`} onRetry={() => void profiles.refetch()} /> : <CapabilityCatalog profiles={profiles.data?.items ?? []} focusedProfileVersionId={searchParams.get("published")} />}
+      {profiles.isPending ? <Skeleton label="正在读取全局能力目录" lines={5} /> : profiles.error ? <ErrorState description={`全局能力目录读取失败：${String(profiles.error)}`} onRetry={() => void profiles.refetch()} /> : <CapabilityCatalog profiles={profiles.data?.items ?? []} focusedProfileVersionId={searchParams.get("published")} contextCapability={contextCapability} onSelect={contextProjectId && contextEpisodeId && contextCapability ? (profile) => selectForEpisode.mutate(profile) : undefined} selectingId={selectForEpisode.isPending ? selectForEpisode.variables?.version_id : null} />}
     </TabPanel>
 
     <TabPanel id="resources" selectedId={activeView}>

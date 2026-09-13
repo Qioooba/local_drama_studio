@@ -46,8 +46,8 @@ async def create_job(payload: JobCreateRequest, request: Request, idempotency_ke
 
 
 @router.get("/jobs", operation_id="listJobs")
-async def list_jobs(request: Request, project_id: str | None = None, state: list[str] | None = None, cursor: int = 0, limit: int = 100) -> dict[str, object]:
-    return service(request).list_jobs_page(project_id, state, cursor, limit)
+async def list_jobs(request: Request, project_id: str | None = None, episode_id: str | None = None, state: list[str] | None = None, cursor: int = 0, limit: int = 100) -> dict[str, object]:
+    return service(request).list_jobs_page(project_id, state, cursor, limit, episode_id)
 
 
 @router.get("/jobs/{job_id}", operation_id="getJob")

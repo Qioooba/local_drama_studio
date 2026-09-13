@@ -9,6 +9,11 @@ import { notifyDraftDirty } from "../features/drafts/draftGuard";
 vi.mock("../generated/api", () => ({
   listProjects: vi.fn().mockResolvedValue({ items: [{ id: "project-1", title: "测试项目" }] }),
   getProjectEpisodeCatalog: vi.fn().mockResolvedValue({ catalog: { seasons: [] } }),
+  getEpisodeProductionOverviewV2: vi.fn().mockResolvedValue({ overview: { active_job_count: 0, attention_count: 0, stage_summary: {} } }),
+  getEpisodePostOverviewV2: vi.fn().mockResolvedValue({ overview: { edit: { frozen_timeline_id: null }, delivery: { verified_render_count: 0, package_count: 0, latest_package_status: null }, blockers: [] } }),
+  listCapabilityOptions: vi.fn().mockResolvedValue({ selection: { ready: false, option: null }, options: [] }),
+  requestJson: vi.fn().mockResolvedValue({ items: [] }),
+  retryJob: vi.fn(),
 }));
 
 describe("AppShell collapsible sidebar", () => {

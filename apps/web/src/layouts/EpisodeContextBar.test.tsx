@@ -1,7 +1,16 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { EpisodeContextBar } from "./EpisodeContextBar";
+
+vi.mock("../generated/api", () => ({
+  getEpisodeProductionOverviewV2: vi.fn().mockResolvedValue({ overview: { active_job_count: 0, attention_count: 0, stage_summary: {} } }),
+  getEpisodePostOverviewV2: vi.fn().mockResolvedValue({ overview: { edit: { frozen_timeline_id: null }, delivery: { verified_render_count: 0, package_count: 0, latest_package_status: null }, blockers: [] } }),
+  listCapabilityOptions: vi.fn().mockResolvedValue({ selection: { ready: false, option: null }, options: [] }),
+  requestJson: vi.fn().mockResolvedValue({ items: [] }),
+  retryJob: vi.fn(),
+}));
 
 const seasons = [{
   id: "season-1",
@@ -16,13 +25,14 @@ const seasons = [{
 describe("EpisodeContextBar", () => {
   it("keeps episode switching and the four production stages in one context bar", () => {
     const onEpisodeChange = vi.fn();
-    render(<MemoryRouter><EpisodeContextBar
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<MemoryRouter><QueryClientProvider client={client}><EpisodeContextBar
       projectId="project-1"
       episodeId="episode-2"
       pathname="/projects/project-1/episodes/episode-2/post/audio"
       seasons={seasons}
       onEpisodeChange={onEpisodeChange}
-    /></MemoryRouter>);
+    /></QueryClientProvider></MemoryRouter>);
 
     expect(screen.getByText("2 / 3 集")).toBeTruthy();
     expect(screen.getByRole("link", { name: /后期成片/ }).getAttribute("aria-current")).toBe("step");
