@@ -5,10 +5,13 @@ import json
 import uuid
 from datetime import UTC, datetime
 
+import pytest
+
 from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
 from local_drama.application.generation import GenerationService
 from local_drama.application.jobs import JobService
 from local_drama.application.projects import ProjectService
+from local_drama.domain.errors import DomainRuleError
 from tests.test_director_fields import _published_camera_profile
 
 
@@ -161,7 +164,13 @@ def test_operation_impact_distinguishes_retry_new_take_and_recompose_without_wri
         service,
         "video_generation_preflight",
         lambda *_args, **_kwargs: {
-            "items": [{"shot_id": shot["id"], "status": "READY", "blockers": []}]
+            "input_fingerprint": "e" * 64,
+            "items": [{
+                "shot_id": shot["id"],
+                "status": "READY",
+                "blockers": [],
+                "profile_version_id": "profile-operation",
+            }],
         },
     )
     monkeypatch.setattr(service, "_stale_working_media_shots", lambda *_args: set())
@@ -190,6 +199,7 @@ def test_operation_impact_distinguishes_retry_new_take_and_recompose_without_wri
         "seed": 77,
     }]
     assert retry["mutated"] is False
+    assert retry["expected_input_fingerprints"] == {}
 
     new_take = service.operation_impact(
         str(episode["id"]), operation="NEW_TAKE", target_shot_ids=(shot["id"],)
@@ -201,6 +211,61 @@ def test_operation_impact_distinguishes_retry_new_take_and_recompose_without_wri
     recompose = service.operation_impact(str(episode["id"]), operation="RECOMPOSE_ONLY")
     assert recompose["gpu_video_job_count"] == 0
     assert recompose["sets"]["blocked_by_dependency"][0]["reason"] == "TIMELINE_REQUIRED"
+
+
+def test_video_generation_rejects_inputs_changed_after_operation_preview(
+    workspace, database, monkeypatch,
+) -> None:
+    service = EpisodeWorkerActionService(database, workspace)
+    shot = {"id": "shot-frozen", "code": "SH-001"}
+    monkeypatch.setattr(service, "_episode", lambda _episode_id: ("project-1", [shot]))
+    monkeypatch.setattr(
+        service,
+        "video_generation_preflight",
+        lambda *_args, **_kwargs: {
+            "items": [{"shot_id": shot["id"], "status": "READY", "prompt": "changed"}],
+        },
+    )
+
+    with pytest.raises(DomainRuleError) as stale:
+        service.video_generation(
+            "episode-1",
+            "run-1",
+            "task-1",
+            target_shot_ids=(shot["id"],),
+            expected_input_fingerprints={shot["id"]: "f" * 64},
+        )
+    assert stale.value.code == "EPISODE_OPERATION_PLAN_STALE"
+
+
+def test_retry_original_requeues_the_failed_job_without_resolving_current_generation_inputs(
+    workspace, database, monkeypatch,
+) -> None:
+    service = EpisodeWorkerActionService(database, workspace)
+    shot = {"id": "shot-frozen-retry", "code": "SH-001", "revision": 2}
+    failed = {"id": "job-failed", "state": "FAILED", "variant_id": "variant-frozen"}
+    monkeypatch.setattr(service, "_episode", lambda _episode_id: ("project-1", [shot]))
+    monkeypatch.setattr(service, "_variant_jobs", lambda _shot_id: [failed])
+    monkeypatch.setattr(service, "_stale_working_media_shots", lambda *_args: {shot["id"]})
+    monkeypatch.setattr(service, "_promote_completed_outputs", lambda *_args: [])
+    monkeypatch.setattr(service, "_shot_video", lambda *_args: None)
+    monkeypatch.setattr(service, "_shot_video_count", lambda *_args: 0)
+    monkeypatch.setattr(service, "_submit_shot", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not submit a new take")))
+    retried: list[str] = []
+    monkeypatch.setattr(
+        service.jobs,
+        "retry",
+        lambda job_id, actor="local-user": retried.append(job_id) or {"id": job_id},
+    )
+
+    report, _ = service.video_generation(
+        "episode-1", "run-1", "task-1",
+        target_shot_ids=(shot["id"],), retry_original_only=True,
+    )
+
+    assert retried == ["job-failed"]
+    assert report["produced"]["items"][0]["frozen_input_reused"] is True
+    assert report["machine_check"]["retry_original_only"] is True
 
 
 def test_qc_pass_with_adoption_blocker_pauses_production(workspace, database, monkeypatch) -> None:

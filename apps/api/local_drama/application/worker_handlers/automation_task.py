@@ -61,7 +61,9 @@ class EpisodeWorkerActionsPort(Protocol):
         target_take_count: int = 1,
         target_shot_ids: tuple[str, ...] | None = None,
         force_new_take: bool = False,
+        retry_original_only: bool = False,
         expected_profile_version_ids: dict[str, str] | None = None,
+        expected_input_fingerprints: dict[str, str] | None = None,
     ) -> tuple[dict[str, Any], int]:  # pragma: no cover - protocol boundary
         ...
 
@@ -319,16 +321,37 @@ def _automation_render(
     database: AutomationPersistencePort,
     timeline_factory: Callable[[], AutomationTimelinePort],
     episode_id: str,
+    payload: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], int]:
+    payload = payload or {}
+    frozen_timeline_id = str(payload.get("timeline_revision_id") or "").strip()
     with database.connect() as connection:
-        timeline = connection.execute(
-            "SELECT id, revision_no, status FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
-            (episode_id,),
-        ).fetchone()
+        if frozen_timeline_id:
+            timeline = connection.execute(
+                "SELECT id, revision_no, status FROM timeline_revisions WHERE id=? AND episode_id=?",
+                (frozen_timeline_id, episode_id),
+            ).fetchone()
+            latest_timeline = connection.execute(
+                "SELECT id FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
+                (episode_id,),
+            ).fetchone()
+        else:
+            timeline = connection.execute(
+                "SELECT id, revision_no, status FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
+                (episode_id,),
+            ).fetchone()
+            latest_timeline = timeline
     if timeline is None:
-        return _automation_failure("RENDER_NO_TIMELINE", "该集还没有时间线 revision，无法渲染"), 0
+        code = "RENDER_TIMELINE_CHANGED" if frozen_timeline_id else "RENDER_NO_TIMELINE"
+        return _automation_failure(code, "预览使用的时间线已变化，请重新预览" if frozen_timeline_id else "该集还没有时间线 revision，无法渲染"), 0
+    if frozen_timeline_id and (latest_timeline is None or str(latest_timeline["id"]) != frozen_timeline_id):
+        return _automation_failure("RENDER_TIMELINE_CHANGED", "预览使用的时间线已不是最新版本，请重新预览"), 0
     try:
-        render = timeline_factory().render_episode(str(timeline["id"]), actor="local-user")
+        render = timeline_factory().render_episode(
+            str(timeline["id"]),
+            force_rerender=bool(payload.get("force_rerender", False)),
+            actor="local-user",
+        )
     except DomainRuleError as error:
         return _automation_failure(error.code, error.message), 0
     byte_size = int(render.get("byte_size") or 0)
@@ -507,6 +530,17 @@ def run_automation_task(
         frozen_profile_kwargs = (
             {"expected_profile_version_ids": frozen_profiles} if frozen_profiles else {}
         )
+        frozen_inputs = {
+            str(shot_id): str(fingerprint)
+            for shot_id, fingerprint in (
+                payload.get("expected_input_fingerprints", {}).items()
+                if isinstance(payload.get("expected_input_fingerprints"), dict)
+                else []
+            )
+        }
+        frozen_input_kwargs = (
+            {"expected_input_fingerprints": frozen_inputs} if frozen_inputs else {}
+        )
         report, produced_extra = episode_worker_actions_factory().video_generation(
             episode_id,
             run_id,
@@ -514,7 +548,9 @@ def run_automation_task(
             target_take_count=target_take_count,
             target_shot_ids=tuple(str(item) for item in payload.get("target_shot_ids", []) if str(item).strip()),
             force_new_take=bool(payload.get("force_new_take", False)),
+            retry_original_only=bool(payload.get("retry_original_only", False)),
             **frozen_profile_kwargs,
+            **frozen_input_kwargs,
         )
     elif action == "QC":
         mode_policy = payload.get("mode_policy", {})
@@ -527,7 +563,7 @@ def run_automation_task(
     elif action == "TIMELINE_ASSEMBLY":
         report, produced_extra = _automation_timeline_assembly(timeline_factory, episode_id, payload)
     elif action == "RENDER":
-        report, produced_extra = _automation_render(database, timeline_factory, episode_id)
+        report, produced_extra = _automation_render(database, timeline_factory, episode_id, payload)
     elif action == "DELIVERY":
         report, produced_extra = _automation_delivery(database, configuration_factory(), timeline_factory, episode_id)
     elif action == "SUBTITLE":

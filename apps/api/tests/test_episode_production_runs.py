@@ -142,6 +142,97 @@ def test_front_half_dag_workflow_generation(workspace, database) -> None:
     assert [item["payload"]["action"] for item in readonly["definition"]["batch_items"]] == actions[:5] + ["KEYFRAME_CHECK"]
 
 
+def test_operation_workflow_executes_the_previewed_scope_without_a_parallel_executor(
+    workspace, database,
+) -> None:
+    project, episode = _episode(workspace, database, "episode_operation_scope")
+    service = EpisodeProductionRunService(database, workspace)
+    episode_context = {**episode, "project_id": project["id"]}
+    new_take = {
+        "operation": "NEW_TAKE",
+        "plan_hash": "a" * 64,
+        "target_take_count": 1,
+        "expected_profile_version_ids": {"shot-2": "profile-2"},
+        "expected_input_fingerprints": {"shot-2": "input-2", "shot-3": "input-3"},
+        "sets": {
+            "reused": [{"shot_id": "shot-1"}],
+            "waiting_in_flight": [],
+            "retry_original": [],
+            "needs_generation": [{"shot_id": "shot-2"}],
+            "blocked_by_dependency": [{"shot_id": "shot-3"}],
+            "requires_manual_confirmation": [],
+            "compose_only": [],
+        },
+    }
+
+    workflow = service._workflow_for_operation(episode_context, new_take, actor="test")
+    items = workflow["definition"]["batch_items"]
+    assert len(items) == 1
+    payload = items[0]["payload"]
+    assert payload["action"] == "VIDEO_GENERATION"
+    assert payload["target_shot_ids"] == ["shot-2"]
+    assert payload["force_new_take"] is True
+    assert payload["expected_profile_version_ids"] == {"shot-2": "profile-2"}
+    assert payload["expected_input_fingerprints"] == {"shot-2": "input-2"}
+    assert payload["operation_plan_hash"] == "a" * 64
+
+    recompose = {
+        "operation": "RECOMPOSE_ONLY",
+        "plan_hash": "b" * 64,
+        "target_take_count": 1,
+        "expected_profile_version_ids": {},
+        "sets": {
+            "reused": [],
+            "waiting_in_flight": [],
+            "retry_original": [],
+            "needs_generation": [],
+            "blocked_by_dependency": [],
+            "requires_manual_confirmation": [],
+            "compose_only": [{"timeline_revision_id": "timeline-current"}],
+        },
+    }
+    compose_workflow = service._workflow_for_operation(episode_context, recompose, actor="test")
+    compose_payload = compose_workflow["definition"]["batch_items"][0]["payload"]
+    assert compose_payload == {
+        "action": "RENDER",
+        "episode_id": str(episode["id"]),
+        "operation": "RECOMPOSE_ONLY",
+        "operation_plan_hash": "b" * 64,
+        "timeline_revision_id": "timeline-current",
+        "force_rerender": True,
+    }
+
+
+def test_operation_start_requires_the_current_preview_hash(
+    workspace, database, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _project, episode = _episode(workspace, database, "episode_operation_plan_guard")
+    service = EpisodeProductionRunService(database, workspace)
+    monkeypatch.setattr(
+        EpisodeWorkerActionService,
+        "operation_impact",
+        lambda *_args, **_kwargs: {"plan_hash": "c" * 64},
+    )
+
+    with pytest.raises(DomainRuleError) as stale:
+        service._start_operation_once(
+            str(episode["id"]),
+            operation="RETRY_ORIGINAL",
+            target_shot_ids=(),
+            target_take_count=service.operation_target_take_count(
+                str(episode["id"]), operation="RETRY_ORIGINAL", production_mode="BALANCED"
+            ),
+            expected_plan_hash="d" * 64,
+            expected_episode_revision=int(episode["revision"]),
+            tts_enabled=True,
+            production_mode="BALANCED",
+            checkpoint_policy="ON_EXCEPTION",
+            idempotency_key="operation-stale",
+            actor="test",
+        )
+    assert stale.value.code == "EPISODE_OPERATION_PLAN_STALE"
+
+
 def _episode(workspace, database, code: str) -> tuple[dict, dict]:
     projects = ProjectService(database, workspace.projects_root)
     project = projects.create_project(

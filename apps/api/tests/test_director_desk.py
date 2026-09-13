@@ -7,6 +7,7 @@ import uuid
 
 from fastapi.testclient import TestClient
 
+from local_drama.api.schemas.shot_studio import QcSummary
 from local_drama.application.breakdown_apply import BreakdownApplyService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
@@ -120,6 +121,30 @@ def test_openapi_exposes_only_the_typed_shot_studio_read_contract(workspace) -> 
     operation = schema["paths"]["/api/v2/episodes/{episode_id}/shots/{shot_id}/studio"]["get"]
     assert operation["operationId"] == "getShotStudioV2"
     assert operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ShotStudioResponse")
+
+
+def test_director_desk_qc_summary_normalizes_storage_json(database) -> None:
+    run_id = str(uuid.uuid4())
+    media_id = str(uuid.uuid4())
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO machine_check_runs
+            (id,subject_type,subject_id,policy_version,status,created_at,updated_at,created_by,revision,schema_version)
+            VALUES (?,'MEDIA_VERSION',?,'g4_media_qc_v1','PASS','now','now','test',1,'v2')""",
+            (run_id, media_id),
+        )
+        connection.execute(
+            "INSERT INTO machine_check_results (id,run_id,item_id,result,details_json) VALUES (?,?,?,'PASS',?)",
+            (str(uuid.uuid4()), run_id, "decode", '{"probe_status":"PASS"}'),
+        )
+        _reviews, qc_summary = SqliteShotStudioReadRepository._quality(
+            connection,
+            {"media_version_id": media_id},
+        )
+
+    validated = QcSummary.model_validate(qc_summary)
+    assert validated.results[0].details == {"probe_status": "PASS"}
+    assert "details_json" not in qc_summary["results"][0]
 
 
 def test_director_desk_suggests_grounded_scene_and_previous_shot_context(workspace, database) -> None:

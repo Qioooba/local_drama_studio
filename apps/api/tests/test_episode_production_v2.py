@@ -7,6 +7,8 @@ import uuid
 from fastapi.testclient import TestClient
 
 from local_drama.application.automation_workflows import AutomationWorkflowService
+from local_drama.application.episode_production_runs import EpisodeProductionRunService
+from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
 from local_drama.application.generation import GenerationService
 from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
@@ -33,6 +35,72 @@ def _episode(workspace, database):
     episode = projects.list_episodes(str(season["id"]))[0]
     shot = projects.create_shot(str(episode["id"]), "SHOT-001", 4_000)
     return project, episode, shot
+
+
+def test_operation_preview_resolves_the_server_candidate_policy_and_freezes_intent(
+    workspace, database, monkeypatch,
+) -> None:
+    _project, episode, _shot = _episode(workspace, database)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        EpisodeProductionRunService,
+        "operation_target_take_count",
+        lambda self, episode_id, *, operation, production_mode: 4,
+    )
+
+    def fake_impact(self, episode_id, **kwargs):
+        captured.update(kwargs)
+        return {
+            "schema_version": "episode-operation-impact/v1",
+            "episode_id": episode_id,
+            "project_id": "project-1",
+            "episode_revision": 3,
+            "operation": kwargs["operation"],
+            "target_shot_ids": [],
+            "target_take_count": kwargs["target_take_count"],
+            "tts_enabled": kwargs["tts_enabled"],
+            "production_mode": kwargs["production_mode"],
+            "checkpoint_policy": kwargs["checkpoint_policy"],
+            "sets": {},
+            "gpu_video_job_count": 0,
+            "mutated": False,
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "plan_hash": "a" * 64,
+        }
+
+    monkeypatch.setattr(EpisodeWorkerActionService, "operation_impact", fake_impact)
+    with TestClient(create_app(workspace)) as client:
+        response = client.post(
+            f"/api/v2/episodes/{episode['id']}/production:operation-impact",
+            json={
+                "operation": "CONTINUE_UNFINISHED",
+                "production_mode": "QUALITY",
+                "tts_enabled": False,
+                "checkpoint_policy": "BEFORE_VIDEO",
+            },
+        )
+        missing_revision = client.post(
+            f"/api/v2/episodes/{episode['id']}/production-runs",
+            json={
+                "operation": "CONTINUE_UNFINISHED",
+                "target_take_count": 4,
+                "expected_plan_hash": "a" * 64,
+                "idempotency_key": "operation-without-revision",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert captured == {
+        "operation": "CONTINUE_UNFINISHED",
+        "target_shot_ids": (),
+        "target_take_count": 4,
+        "tts_enabled": False,
+        "production_mode": "QUALITY",
+        "checkpoint_policy": "BEFORE_VIDEO",
+    }
+    assert missing_revision.status_code == 422
+    assert missing_revision.json()["error"]["code"] == "EPISODE_OPERATION_REVISION_REQUIRED"
 
 
 def test_episode_production_v2_is_typed_bounded_and_uses_only_canonical_job_stage(workspace, database) -> None:

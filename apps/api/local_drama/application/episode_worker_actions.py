@@ -258,6 +258,9 @@ class EpisodeWorkerActionService:
         operation: str,
         target_shot_ids: tuple[str, ...] = (),
         target_take_count: int = 1,
+        tts_enabled: bool = True,
+        production_mode: str = "BALANCED",
+        checkpoint_policy: str = "ON_EXCEPTION",
     ) -> dict[str, Any]:
         """Preview creator-visible operations without submitting or retrying work."""
         operation = str(operation or "").strip().upper()
@@ -265,12 +268,20 @@ class EpisodeWorkerActionService:
         if operation not in allowed:
             raise DomainRuleError("EPISODE_OPERATION_INVALID", "不支持的本集操作", {"operation": operation})
         project_id, shots = self._episode(episode_id)
+        with self.database.connect() as connection:
+            episode_row = connection.execute(
+                "SELECT revision FROM episodes WHERE id=?", (episode_id,)
+            ).fetchone()
+        episode_revision = int(episode_row["revision"]) if episode_row is not None else 1
         requested = tuple(dict.fromkeys(str(item).strip() for item in target_shot_ids if str(item).strip()))
         by_id = {str(shot["id"]): shot for shot in shots}
         unknown = sorted(set(requested) - set(by_id))
         if unknown:
             raise DomainRuleError("SHOT_BATCH_SCOPE_INVALID", "操作包含不属于当前集的镜头", {"shot_ids": unknown})
         selected = [shot for shot in shots if not requested or str(shot["id"]) in requested]
+        expected_profile_version_ids: dict[str, str] = {}
+        expected_input_fingerprints: dict[str, str] = {}
+        preflight_fingerprint: str | None = None
         sets: dict[str, list[dict[str, Any]]] = {
             "reused": [],
             "waiting_in_flight": [],
@@ -291,18 +302,75 @@ class EpisodeWorkerActionService:
                     {"owner_type": "EPISODE", "owner_id": episode_id, "reason": "TIMELINE_REQUIRED"}
                 )
             else:
-                sets["compose_only"].append(
-                    {
-                        "timeline_revision_id": str(timeline["id"]),
-                        "timeline_revision_no": int(timeline["revision_no"]),
-                        "reason": "REUSE_CURRENT_TIMELINE_INPUTS",
-                    }
-                )
+                try:
+                    compose_preflight = self.timeline.preflight_episode_render(str(timeline["id"]))
+                except DomainRuleError as error:
+                    sets["blocked_by_dependency"].append(
+                        {
+                            "owner_type": "TIMELINE_REVISION",
+                            "owner_id": str(timeline["id"]),
+                            "reason": error.code,
+                        }
+                    )
+                else:
+                    sets["compose_only"].append(
+                        {
+                            "timeline_revision_id": str(timeline["id"]),
+                            "timeline_revision_no": int(timeline["revision_no"]),
+                            "reason": "REUSE_CURRENT_TIMELINE_INPUTS",
+                            "compose_fingerprint": str(compose_preflight["compose_fingerprint"]),
+                        }
+                    )
+        elif operation == "RETRY_ORIGINAL":
+            for shot in selected:
+                shot_id = str(shot["id"])
+                base = {
+                    "shot_id": shot_id,
+                    "shot_code": str(shot["code"]),
+                    "shot_revision": int(shot["revision"]),
+                }
+                jobs = self._variant_jobs(shot_id)
+                active = [job for job in jobs if str(job["state"]) in ACTIVE_JOB_STATES]
+                failed = next((job for job in jobs if str(job["state"]) in FAILED_JOB_STATES), None)
+                if active:
+                    sets["waiting_in_flight"].append(
+                        {**base, "reason": "EXISTING_JOB_IN_FLIGHT", "job_ids": [str(job["id"]) for job in active]}
+                    )
+                elif failed is None:
+                    sets["reused"].append({**base, "reason": "NO_FAILED_ORIGINAL_INPUT_JOB"})
+                elif str(failed.get("last_error_code") or "") in {
+                    "COMFY_PROVIDER_ACCEPTANCE_UNKNOWN", "PROVIDER_ACCEPTANCE_UNKNOWN",
+                }:
+                    sets["blocked_by_dependency"].append(
+                        {**base, "reason": "PROVIDER_ACCEPTANCE_RECONCILIATION_REQUIRED", "job_id": str(failed["id"])}
+                    )
+                else:
+                    sets["retry_original"].append(
+                        {
+                            **base,
+                            "reason": "FAILED_JOB_SAME_FROZEN_INPUTS",
+                            "job_id": str(failed["id"]),
+                            "variant_id": str(failed["variant_id"]),
+                            "seed": failed["explicit_seed"],
+                        }
+                    )
         else:
             preflight = self.video_generation_preflight(
                 episode_id, target_shot_ids=tuple(str(shot["id"]) for shot in selected)
             )
+            preflight_fingerprint = str(preflight["input_fingerprint"])
             preflight_by_id = {str(item["shot_id"]): item for item in preflight["items"]}
+            expected_profile_version_ids = {
+                str(item["shot_id"]): str(item["profile_version_id"])
+                for item in preflight["items"]
+                if item.get("status") == "READY" and item.get("profile_version_id")
+            }
+            expected_input_fingerprints = {
+                str(item["shot_id"]): hashlib.sha256(
+                    json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                ).hexdigest()
+                for item in preflight["items"]
+            }
             stale = self._stale_working_media_shots(episode_id, set(preflight_by_id))
             for shot in selected:
                 shot_id = str(shot["id"])
@@ -354,8 +422,15 @@ class EpisodeWorkerActionService:
             "episode_id": episode_id,
             "project_id": project_id,
             "operation": operation,
+            "episode_revision": episode_revision,
+            "tts_enabled": bool(tts_enabled),
+            "production_mode": str(production_mode),
+            "checkpoint_policy": str(checkpoint_policy),
             "target_shot_ids": [str(shot["id"]) for shot in selected],
             "target_take_count": target_take_count,
+            "preflight_fingerprint": preflight_fingerprint,
+            "expected_profile_version_ids": expected_profile_version_ids,
+            "expected_input_fingerprints": expected_input_fingerprints,
             "sets": sets,
             "gpu_video_job_count": 0 if operation == "RECOMPOSE_ONLY" else sum(
                 int(item.get("new_candidate_count") or 0) for item in sets["needs_generation"]
@@ -799,7 +874,9 @@ class EpisodeWorkerActionService:
         target_take_count: int = 1,
         target_shot_ids: tuple[str, ...] | None = None,
         force_new_take: bool = False,
+        retry_original_only: bool = False,
         expected_profile_version_ids: dict[str, str] | None = None,
+        expected_input_fingerprints: dict[str, str] | None = None,
     ) -> tuple[dict[str, Any], int]:
         if isinstance(target_take_count, bool):
             raise DomainRuleError(
@@ -828,6 +905,33 @@ class EpisodeWorkerActionService:
                 {"episode_id": episode_id, "shot_ids": unknown_ids},
             )
         shots = [shot for shot in episode_shots if not requested_ids or str(shot["id"]) in requested_ids]
+        frozen_inputs = {
+            str(shot_id): str(fingerprint)
+            for shot_id, fingerprint in (expected_input_fingerprints or {}).items()
+            if str(shot_id).strip() and str(fingerprint).strip()
+        }
+        if frozen_inputs:
+            current_preflight = self.video_generation_preflight(
+                episode_id,
+                target_shot_ids=tuple(str(shot["id"]) for shot in shots),
+            )
+            current_fingerprints = {
+                str(item["shot_id"]): hashlib.sha256(
+                    json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                ).hexdigest()
+                for item in current_preflight["items"]
+            }
+            changed = sorted(
+                shot_id
+                for shot_id, fingerprint in frozen_inputs.items()
+                if current_fingerprints.get(shot_id) != fingerprint
+            )
+            if changed:
+                raise DomainRuleError(
+                    "EPISODE_OPERATION_PLAN_STALE",
+                    "镜头或生成依赖在预览后发生变化，请重新预览",
+                    {"shot_ids": changed},
+                )
         stale_working_media_shots = self._stale_working_media_shots(
             episode_id,
             {str(shot["id"]) for shot in shots},
@@ -854,6 +958,17 @@ class EpisodeWorkerActionService:
                 if shot_id in frozen_profiles
                 else {}
             )
+            if retry_original_only:
+                failed = next((item for item in jobs if str(item["state"]) in FAILED_JOB_STATES), None)
+                if failed is None:
+                    items.append({"shot_id": shot_id, "shot_code": str(shot["code"]), "status": "BLOCKED", "code": "ORIGINAL_FAILED_JOB_REQUIRED"})
+                    continue
+                try:
+                    retried = self.jobs.retry(str(failed["id"]), actor="episode-worker")
+                    items.append({"shot_id": shot_id, "shot_code": str(shot["code"]), "status": "RETRIED", "variant_id": str(failed["variant_id"]), "job_id": str(retried["id"]), "retry_of_job_id": str(failed["id"]), "frozen_input_reused": True})
+                except DomainRuleError as error:
+                    items.append({"shot_id": shot_id, "shot_code": str(shot["code"]), "status": "BLOCKED", "code": error.code})
+                continue
             if force_new_take or stale_working_media:
                 submission = self._submit_shot(
                     project_id,
@@ -948,7 +1063,9 @@ class EpisodeWorkerActionService:
             "target_take_count": target_take_count,
             "target_shot_ids": list(requested_ids),
             "expected_profile_version_ids": frozen_profiles,
+            "expected_input_fingerprints": frozen_inputs,
             "force_new_take": force_new_take,
+            "retry_original_only": retry_original_only,
             "target_candidate_count": len(shots) * target_take_count,
             "valid_candidate_count": valid_candidate_count,
             "active_candidate_count": active_candidate_count,

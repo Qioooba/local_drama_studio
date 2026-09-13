@@ -158,6 +158,16 @@ class EpisodeProductionRunStartCommand(StrictModel):
         "AUTO_CONTINUE", "AFTER_ASSETS", "AFTER_SHOT_PLAN", "BEFORE_VIDEO", "ON_EXCEPTION"
     ] = "ON_EXCEPTION"
     min_free_disk_bytes: int = Field(default=5 * 1024 * 1024 * 1024, ge=1, le=1 << 50)
+    operation: Literal["CONTINUE_UNFINISHED", "RETRY_ORIGINAL", "NEW_TAKE", "RECOMPOSE_ONLY"] | None = None
+    target_shot_ids: list[str] = Field(default_factory=list, max_length=100)
+    target_take_count: int = Field(default=1, ge=1, le=4)
+    expected_plan_hash: str | None = Field(
+        default=None,
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    expected_episode_revision: int | None = Field(default=None, ge=1)
     idempotency_key: str = Field(min_length=1, max_length=200)
 
 
@@ -180,7 +190,12 @@ class EpisodeProductionPrepareResponse(StrictModel):
 class EpisodeOperationImpactRequest(StrictModel):
     operation: Literal["CONTINUE_UNFINISHED", "RETRY_ORIGINAL", "NEW_TAKE", "RECOMPOSE_ONLY"]
     target_shot_ids: list[str] = Field(default_factory=list, max_length=100)
-    target_take_count: int = Field(default=1, ge=1, le=4)
+    target_take_count: int | None = Field(default=None, ge=1, le=4)
+    tts_enabled: bool = True
+    production_mode: Literal["DRAFT", "BALANCED", "QUALITY"] = "BALANCED"
+    checkpoint_policy: Literal[
+        "AUTO_CONTINUE", "AFTER_ASSETS", "AFTER_SHOT_PLAN", "BEFORE_VIDEO", "ON_EXCEPTION"
+    ] = "ON_EXCEPTION"
 
 
 class EpisodeOperationImpactResponse(StrictModel):

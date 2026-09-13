@@ -35792,6 +35792,17 @@
             "type": "boolean",
             "title": "Is Stale"
           },
+          "stale_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale Reason"
+          },
           "selected": {
             "type": "boolean",
             "title": "Selected"
@@ -36057,6 +36068,17 @@
           "is_stale": {
             "type": "boolean",
             "title": "Is Stale"
+          },
+          "stale_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale Reason"
           },
           "created_at": {
             "type": "string",
@@ -37970,11 +37992,44 @@
             "title": "Target Shot Ids"
           },
           "target_take_count": {
-            "type": "integer",
-            "maximum": 4.0,
-            "minimum": 1.0,
-            "title": "Target Take Count",
-            "default": 1
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 4.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Take Count"
+          },
+          "tts_enabled": {
+            "type": "boolean",
+            "title": "Tts Enabled",
+            "default": true
+          },
+          "production_mode": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "BALANCED",
+              "QUALITY"
+            ],
+            "title": "Production Mode",
+            "default": "BALANCED"
+          },
+          "checkpoint_policy": {
+            "type": "string",
+            "enum": [
+              "AUTO_CONTINUE",
+              "AFTER_ASSETS",
+              "AFTER_SHOT_PLAN",
+              "BEFORE_VIDEO",
+              "ON_EXCEPTION"
+            ],
+            "title": "Checkpoint Policy",
+            "default": "ON_EXCEPTION"
           }
         },
         "additionalProperties": false,
@@ -39145,6 +39200,64 @@
             "minimum": 1.0,
             "title": "Min Free Disk Bytes",
             "default": 5368709120
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "CONTINUE_UNFINISHED",
+                  "RETRY_ORIGINAL",
+                  "NEW_TAKE",
+                  "RECOMPOSE_ONLY"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation"
+          },
+          "target_shot_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Target Shot Ids"
+          },
+          "target_take_count": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Target Take Count",
+            "default": 1
+          },
+          "expected_plan_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 64,
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Plan Hash"
+          },
+          "expected_episode_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Episode Revision"
           },
           "idempotency_key": {
             "type": "string",

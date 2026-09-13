@@ -1097,7 +1097,11 @@ class SqliteShotStudioReadRepository:
             []
             if run is None
             else [
-                {**dict(row), "details": _json(row["details_json"], {})}
+                {
+                    "item_id": str(row["item_id"]),
+                    "result": str(row["result"]),
+                    "details": _json(row["details_json"], {}),
+                }
                 for row in connection.execute(
                     "SELECT item_id,result,details_json FROM machine_check_results WHERE run_id=? ORDER BY item_id", (run["id"],)
                 ).fetchall()

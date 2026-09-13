@@ -14,6 +14,11 @@ class EpisodeProductionStarterPort(Protocol):
         checkpoint_policy: str = "ON_EXCEPTION",
         min_free_disk_bytes: int = 5 * 1024 * 1024 * 1024,
         front_half_only: bool = False,
+        operation: str | None = None,
+        target_shot_ids: tuple[str, ...] | list[str] = (),
+        target_take_count: int = 1,
+        expected_plan_hash: str | None = None,
+        expected_episode_revision: int | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]: ...
 

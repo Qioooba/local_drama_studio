@@ -173,13 +173,26 @@ async def preview_operation_impact(
     request: Request,
 ) -> EpisodeOperationImpactResponse:
     try:
+        run_service = EpisodeProductionRunService(
+            request.app.state.database, request.app.state.settings
+        )
+        resolved_take_count = payload.target_take_count
+        if resolved_take_count is None:
+            resolved_take_count = run_service.operation_target_take_count(
+                episode_id,
+                operation=payload.operation,
+                production_mode=payload.production_mode,
+            )
         impact = EpisodeWorkerActionService(
             request.app.state.database, request.app.state.settings
         ).operation_impact(
             episode_id,
             operation=payload.operation,
             target_shot_ids=tuple(payload.target_shot_ids),
-            target_take_count=payload.target_take_count,
+            target_take_count=resolved_take_count,
+            tts_enabled=payload.tts_enabled,
+            production_mode=payload.production_mode,
+            checkpoint_policy=payload.checkpoint_policy,
         )
         return EpisodeOperationImpactResponse.model_validate({"impact": impact})
     except DomainRuleError as error:

@@ -8,6 +8,7 @@ tasks plus existing production facts.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import shutil
 import threading
@@ -35,6 +36,7 @@ from .automation_workflows import AutomationWorkflowService
 from .capacity import CapacitySnapshotService
 from .diagnostics import _probe_loopback
 from .episode_front_half_actions import EpisodeFrontHalfActionService
+from .episode_worker_actions import EpisodeWorkerActionService
 from .jobs import JobService
 from .keyframe_references import approved_keyframes_for_shots
 from .production_spec_resolution import effective_video_profile
@@ -205,6 +207,17 @@ class EpisodeProductionRunService:
                 if row is not None:
                     profiles.append(dict(row))
         return self._resolved_mode_policies(profiles)
+
+    def operation_target_take_count(
+        self, episode_id: str, *, operation: str, production_mode: str
+    ) -> int:
+        """Resolve the candidate promise for one normalized creator operation."""
+
+        normalized_operation = str(operation or "").strip().upper()
+        if normalized_operation in {"RETRY_ORIGINAL", "NEW_TAKE", "RECOMPOSE_ONLY"}:
+            return 1
+        mode, _policy = self._mode_policy(production_mode)
+        return int(self.available_mode_policies(episode_id)[mode]["target_take_count"])
 
     @staticmethod
     def _checkpoint_policy(checkpoint_policy: str) -> str:
@@ -925,6 +938,196 @@ class EpisodeProductionRunService:
             human_gate="ON_CONDITION", repeat_batch=False, actor=actor,
         )
 
+    def _workflow_for_operation(
+        self,
+        episode: dict[str, Any],
+        impact: dict[str, Any],
+        *,
+        actor: str,
+    ) -> dict[str, Any]:
+        episode_id = str(episode["id"])
+        operation = str(impact["operation"])
+        plan_hash = str(impact["plan_hash"])
+        code = f"EPISODE_OP_V1_{episode_id.replace('-', '')[:12]}_{operation[:8]}_{plan_hash[:12]}"
+        workflows = self.automation.list_workflows(
+            str(episode["project_id"]), include_archived=True
+        )["items"]
+        prior = next((item for item in workflows if item["code"] == code), None)
+        if prior:
+            return cast(dict[str, Any], prior)
+
+        sets = impact["sets"]
+        if operation == "RECOMPOSE_ONLY":
+            compose = list(sets.get("compose_only") or [])
+            if not compose:
+                raise DomainRuleError(
+                    "EPISODE_OPERATION_BLOCKED",
+                    "当前没有可重新合成的时间线，请按影响预览处理依赖",
+                    {"operation": operation, "blockers": sets.get("blocked_by_dependency", [])},
+                )
+            action = "RENDER"
+            payload = {
+                "action": action,
+                "episode_id": episode_id,
+                "operation": operation,
+                "operation_plan_hash": plan_hash,
+                "timeline_revision_id": str(compose[0]["timeline_revision_id"]),
+                "force_rerender": True,
+            }
+        else:
+            executable = (
+                list(sets.get("retry_original") or [])
+                if operation == "RETRY_ORIGINAL"
+                else [
+                    *list(sets.get("retry_original") or []),
+                    *list(sets.get("needs_generation") or []),
+                ]
+            )
+            target_shot_ids = list(
+                dict.fromkeys(str(item["shot_id"]) for item in executable if item.get("shot_id"))
+            )
+            if not target_shot_ids:
+                raise DomainRuleError(
+                    "EPISODE_OPERATION_NOTHING_TO_DO",
+                    "当前影响预览中没有可提交的镜头任务",
+                    {"operation": operation, "blockers": sets.get("blocked_by_dependency", [])},
+                )
+            action = "VIDEO_GENERATION"
+            payload = {
+                "action": action,
+                "episode_id": episode_id,
+                "operation": operation,
+                "operation_plan_hash": plan_hash,
+                "mode_policy": {
+                    "target_take_count": int(impact["target_take_count"]),
+                    "auto_select_videos": False,
+                },
+                "target_shot_ids": target_shot_ids,
+                "force_new_take": operation == "NEW_TAKE",
+                "retry_original_only": operation == "RETRY_ORIGINAL",
+                "expected_profile_version_ids": dict(
+                    impact.get("expected_profile_version_ids") or {}
+                ),
+                "expected_input_fingerprints": {
+                    shot_id: fingerprint
+                    for shot_id, fingerprint in dict(
+                        impact.get("expected_input_fingerprints") or {}
+                    ).items()
+                    if shot_id in target_shot_ids
+                },
+            }
+
+        item = {"key": f"{episode['code']}:{operation}:{action}", "payload": payload}
+        return self.automation.create_workflow(
+            str(episode["project_id"]),
+            code=code,
+            title=f"{episode['code']} {operation}",
+            mode="BATCH_AUTOMATED",
+            nodes=[{
+                "id": "episode-operation",
+                "type": "EPISODE_PRODUCTION_TASK",
+                "metadata": {
+                    "episode_id": episode_id,
+                    "operation": operation,
+                    "operation_plan_hash": plan_hash,
+                },
+            }],
+            batch_items=[item],
+            conditions=[{
+                "field": "machine_check.status",
+                "operator": "IN",
+                "value": ["FAIL", "FAILED", "BLOCKED", "NEEDS_HITL"],
+                "action": "PAUSE_HITL",
+            }],
+            max_iterations=2,
+            max_tasks=2,
+            max_disk_bytes=2 * 1024 * 1024 * 1024,
+            human_gate="ON_CONDITION",
+            repeat_batch=False,
+            actor=actor,
+        )
+
+    def _start_operation_once(
+        self,
+        episode_id: str,
+        *,
+        operation: str,
+        target_shot_ids: tuple[str, ...],
+        target_take_count: int,
+        expected_plan_hash: str | None,
+        expected_episode_revision: int | None,
+        tts_enabled: bool,
+        production_mode: str,
+        checkpoint_policy: str,
+        idempotency_key: str,
+        actor: str,
+    ) -> dict[str, Any]:
+        if not expected_plan_hash:
+            raise DomainRuleError(
+                "EPISODE_OPERATION_PLAN_REQUIRED",
+                "执行本集操作前必须先完成影响预览",
+            )
+        if expected_episode_revision is None:
+            raise DomainRuleError(
+                "EPISODE_OPERATION_REVISION_REQUIRED",
+                "执行本集操作前必须提交预览时的本集版本",
+            )
+        episode = self._episode(episode_id)
+        with self.database.connect() as connection:
+            revision_row = connection.execute(
+                "SELECT revision FROM episodes WHERE id=?", (episode_id,)
+            ).fetchone()
+        actual_revision = int(revision_row["revision"]) if revision_row is not None else 0
+        if actual_revision != expected_episode_revision:
+            raise DomainRuleError(
+                "EPISODE_OPERATION_PLAN_STALE",
+                "本集版本已变化，请重新预览操作影响后再提交",
+                {
+                    "expected_episode_revision": expected_episode_revision,
+                    "actual_episode_revision": actual_revision,
+                },
+            )
+        resolved_take_count = self.operation_target_take_count(
+            episode_id, operation=operation, production_mode=production_mode
+        )
+        if target_take_count != resolved_take_count:
+            raise DomainRuleError(
+                "EPISODE_OPERATION_PLAN_STALE",
+                "当前 Profile 解析出的候选数已变化，请重新预览",
+                {
+                    "expected_target_take_count": target_take_count,
+                    "actual_target_take_count": resolved_take_count,
+                },
+            )
+        impact = EpisodeWorkerActionService(
+            self.database, self.settings
+        ).operation_impact(
+            episode_id,
+            operation=operation,
+            target_shot_ids=target_shot_ids,
+            target_take_count=resolved_take_count,
+            tts_enabled=tts_enabled,
+            production_mode=production_mode,
+            checkpoint_policy=checkpoint_policy,
+        )
+        if not hmac.compare_digest(str(impact["plan_hash"]), expected_plan_hash):
+            raise DomainRuleError(
+                "EPISODE_OPERATION_PLAN_STALE",
+                "镜头或依赖已变化，请重新预览操作影响后再提交",
+                {
+                    "expected_plan_hash": expected_plan_hash,
+                    "actual_plan_hash": str(impact["plan_hash"]),
+                },
+            )
+        workflow = self._workflow_for_operation(episode, impact, actor=actor)
+        run = self.automation.start_run(
+            str(workflow["id"]),
+            plan_hash=str(workflow["plan_hash"]),
+            idempotency_key=idempotency_key,
+            actor=actor,
+        )
+        return self._view(run, include_jobs=True)
+
     def start(
         self,
         episode_id: str,
@@ -935,12 +1138,21 @@ class EpisodeProductionRunService:
         checkpoint_policy: str = "ON_EXCEPTION",
         min_free_disk_bytes: int = 5 * 1024 * 1024 * 1024,
         front_half_only: bool = False,
+        operation: str | None = None,
+        target_shot_ids: tuple[str, ...] | list[str] = (),
+        target_take_count: int = 1,
+        expected_plan_hash: str | None = None,
+        expected_episode_revision: int | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         key = idempotency_key.strip()
         if not key or len(key) > 200:
             raise DomainRuleError("IDEMPOTENCY_KEY_REQUIRED", "整集启动必须提供有效 Idempotency-Key")
         scope = f"episode-production-start:{episode_id}"
+        normalized_shot_ids = tuple(
+            dict.fromkeys(str(item).strip() for item in target_shot_ids if str(item).strip())
+        )
+        normalized_operation = str(operation or "").strip().upper() or None
         payload_hash = hashlib.sha256(_canonical({
             "episode_id": episode_id,
             "tts_enabled": tts_enabled,
@@ -948,6 +1160,11 @@ class EpisodeProductionRunService:
             "checkpoint_policy": checkpoint_policy,
             "min_free_disk_bytes": min_free_disk_bytes,
             "front_half_only": front_half_only,
+            "operation": normalized_operation,
+            "target_shot_ids": normalized_shot_ids,
+            "target_take_count": target_take_count,
+            "expected_plan_hash": expected_plan_hash,
+            "expected_episode_revision": expected_episode_revision,
         }).encode("utf-8")).hexdigest()
         with _start_lock(scope):
             with self.database.connect() as connection:
@@ -965,16 +1182,36 @@ class EpisodeProductionRunService:
                 replay = self._view(self.automation.get_run(str(stored["run_id"])), include_jobs=True)
                 replay["idempotent_replay"] = True
                 return replay
-            result = self._start_once(
-                episode_id,
-                idempotency_key=key,
-                tts_enabled=tts_enabled,
-                production_mode=production_mode,
-                checkpoint_policy=checkpoint_policy,
-                min_free_disk_bytes=min_free_disk_bytes,
-                front_half_only=front_half_only,
-                actor=actor,
-            )
+            if normalized_operation is not None:
+                if front_half_only:
+                    raise DomainRuleError(
+                        "EPISODE_OPERATION_SCOPE_INVALID",
+                        "局部操作不能与前半链路只读启动同时使用",
+                    )
+                result = self._start_operation_once(
+                    episode_id,
+                    operation=normalized_operation,
+                    target_shot_ids=normalized_shot_ids,
+                    target_take_count=target_take_count,
+                    expected_plan_hash=expected_plan_hash,
+                    expected_episode_revision=expected_episode_revision,
+                    tts_enabled=tts_enabled,
+                    production_mode=production_mode,
+                    checkpoint_policy=checkpoint_policy,
+                    idempotency_key=key,
+                    actor=actor,
+                )
+            else:
+                result = self._start_once(
+                    episode_id,
+                    idempotency_key=key,
+                    tts_enabled=tts_enabled,
+                    production_mode=production_mode,
+                    checkpoint_policy=checkpoint_policy,
+                    min_free_disk_bytes=min_free_disk_bytes,
+                    front_half_only=front_half_only,
+                    actor=actor,
+                )
             with self.database.transaction() as connection:
                 connection.execute(
                     "INSERT INTO command_idempotencies (scope,idempotency_key,payload_hash,response_json) VALUES (?,?,?,?)",

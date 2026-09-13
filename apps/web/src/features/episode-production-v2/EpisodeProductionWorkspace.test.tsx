@@ -55,7 +55,8 @@ describe("EpisodeProductionWorkspace", () => {
     api.prepare.mockResolvedValue({ preparation: { status: "QUEUED", episode_id: "e1", shot_count: 0, job_id: "job-1" } });
     api.previewOperation.mockResolvedValue({ impact: {
       schema_version: "episode-operation-impact/v1", episode_id: "e1", project_id: "p1",
-      operation: "CONTINUE_UNFINISHED", target_shot_ids: ["shot-1"], target_take_count: 1,
+      episode_revision: 7, operation: "CONTINUE_UNFINISHED", target_shot_ids: ["shot-1"], target_take_count: 1,
+      tts_enabled: true, production_mode: "BALANCED", checkpoint_policy: "ON_EXCEPTION",
       sets: { reused: [], waiting_in_flight: [], retry_original: [], needs_generation: [{ shot_id: "shot-1" }], blocked_by_dependency: [], requires_manual_confirmation: [], compose_only: [] },
       gpu_video_job_count: 1, mutated: false, runtime_contacted: false, network_contacted: false,
       plan_hash: "a".repeat(64),
@@ -75,7 +76,7 @@ describe("EpisodeProductionWorkspace", () => {
     expect(screen.getByText("林默")).toBeTruthy();
     expect(screen.getByText("方案与设定")).toBeTruthy();
     expect(screen.getByRole("region", { name: "本集待确认项" })).toBeTruthy();
-    expect(screen.getByText("一次确认本集 1 个分镜")).toBeTruthy();
+    expect(screen.getByText("一次确认当前本集全部 1 个分镜")).toBeTruthy();
     const readyButton = screen.getByRole("button", { name: "确认本集分镜并就绪" });
     expect(readyButton.hasAttribute("disabled")).toBe(true);
     fireEvent.click(screen.getByRole("checkbox", { name: /我已审核当前本集分镜方案/ }));
@@ -93,22 +94,63 @@ describe("EpisodeProductionWorkspace", () => {
     });
   });
 
-  it("previews four explicit operations without treating the preview as execution", async () => {
+  it("previews explicit operations and executes only the frozen preview scope", async () => {
     api.overview.mockResolvedValue(overview({ attention_count: 0, state_counts: { READY: 1 } }));
     mount();
 
     fireEvent.click(await screen.findByRole("button", { name: "预览影响" }));
     await waitFor(() => expect(api.previewOperation).toHaveBeenCalledWith("e1", {
-      operation: "CONTINUE_UNFINISHED", target_take_count: 1,
+      operation: "CONTINUE_UNFINISHED", production_mode: "BALANCED", tts_enabled: true, checkpoint_policy: "ON_EXCEPTION",
     }));
     expect(await screen.findByText("预计新增 GPU 视频任务 1；提交前若镜头 revision 或依赖变化，必须重新预览。")).toBeTruthy();
     expect(api.start).not.toHaveBeenCalled();
 
+    fireEvent.click(screen.getByRole("button", { name: "执行继续未完成" }));
+    await waitFor(() => expect(api.start).toHaveBeenCalledWith("e1", {
+      production_mode: "BALANCED",
+      tts_enabled: true,
+      checkpoint_policy: "ON_EXCEPTION",
+      operation: "CONTINUE_UNFINISHED",
+      target_shot_ids: ["shot-1"],
+      target_take_count: 1,
+      expected_plan_hash: "a".repeat(64),
+      expected_episode_revision: 7,
+      idempotency_key: expect.any(String),
+    }));
+
     fireEvent.change(screen.getByRole("combobox", { name: "本集操作" }), { target: { value: "RECOMPOSE_ONLY" } });
     fireEvent.click(screen.getByRole("button", { name: "预览影响" }));
     await waitFor(() => expect(api.previewOperation).toHaveBeenLastCalledWith("e1", {
-      operation: "RECOMPOSE_ONLY", target_take_count: 1,
+      operation: "RECOMPOSE_ONLY", production_mode: "BALANCED", tts_enabled: true, checkpoint_policy: "ON_EXCEPTION",
     }));
+  });
+
+  it("loads attention details by bounded cursor and reports the authoritative range", async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      ...blockedShot, shot_id: `attention-${index + 1}`, shot_code: `S${String(index + 1).padStart(3, "0")}`,
+    }));
+    const secondPage = Array.from({ length: 37 }, (_, index) => ({
+      ...blockedShot, shot_id: `attention-${index + 101}`, shot_code: `S${index + 101}`,
+    }));
+    api.overview.mockResolvedValue(overview({ shot_count: 137, attention_count: 137 }));
+    api.shots.mockImplementation((_episodeId, options) => {
+      if (!options?.states) return Promise.resolve({ items: firstPage, cursor: 0, limit: 100, total: 137, next_cursor: 100, filters: [], read_only: true, request_shape: "bounded_episode_production_shots_v2" });
+      return Promise.resolve({
+        items: options.cursor === 100 ? secondPage : firstPage,
+        cursor: options.cursor ?? 0, limit: 100, total: 137,
+        next_cursor: options.cursor === 100 ? null : 100,
+        filters: options.states, read_only: true, request_shape: "bounded_episode_production_shots_v2",
+      });
+    });
+
+    mount();
+    expect(await screen.findByText("共 137 项，已加载 100 项。整集确认按服务端冻结的当前本集版本执行，不以已加载页面代替全量范围。")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "加载更多待处理项" }));
+    await waitFor(() => expect(api.shots).toHaveBeenCalledWith("e1", {
+      cursor: 100, limit: 100, states: ["BLOCKED", "FAILED", "NEEDS_REVIEW", "STALE"],
+    }));
+    expect(await screen.findByText("共 137 项，已加载 137 项。整集确认按服务端冻结的当前本集版本执行，不以已加载页面代替全量范围。")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "加载更多待处理项" })).toBeNull();
   });
 
   it("renders full-episode stage counts from overview instead of the first 100 details", async () => {

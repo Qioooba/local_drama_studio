@@ -1,11 +1,10 @@
 import { useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { routes } from "../../app/routeRegistry";
 import { Dialog } from "../../components/ui";
 import {
-  ApiRequestError, applyEpisodeProductionReplanV2, getEpisodeProductionOverviewV2,
-  getEpisodeProductionReplanV2, listEpisodeProductionShotsV2,
+  ApiRequestError, applyEpisodeProductionReplanV2,
   markEpisodeProductionShotsReadyV2,
   prepareEpisodeProductionV2, requestEpisodeProductionReplanV2,
   previewEpisodeProductionOperationV2,
@@ -15,9 +14,9 @@ import {
   type EpisodeOperationImpact, type EpisodeProductionOperation,
   type EpisodeProductionStage, type ProductionState,
 } from "../../generated/api";
-import { useProjectEventInvalidation } from "../events/useProjectEventInvalidation";
 import { AssetProposalReviewPanel } from "../episode-plan-v2/AssetProposalReviewPanel";
 import { syncEpisodeCharacterPacks } from "../asset-bible-v2/identityPackClient";
+import { useEpisodeProductionQueries } from "./useEpisodeProductionQueries";
 import "./episode-production.css";
 
 type RunAction = "pause" | "resume" | "cancel" | "recover";
@@ -221,7 +220,6 @@ function AttentionCard({ group, projectId, episodeId }: { group: AttentionGroup;
 }
 
 export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId: string; episodeId: string }) {
-  const queryClient = useQueryClient();
   const retryKeys = useRef(new Map<string, string>());
   const [mode, setMode] = useState<EpisodeProductionMode>("BALANCED");
   const [pauseBeforeMedia, setPauseBeforeMedia] = useState(false);
@@ -232,33 +230,12 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
   const [feedback, setFeedback] = useState<string | null>(null);
   const [operation, setOperation] = useState<EpisodeProductionOperation>("CONTINUE_UNFINISHED");
   const [operationImpact, setOperationImpact] = useState<EpisodeOperationImpact | null>(null);
-  const overviewKey = ["episode-production-v2", episodeId, "overview"] as const;
-  const shotsKey = ["episode-production-v2", episodeId, "shots", "all"] as const;
-  const replanKey = ["episode-production-v2", episodeId, "replan"] as const;
-  const overview = useQuery({
-    queryKey: overviewKey,
-    queryFn: () => getEpisodeProductionOverviewV2(episodeId),
-    refetchInterval: (query) => (query.state.data?.overview.active_job_count ?? 0) > 0 ? 3000 : false,
-  });
-  const shots = useQuery({ queryKey: shotsKey, queryFn: () => listEpisodeProductionShotsV2(episodeId, { cursor: 0, limit: 100 }) });
-  const attentionShots = useQuery({
-    queryKey: ["episode-production-v2", episodeId, "shots", "attention"],
-    queryFn: () => listEpisodeProductionShotsV2(episodeId, {
-      cursor: 0,
-      limit: 100,
-      states: ["BLOCKED", "FAILED", "NEEDS_REVIEW", "STALE"],
-    }),
-  });
-  const replan = useQuery({
-    queryKey: replanKey,
-    queryFn: () => getEpisodeProductionReplanV2(episodeId),
-    enabled: Boolean(overview.data?.overview.replan_required),
-    refetchInterval: (query) => {
-      const result = query.state.data?.replan;
-      return result?.status === "NOT_READY" && result.job ? 3000 : false;
-    },
-  });
-  useProjectEventInvalidation(projectId, ["EpisodeProductionRunChanged", "JOB_QUEUED", "JOB_FINISHED", "SHOT_REVISION_CREATED", "AudioWorkingCandidateChanged", "FrameBridgeChanged"], [overviewKey, shotsKey, replanKey]);
+  const { overview, shots, attentionShots, replan, refresh } = useEpisodeProductionQueries(projectId, episodeId);
+
+  const selectedModePolicy = overview.data?.overview.available_mode_policies?.[mode];
+  const effectiveTakeCount = Number(selectedModePolicy?.target_take_count ?? ({ DRAFT: 1, BALANCED: 2, QUALITY: 4 }[mode]));
+  const requestedTakeCount = Number(selectedModePolicy?.requested_target_take_count ?? effectiveTakeCount);
+  const operationCheckpoint = pauseBeforeMedia ? "BEFORE_VIDEO" as const : "ON_EXCEPTION" as const;
 
   const keyFor = (identity: string) => {
     const existing = retryKeys.current.get(identity);
@@ -267,11 +244,6 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
     retryKeys.current.set(identity, created);
     return created;
   };
-  const refresh = async () => Promise.all([
-    queryClient.invalidateQueries({ queryKey: ["episode-production-v2", episodeId, "overview"] }),
-    queryClient.invalidateQueries({ queryKey: ["episode-production-v2", episodeId, "shots"] }),
-    queryClient.invalidateQueries({ queryKey: ["episode-production-v2", episodeId, "replan"] }),
-  ]);
   const start = useMutation({
     mutationFn: () => {
       const checkpoint = pauseBeforeMedia ? "BEFORE_VIDEO" : "AUTO_CONTINUE";
@@ -312,9 +284,35 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
   const previewOperation = useMutation({
     mutationFn: () => previewEpisodeProductionOperationV2(episodeId, {
       operation,
-      target_take_count: 1,
+      production_mode: mode,
+      tts_enabled: tts,
+      checkpoint_policy: operationCheckpoint,
     }),
     onSuccess: ({ impact }) => setOperationImpact(impact),
+  });
+  const executeOperation = useMutation({
+    mutationFn: () => {
+      if (!operationImpact) throw new Error("请先预览本次操作影响。");
+      const identity = `operation:${episodeId}:${operationImpact.plan_hash}`;
+      const payload: EpisodeProductionRunStartCommand = {
+        production_mode: mode,
+        tts_enabled: tts,
+        checkpoint_policy: operationCheckpoint,
+        operation,
+        target_shot_ids: operationImpact.target_shot_ids,
+        target_take_count: operationImpact.target_take_count,
+        expected_plan_hash: operationImpact.plan_hash,
+        expected_episode_revision: operationImpact.episode_revision,
+        idempotency_key: keyFor(identity),
+      };
+      return startEpisodeProductionRunV2(episodeId, payload).then((result) => ({ result, identity }));
+    },
+    onSuccess: async ({ identity }) => {
+      retryKeys.current.delete(identity);
+      setFeedback("已按刚才预览的范围提交操作；输入变化时服务端会拒绝旧计划。");
+      setOperationImpact(null);
+      await refresh();
+    },
   });
   const requestReplan = useMutation({
     mutationFn: () => {
@@ -379,15 +377,21 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
   });
 
   const allShots = shots.data?.items ?? [];
-  const attentionItems = (attentionShots.data?.items ?? []).filter((item) => ATTENTION.has(item.overall_state));
+  const attentionItems = useMemo(() => {
+    const byId = new Map<string, EpisodeProductionShot>();
+    for (const page of attentionShots.data?.pages ?? []) {
+      for (const item of page.items) {
+        if (ATTENTION.has(item.overall_state)) byId.set(item.shot_id, item);
+      }
+    }
+    return [...byId.values()];
+  }, [attentionShots.data?.pages]);
+  const attentionTotal = attentionShots.data?.pages[0]?.total ?? 0;
   const attentionGroups = useMemo(() => groupAttention(attentionItems), [attentionItems]);
   if (overview.isPending || shots.isPending || attentionShots.isPending) return <section className="episode-agent-loading" role="status">正在整理本集方案与生产进度…</section>;
   if (overview.error || shots.error || attentionShots.error) return <section className="episode-agent-error" role="alert"><strong>暂时无法读取本集</strong><span>{String(overview.error ?? shots.error ?? attentionShots.error)}</span><button type="button" onClick={() => { void overview.refetch(); void shots.refetch(); void attentionShots.refetch(); }}>重试</button></section>;
 
   const summary = overview.data.overview;
-  const selectedModePolicy = summary.available_mode_policies?.[mode];
-  const effectiveTakeCount = Number(selectedModePolicy?.target_take_count ?? ({ DRAFT: 1, BALANCED: 2, QUALITY: 4 }[mode]));
-  const requestedTakeCount = Number(selectedModePolicy?.requested_target_take_count ?? effectiveTakeCount);
   const planningJob = summary.shot_count === 0 ? summary.planning_job : null;
   const planningFailure = planningJob && ["FAILED", "DEAD", "ORPHANED", "NEEDS_ATTENTION", "CANCELLED"].includes(planningJob.state) ? planningJob : null;
   const planningRunning = planningJob && ["QUEUED", "CLAIMED", "RUNNING", "CANCEL_REQUESTED"].includes(planningJob.state);
@@ -409,7 +413,21 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
   });
   const run = summary.active_run;
   const complete = summary.shot_count > 0 && summary.state_counts.READY === summary.shot_count;
-  const mutationError = syncIdentityPacks.error ?? prepare.error ?? requestReplan.error ?? applyReplan.error ?? markShotsReady.error ?? start.error ?? transition.error;
+  const mutationError = syncIdentityPacks.error ?? prepare.error ?? requestReplan.error ?? applyReplan.error ?? markShotsReady.error ?? executeOperation.error ?? start.error ?? transition.error;
+  const operationExecutableCount = operationImpact
+    ? operation === "RECOMPOSE_ONLY"
+      ? operationImpact.sets.compose_only?.length ?? 0
+      : operation === "RETRY_ORIGINAL"
+        ? operationImpact.sets.retry_original?.length ?? 0
+        : (operationImpact.sets.retry_original?.length ?? 0) + (operationImpact.sets.needs_generation?.length ?? 0)
+    : 0;
+  const operationButtonLabel = operation === "RECOMPOSE_ONLY"
+    ? "执行仅重新合成"
+    : operation === "RETRY_ORIGINAL"
+      ? "执行原输入重试"
+      : operation === "NEW_TAKE"
+        ? "执行新拍候选"
+        : "执行继续未完成";
   const showAssetIdentityReview = needsAssetIdentityReview(mutationError);
   const showIdentityPackSync = needsEpisodeIdentityPackSync(start.error);
   const shotIntentGroup = attentionGroups.find((group) => group.blocker?.code === "SHOT_INTENT_INCOMPLETE");
@@ -460,7 +478,7 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
         : canRegenerateKeyframes
           ? <button className="primary-action" type="button" disabled={start.isPending} onClick={() => start.mutate()}>{start.isPending ? "正在检查…" : "重新生成本集关键帧"}</button>
         : blockingAttentionGroups.length
-          ? <button className="primary-action" type="button" onClick={() => document.getElementById("episode-agent-attention")?.scrollIntoView({ behavior: "smooth", block: "start" })}>处理 {blockingAttentionGroups.length} 类待确认</button>
+          ? <button className="primary-action" type="button" onClick={() => document.getElementById("episode-agent-attention")?.scrollIntoView({ behavior: "smooth", block: "start" })}>处理待确认项</button>
           : complete
             ? <Link className="primary-action v2-inline-link" to={routes.postEdit(projectId, episodeId)}>预览本集</Link>
             : <button className="primary-action" type="button" disabled={start.isPending} onClick={() => start.mutate()}>{start.isPending ? "正在检查…" : "开始本集"}</button>;
@@ -494,7 +512,7 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
 
     {summary.shot_count > 0 && <section className="episode-agent-operation-impact" aria-label="操作与影响预览">
       <div className="episode-agent-section-heading"><div><h3>选择这次要做什么</h3><p>预览只读；修改镜头语义请先保存新修订，再重新预览。</p></div></div>
-      <label><span>操作</span><select aria-label="本集操作" value={operation} onChange={(event) => { setOperation(event.target.value as EpisodeProductionOperation); setOperationImpact(null); }}>
+      <label><span>操作</span><select aria-label="本集操作" value={operation} onChange={(event) => { setOperation(event.target.value as EpisodeProductionOperation); setOperationImpact(null); executeOperation.reset(); }}>
         <option value="CONTINUE_UNFINISHED">继续未完成</option>
         <option value="RETRY_ORIGINAL">按原输入重试失败任务</option>
         <option value="NEW_TAKE">新拍一个候选</option>
@@ -503,6 +521,7 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
       <button type="button" className="secondary" disabled={previewOperation.isPending} onClick={() => previewOperation.mutate()}>{previewOperation.isPending ? "正在核对…" : "预览影响"}</button>
       {operationImpact && <div className="episode-agent-operation-summary" role="status">
         <strong>计划 {operationImpact.plan_hash.slice(0, 8)}</strong>
+        {operation !== "RECOMPOSE_ONLY" && <span>每镜目标 {operationImpact.target_take_count}</span>}
         <span>复用 {operationImpact.sets.reused?.length ?? 0}</span>
         <span>等待在途 {operationImpact.sets.waiting_in_flight?.length ?? 0}</span>
         <span>原输入重试 {operationImpact.sets.retry_original?.length ?? 0}</span>
@@ -512,6 +531,12 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
         <span>仅重合成 {operationImpact.sets.compose_only?.length ?? 0}</span>
         <small>预计新增 GPU 视频任务 {operationImpact.gpu_video_job_count}；提交前若镜头 revision 或依赖变化，必须重新预览。</small>
       </div>}
+      {operationImpact && <button
+        type="button"
+        className="primary-action"
+        disabled={operationExecutableCount === 0 || executeOperation.isPending}
+        onClick={() => executeOperation.mutate()}
+      >{executeOperation.isPending ? "正在提交…" : operationButtonLabel}</button>}
       {previewOperation.isError && <p className="pipeline-alert error">{errorText(previewOperation.error)}</p>}
     </section>}
 
@@ -539,7 +564,7 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
     <section className="episode-agent-run" aria-label="Agent 运行">
       <div><span className={`episode-agent-run-state is-${run?.status.toLowerCase() ?? "idle"}`}>{run?.status === "RUNNING" ? "自动制作中" : run?.status === "PAUSED_HITL" ? "等待确认" : complete ? "本集已完成" : "尚未开始新的制作"}</span><p>{run ? `运行 ${run.id.slice(0, 8)} · 仅在异常或所选关键节点暂停` : "开始后按当前方案与项目设置推进，角色、场景和历史素材仍保留。"}</p></div>
       {run?.status === "RUNNING" && <button type="button" className="secondary" disabled={transition.isPending} onClick={() => transition.mutate({ action: "pause", revision: run.revision })}>暂停</button>}
-      {!run && !complete && <details className="episode-agent-options"><summary>本集生成设置</summary><div><label><span>质量</span><select aria-label="本集质量" value={mode} onChange={(event) => setMode(event.target.value as EpisodeProductionMode)}><option value="DRAFT">预览</option><option value="BALANCED">标准</option><option value="QUALITY">精品</option></select><small>每镜生效 {effectiveTakeCount} 个视频候选{requestedTakeCount > effectiveTakeCount ? `（Profile 请求 ${requestedTakeCount} 个，按产品上限 4 个执行）` : ""}；候选数不代表 GPU 并发数。</small></label><label><input type="checkbox" checked={tts} onChange={(event) => setTts(event.target.checked)} />生成对白与字幕</label><label><input type="checkbox" checked={pauseBeforeMedia} onChange={(event) => setPauseBeforeMedia(event.target.checked)} />批量生成视频前暂停确认</label><Link to={routes.settings(projectId)}>画幅、分辨率和模型使用项目设置</Link></div></details>}
+      {!run && !complete && <details className="episode-agent-options"><summary>本集生成设置</summary><div><label><span>质量</span><select aria-label="本集质量" value={mode} onChange={(event) => { setMode(event.target.value as EpisodeProductionMode); setOperationImpact(null); executeOperation.reset(); }}><option value="DRAFT">预览</option><option value="BALANCED">标准</option><option value="QUALITY">精品</option></select><small>每镜生效 {effectiveTakeCount} 个视频候选{requestedTakeCount > effectiveTakeCount ? `（Profile 请求 ${requestedTakeCount} 个，按产品上限 4 个执行）` : ""}；候选数不代表 GPU 并发数。</small></label><label><input type="checkbox" checked={tts} onChange={(event) => { setTts(event.target.checked); setOperationImpact(null); executeOperation.reset(); }} />生成对白与字幕</label><label><input type="checkbox" checked={pauseBeforeMedia} onChange={(event) => { setPauseBeforeMedia(event.target.checked); setOperationImpact(null); executeOperation.reset(); }} />批量生成视频前暂停确认</label><Link to={routes.settings(projectId)}>画幅、分辨率和模型使用项目设置</Link></div></details>}
     </section>
     {run?.status === "PAUSED_HITL" && gate && <section className={`episode-agent-run-gate${gate.isMachine ? " is-machine" : ""}`} aria-label="本次暂停原因">
       <div className="episode-agent-run-gate-copy">
@@ -564,7 +589,7 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
     </article>}
 
     <section className="episode-agent-attention" id="episode-agent-attention" aria-label="本集待确认项">
-      <div className="episode-agent-section-heading"><div><h3>{planningFailure ? "方案生成未完成" : blockingAttentionGroups.length ? "需要你确认" : recoverableAttentionGroups.length ? "开始后自动更新" : "当前状态"}</h3><p>{planningFailure ? "请处理本次任务的失败原因，再重新生成本集方案。" : blockingAttentionGroups.length ? "同一根因会合并处理，不要求逐镜重复确认。" : recoverableAttentionGroups.length ? "旧工作版本保留用于审计；开始本集后按当前方案和项目配置重新生成。" : "本集没有需要人工处理的事项。"}</p></div><span>{attentionGroups.length + (planningFailure ? 1 : 0)}</span></div>
+      <div className="episode-agent-section-heading"><div><h3>{planningFailure ? "方案生成未完成" : blockingAttentionGroups.length ? "需要你确认" : recoverableAttentionGroups.length ? "开始后自动更新" : "当前状态"}</h3><p>{planningFailure ? "请处理本次任务的失败原因，再重新生成本集方案。" : blockingAttentionGroups.length ? "同一根因会合并展示；明细总数以服务端分页结果为准。" : recoverableAttentionGroups.length ? "旧工作版本保留用于审计；开始本集后按当前方案和项目配置重新生成。" : "本集没有需要人工处理的事项。"}</p></div><span>{attentionTotal + (planningFailure ? 1 : 0)}</span></div>
       {planningFailure && <article className="episode-agent-error" role="alert">
         <strong>{planningFailure.state === "CANCELLED" ? "本集方案任务已取消" : "本集方案生成失败"}</strong>
         <span>{planningFailure.error_message || "本次任务未完成，尚未生成可用分镜。请查看任务详情。"}</span>
@@ -573,14 +598,16 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
         <Link className="secondary v2-inline-link" to={routes.settings(projectId)}>检查项目生成设置</Link>
       </article>}
       {shotIntentGroup && <article className="episode-agent-ready-confirm">
-        <div><strong>一次确认本集 {shotIntentGroup.items.length} 个分镜</strong><p>系统会使用当前项目自己的已发布视频 Profile 逐镜校验运镜；任一镜失败则整批回滚，不会跨项目借用配置。</p></div>
+        <div><strong>一次确认当前本集全部 {summary.shot_count} 个分镜</strong><p>提交范围冻结为本集 revision {summary.episode_revision ?? "—"}；服务端会使用当前项目自己的已发布视频 Profile 逐镜校验，任一镜失败则整批回滚。</p></div>
         <label><input type="checkbox" checked={confirmShotsReady} onChange={(event) => setConfirmShotsReady(event.target.checked)} />我已审核当前本集分镜方案，确认全部进入生产</label>
         <button className="primary-action" type="button" disabled={!confirmShotsReady || markShotsReady.isPending} onClick={() => markShotsReady.mutate()}>{markShotsReady.isPending ? "整集校验中…" : "确认本集分镜并就绪"}</button>
       </article>}
+      {attentionTotal > 0 && <p className="episode-agent-pagination-status">共 {attentionTotal} 项，已加载 {attentionItems.length} 项。整集确认按服务端冻结的当前本集版本执行，不以已加载页面代替全量范围。</p>}
       {attentionGroups.length ? <div className="episode-agent-attention-list">{attentionGroups.filter((group) => group !== shotIntentGroup).map((group) => <AttentionCard key={group.key} group={group} projectId={projectId} episodeId={episodeId} />)}</div> : !planningFailure && <div className="episode-agent-clear"><strong>当前没有需要处理的事项</strong><span>{run ? "Agent 会继续推进，并在新的确认点出现时更新这里。" : "准备完成后可以开始本集制作。"}</span></div>}
+      {attentionShots.hasNextPage && <button className="secondary" type="button" disabled={attentionShots.isFetchingNextPage} onClick={() => void attentionShots.fetchNextPage()}>{attentionShots.isFetchingNextPage ? "加载中…" : "加载更多待处理项"}</button>}
     </section>
 
-    <footer className="episode-agent-footer"><Link to={routes.shotStudio(projectId, episodeId)}>打开镜头修正</Link><Link to={routes.storyWorkspace(projectId)}>查看故事与原文</Link><Link to={routes.settings(projectId)}>项目生成设置</Link><button type="button" className="quiet-action" disabled={overview.isFetching || shots.isFetching} onClick={() => { void overview.refetch(); void shots.refetch(); }}>{overview.isFetching || shots.isFetching ? "刷新中…" : "刷新状态"}</button></footer>
+    <footer className="episode-agent-footer"><Link to={routes.shotStudio(projectId, episodeId)}>打开镜头修正</Link><Link to={routes.storyWorkspace(projectId)}>查看故事与原文</Link><Link to={routes.settings(projectId)}>项目生成设置</Link><button type="button" className="quiet-action" disabled={overview.isFetching || shots.isFetching || attentionShots.isFetching} onClick={() => { void refresh(); }}>{overview.isFetching || shots.isFetching || attentionShots.isFetching ? "刷新中…" : "刷新状态"}</button></footer>
     <Dialog
       open={cancelRunConfirmOpen}
       title="取消本次制作？"

@@ -100,8 +100,20 @@ def _approve_keyframe(database, project_id: str, shot_id: str) -> str:
     return version_id
 
 
-def _action_workflow(service: AutomationWorkflowService, project_id: str, action: str, episode_id: str, code: str, *, extra_actions: tuple[str, ...] = ("KEYFRAME_CHECK",)) -> dict:
-    batch_items = [{"key": f"ep:{action}", "payload": {"action": action, "episode_id": episode_id}}]
+def _action_workflow(
+    service: AutomationWorkflowService,
+    project_id: str,
+    action: str,
+    episode_id: str,
+    code: str,
+    *,
+    extra_actions: tuple[str, ...] = ("KEYFRAME_CHECK",),
+    payload_overrides: dict | None = None,
+) -> dict:
+    batch_items = [{
+        "key": f"ep:{action}",
+        "payload": {"action": action, "episode_id": episode_id, **(payload_overrides or {})},
+    }]
     for index, extra in enumerate(extra_actions, start=1):
         batch_items.append({"key": f"ep:{action}:{index}", "payload": {"action": extra, "episode_id": episode_id}})
     task_cap = len(batch_items) + 1
@@ -430,6 +442,41 @@ def test_automation_worker_render_reports_timeline_without_video(workspace, data
     report = _read_report(workspace, outcome)
     assert report["status"] == "FAIL"
     assert report["machine_check"]["code"] == "TIMELINE_VIDEO_REQUIRED"
+
+
+def test_automation_worker_render_rejects_a_superseded_frozen_timeline(workspace, database) -> None:
+    project = _project(workspace, database, code="auto_render_frozen")
+    episode = _episodes(database, workspace, project)[0]
+    timeline_service = TimelineService(database, workspace)
+    frozen = timeline_service.create_timeline_revision(
+        str(episode["id"]),
+        items=[{"start_us": 0, "end_us": 1_000_000, "track_type": "AUDIO"}],
+        input_snapshot={"schema_version": "localdrama.test.v1"},
+        status="DRAFT",
+        actor="test",
+    )
+    timeline_service.create_timeline_revision(
+        str(episode["id"]),
+        items=[{"start_us": 0, "end_us": 2_000_000, "track_type": "AUDIO"}],
+        input_snapshot={"schema_version": "localdrama.test.v2"},
+        status="DRAFT",
+        actor="test",
+    )
+    service = AutomationWorkflowService(database)
+    workflow = _action_workflow(
+        service,
+        str(project["id"]),
+        "RENDER",
+        str(episode["id"]),
+        "render-frozen-stale",
+        extra_actions=(),
+        payload_overrides={"timeline_revision_id": str(frozen["id"]), "force_rerender": True},
+    )
+    _start_and_first_step(service, str(workflow["id"]))
+    outcome = LocalMediaWorker(database, workspace).run_once("worker-render-frozen")
+    report = _read_report(workspace, outcome)
+    assert report["status"] == "FAIL"
+    assert report["machine_check"]["code"] == "RENDER_TIMELINE_CHANGED"
 
 
 # ---------------------------------------------------------------------------
