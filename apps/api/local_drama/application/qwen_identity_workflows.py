@@ -3,6 +3,14 @@
 from typing import Any
 
 
+def build_qwen_text_workflow(values: dict[str, Any]) -> dict[str, Any]:
+    """Qwen Image text-to-image graph without reference-image conditioning."""
+    graph = build_qwen_identity_workflow(values, 0)
+    graph["5"] = {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": values["prompt"]}}
+    graph["6"] = {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": values["negative_prompt"]}}
+    return graph
+
+
 def build_qwen_identity_workflow(values: dict[str, Any], reference_count: int) -> dict[str, Any]:
     images = {f"image{i}": [str(10 + i), 0] for i in range(1, reference_count + 1)}
     graph = {

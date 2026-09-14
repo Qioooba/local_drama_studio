@@ -201,7 +201,7 @@ export function ModelsPage() {
         <div><p className="eyebrow">专家工具</p><h3>执行契约与工作流版本</h3></div>
         <p>仅供接入新运行时、维护执行合同或发布工作流的技术人员。编辑不可变输入、参数、输出与资源约束。</p>
       </div>
-      {profiles.isPending ? <Skeleton label="正在读取执行配置契约" lines={5} /> : profiles.error ? <ErrorState description={`执行配置契约读取失败：${String(profiles.error)}`} onRetry={() => void profiles.refetch()} /> : <ProfileConfigurationPanel mode="profile-contracts" profiles={profiles.data?.items ?? []} workflows={workflows.data?.items ?? []} projectId={legacyEvidenceProjectId} onChanged={() => void profiles.refetch()} onDirtyChange={setExpertDirty} onPublished={locatePublishedProfile} />}
+      {profiles.isPending ? <Skeleton label="正在读取执行配置契约" lines={5} /> : profiles.error ? <ErrorState description={`执行配置契约读取失败：${String(profiles.error)}`} onRetry={() => void profiles.refetch()} /> : <ProfileConfigurationPanel mode="profile-contracts" profiles={profiles.data?.items ?? []} workflows={workflows.data?.items ?? []} projectId={legacyEvidenceProjectId || contextProjectId || undefined} onChanged={() => void profiles.refetch()} onDirtyChange={setExpertDirty} onPublished={locatePublishedProfile} />}
     </Dialog>
   </div>;
 }

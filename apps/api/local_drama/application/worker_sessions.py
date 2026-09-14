@@ -459,6 +459,16 @@ class WorkerSupervisor:
                 self.sessions.heartbeat(session_id)
                 try:
                     requested_channels = channels or ["CPU"]
+                    now_monotonic = time.monotonic()
+                    if now_monotonic - last_episode_watchdog_at >= 30.0:
+                        # A peer can exit after this supervisor's startup.
+                        # Mark its expired attempts before provider recovery;
+                        # otherwise completed Comfy outputs remain RUNNING.
+                        self.sessions.reconcile()
+                        last_episode_watchdog = episode_runs.watchdog()
+                        if "GPU_H3" in requested_channels:
+                            last_provider_reconcile = comfy_worker.recover_uncertain_successes()
+                        last_episode_watchdog_at = now_monotonic
                     result = None
                     cpu_channels = [item for item in requested_channels if item != "GPU_H3"]
                     # A verified media version is not usable in the creator UI
@@ -491,7 +501,7 @@ class WorkerSupervisor:
                                 worker_id,
                                 ["GPU_H3"],
                                 worker_session_id=session_id,
-                                job_types=["MODEL_PLATFORM_EXECUTION"],
+                                job_types=["MODEL_PLATFORM_EXECUTION", "MODEL_PLATFORM_COMFY_SMOKE"],
                             )
                 except Exception as error:
                     restarts += 1
@@ -513,12 +523,6 @@ class WorkerSupervisor:
                 if result is None:
                     if idle_poll_seconds is None:
                         break
-                    now_monotonic = time.monotonic()
-                    if now_monotonic - last_episode_watchdog_at >= 30.0:
-                        last_episode_watchdog = episode_runs.watchdog()
-                        if "GPU_H3" in requested_channels:
-                            last_provider_reconcile = comfy_worker.recover_uncertain_successes()
-                        last_episode_watchdog_at = now_monotonic
                     self._sleep(max(0.05, float(idle_poll_seconds)))
                     continue
                 processed += 1

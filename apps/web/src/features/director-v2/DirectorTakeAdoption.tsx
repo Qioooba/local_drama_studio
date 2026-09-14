@@ -175,6 +175,9 @@ export function DirectorTakeAdoption({
       const decisionLabel = candidateDecisionLabel(candidate, currentCandidateId);
       const frameIssue = frameCandidateIssue(candidate);
       const takeLabel = candidate.frame_role === "END_FRAME" ? "尾帧" : candidate.frame_role === "FIRST_FRAME" ? "首帧" : `Take ${candidate.take_no ?? index + 1}`;
+      const stageLabel = candidate.stage === "PROXY" && candidate.media_kind === "VIDEO"
+        ? "视频候选" : candidate.stage === "KEYFRAME" ? "关键画面"
+          : candidate.stage === "FORMAL" ? "正式版本" : candidate.stage ?? "未分阶段";
       return <figure
         key={candidate.media_version_id}
         className={`director-take${candidate.selected || candidate.approved ? " has-decision" : ""}${activeCandidateId === candidate.media_version_id ? " active" : ""}`}
@@ -188,9 +191,9 @@ export function DirectorTakeAdoption({
         }}
         onDragEnd={() => { setDraggedId(null); setDropActive(false); }}
       >
-        <button type="button" className="director-take-select" aria-pressed={activeCandidateId === candidate.media_version_id} aria-label={`查看 ${takeLabel} · ${candidate.stage ?? "未分阶段"}，${decisionLabel}`} onClick={() => onActivate(candidate.media_version_id)}>
+        <button type="button" className="director-take-select" aria-pressed={activeCandidateId === candidate.media_version_id} aria-label={`查看 ${takeLabel} · ${stageLabel}，${decisionLabel}`} onClick={() => onActivate(candidate.media_version_id)}>
           <MediaThumbnail src={thumbnailUrl(candidate.media_version_id)} alt="" fallbackLabel="候选缩略图待生成" loading="lazy" decoding="async" />
-          <span className="director-take-caption"><span><span>{takeLabel}</span><small> · {candidate.stage ?? "未分阶段"}</small></span><strong>{decisionLabel}</strong></span>
+          <span className="director-take-caption"><span><span>{takeLabel}</span><small> · {stageLabel}</small></span><strong>{decisionLabel}</strong></span>
         </button>
         <div className="director-take-actions">
           <button type="button" disabled={Boolean(reason)} aria-describedby={`adopt-reason-${candidate.media_version_id}`} title={reason ?? "打开采用确认"} onClick={() => requestAdoption(candidate)}>{current ? "当前采用" : candidate.selected ? "已设采用" : "采用"}</button>

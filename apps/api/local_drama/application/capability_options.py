@@ -137,7 +137,10 @@ class CapabilityOptionService:
                 "selectable_count": sum(bool(item["selectable"]) for item in options),
                 "blocked_count": sum(not bool(item["selectable"]) for item in options),
             },
-            "repair_href": "/system/capabilities?view=resources",
+            "repair_href": (
+                f"/projects/{project_id}/models?view=profile-contracts&capability={canonical}"
+                if project_id else "/system/capabilities?view=resources"
+            ),
             "read_only": True,
             "runtime_contacted": False,
             "network_contacted": False,

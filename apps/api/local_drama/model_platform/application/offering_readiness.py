@@ -61,7 +61,10 @@ def reconcile_offering_readiness(
         row for row in installation_rows
         if supports_installed_smoke(runtime_kind, str(row["code"]))
     ]
-    installation_ready = bool(supported_installation_rows) and all(
+    # Comfy offerings have independent frozen workflows and smoke evidence.
+    # An untested sibling must not prevent publishing a proven capability.
+    aggregate = any if runtime_kind.strip().upper() == "COMFYUI" else all
+    installation_ready = bool(supported_installation_rows) and aggregate(
         str(row["validation_status"]) == "SMOKE_PASSED" for row in supported_installation_rows
     )
     if installation_ready:
@@ -87,7 +90,7 @@ def reconcile_offering_readiness(
         row for row in runtime_rows
         if supports_installed_smoke(runtime_kind, str(row["code"]))
     ]
-    runtime_active = bool(supported_runtime_rows) and all(
+    runtime_active = bool(supported_runtime_rows) and aggregate(
         str(row["validation_status"]) == "SMOKE_PASSED" for row in supported_runtime_rows
     )
     if runtime_active:

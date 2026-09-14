@@ -205,15 +205,17 @@ function groupAttention(items: EpisodeProductionShot[]): AttentionGroup[] {
 function AttentionCard({ group, projectId, episodeId }: { group: AttentionGroup; projectId: string; episodeId: string }) {
   const { blocker, fallback, items } = group;
   const sample = items.slice(0, 3).map((item) => item.shot_code).join("、");
+  const needsTimelineUpdate = !blocker && fallback?.reason_code === "TIMELINE_MISSING_CURRENT_VIDEO";
   const target = blocker?.owner_route === "SHOT_STUDIO"
     ? routes.shotStudio(projectId, episodeId)
-    : blocker ? blockerRoute(blocker, projectId, episodeId, items[0].shot_id) : routes.shotStudio(projectId, episodeId);
+    : blocker ? blockerRoute(blocker, projectId, episodeId, items[0].shot_id)
+      : needsTimelineUpdate ? routes.postEdit(projectId, episodeId) : routes.shotStudio(projectId, episodeId);
   const autoRegenerated = Boolean(blocker && AUTO_REGENERATED_BLOCKERS.has(blocker.code));
   return <article className={`episode-agent-attention-card${autoRegenerated ? " is-recoverable" : ""}`}>
     <div>
       <span>{items.length} 镜 · {sample}{items.length > 3 ? " 等" : ""}</span>
-      <strong>{blocker ? BLOCKER_LABELS[blocker.code] ?? "这个镜头需要确认" : "这个镜头需要确认"}</strong>
-      <p>{blocker?.message ?? (fallback ? `${STATE_LABELS[fallback.state]}，Agent 已暂停自动推进。` : "请检查后继续。")}</p>
+      <strong>{blocker ? BLOCKER_LABELS[blocker.code] ?? "这个镜头需要确认" : needsTimelineUpdate ? "工作视频等待合成质检" : "这个镜头需要确认"}</strong>
+      <p>{blocker?.message ?? (needsTimelineUpdate ? "当前工作视频尚未完成时间线与质检同步。自动制作状态请以上方运行状态为准。" : fallback ? `${STATE_LABELS[fallback.state]}，请查看这一项的处理要求。` : "请检查后继续。")}</p>
     </div>
     {autoRegenerated ? <span className="episode-agent-recovery-label">随本集重生成</span> : <Link to={target}>{items.length > 1 ? "批量处理" : "处理这一项"}</Link>}
   </article>;

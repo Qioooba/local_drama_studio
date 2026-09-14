@@ -28,6 +28,7 @@ from local_drama.api.schemas.g7_model import (
     ModelCompatibilityRequest,
     ModelLicenseEvidenceRequest,
     ModelRegistryScanRequest,
+    ModelLibraryRootRequest,
 )
 from local_drama.api.server_paths import require_configured_model_file, require_server_loopback
 from local_drama.application.errors import api_error_from_domain
@@ -37,6 +38,7 @@ from local_drama.application.g8_readiness import G8ReadinessService
 from local_drama.application.g9_readiness import G9ReadinessService
 from local_drama.application.i2v_probe import I2VProbePlanService
 from local_drama.application.model_compatibility import ModelCompatibilityService
+from local_drama.application.model_library_configuration import add_model_library
 from local_drama.application.network_e2e import NetworkE2EService
 from local_drama.application.t2i_probe import T2IProbePlanService
 from local_drama.application.workspace_assets import WorkspaceAssetService
@@ -78,7 +80,7 @@ async def list_model_library_roots(request: Request) -> dict[str, object]:
 
 
 @router.post("/model-registry:scan", operation_id="scanLocalModelRegistry")
-async def scan_local_model_registry(payload: ModelRegistryScanRequest, request: Request) -> dict[str, object]:
+def scan_local_model_registry(payload: ModelRegistryScanRequest, request: Request) -> dict[str, object]:
     try:
         requested = Path(payload.root_path).expanduser().resolve()
         configured = tuple(root.resolve() for root in request.app.state.settings.model_library_roots)
@@ -87,9 +89,21 @@ async def scan_local_model_registry(payload: ModelRegistryScanRequest, request: 
         if request.app.state.settings.is_lan_service and not configured:
             raise DomainRuleError("MODEL_LIBRARY_ROOTS_NOT_CONFIGURED", "服务器尚未配置可供远程选择的模型库",
                                   suggested_action="设置 LOCAL_DRAMA_MODEL_LIBRARY_ROOTS 后重启服务")
-        return {"scan": ModelCompatibilityService.scan_local_directory(str(requested), payload.max_files)}
+        return {"scan": ModelCompatibilityService.scan_local_directory(str(requested), payload.max_files, include_hash=False)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
+
+
+@router.post("/model-registry/roots", operation_id="addModelLibraryRoot")
+def add_model_library_root(payload: ModelLibraryRootRequest, request: Request) -> dict[str, object]:
+    try:
+        require_server_loopback(request, action="配置本机模型目录")
+        root = add_model_library(request.app.state.settings, payload.root_path)
+        return {"path": str(root), "saved": True, "copied": False}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except (OSError, ValueError) as error:
+        raise api_error_from_domain(DomainRuleError("MODEL_LIBRARY_SAVE_FAILED", "模型目录保存失败，请检查本机配置文件及写入权限。")) from error
 
 
 @router.get("/projects/{project_id}/gates/g6", operation_id="getG6Readiness")

@@ -121,7 +121,7 @@ class ModelCompatibilityService:
         self.database = database
 
     @staticmethod
-    def scan_local_directory(root_path: str, max_files: int = 200) -> dict[str, Any]:
+    def scan_local_directory(root_path: str, max_files: int = 200, *, include_hash: bool = True) -> dict[str, Any]:
         """Scan user-selected local model files without copying or registering them.
 
         The scan is deliberately a pure read operation.  Symlinked roots/files,
@@ -145,12 +145,16 @@ class ModelCompatibilityService:
         files = files[:max_files]
         items: list[dict[str, Any]] = []
         for path in files:
-            digest = hashlib.sha256()
-            byte_size = 0
-            with path.open("rb") as source:
-                while chunk := source.read(4 * 1024 * 1024):
-                    digest.update(chunk)
-                    byte_size += len(chunk)
+            byte_size = path.stat().st_size
+            sha256 = ""
+            # File selection only needs metadata. Hash the selected model in
+            # the compatibility report, not every multi-GB file in its folder.
+            if include_hash:
+                digest = hashlib.sha256()
+                with path.open("rb") as source:
+                    while chunk := source.read(4 * 1024 * 1024):
+                        digest.update(chunk)
+                sha256 = digest.hexdigest()
             lowered = path.name.casefold()
             quantization = next((token.upper() for token in ("fp32", "fp16", "bf16", "int8", "int4", "nvfp4", "awq") if token in lowered), "UNKNOWN")
             items.append(
@@ -159,7 +163,7 @@ class ModelCompatibilityService:
                     "relative_path": path.relative_to(resolved_root).as_posix(),
                     "extension": path.suffix.casefold(),
                     "byte_size": byte_size,
-                    "sha256": digest.hexdigest(),
+                    "sha256": sha256,
                     "quantization_hint": quantization,
                     "distribution_scope": "REFERENCE_ONLY_NOT_BUNDLED",
                     "copied": False,

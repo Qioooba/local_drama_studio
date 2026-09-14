@@ -412,7 +412,7 @@ function RegisteredCandidateList({ items, onSmoke, smokingKey, onVerifyIntegrity
             const matchingWorkflows = workflowOptions.filter((workflow) => workflow.status === "PUBLISHED" && String(workflow.contract.capability ?? "").toUpperCase() === capability.code);
             const selectedBinding = workflowBindings.find((binding) => binding.workflow_version_id === workflowSelections[key]);
             const canBindWorkflow = candidate.runtime_kind === "COMFYUI" && candidate.integrity_status === "PASSED" && capability.workflow_schema_validated_count === 0;
-            const canManageComfySmoke = candidate.runtime_kind === "COMFYUI" && candidate.integrity_status === "PASSED" && capability.workflow_schema_validated_count > 0 && capability.offering_validation_status !== "SMOKE_PASSED";
+            const canManageComfySmoke = candidate.runtime_kind === "COMFYUI" && candidate.integrity_status === "PASSED" && capability.workflow_schema_validated_count > 0 && (capability.offering_validation_status !== "SMOKE_PASSED" || candidate.install_state !== "READY");
             const offeringReadyForProfile = candidate.install_state === "READY" && capability.offering_validation_status === "SMOKE_PASSED" && capability.published_profile_count === 0;
             const canProvision = canSmokeCapability(candidate, capability.code) && offeringReadyForProfile;
             const canProvisionComfy = candidate.runtime_kind === "COMFYUI" && candidate.integrity_status === "PASSED" && offeringReadyForProfile;

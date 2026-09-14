@@ -1520,6 +1520,10 @@ export async function scanLocalModelRegistry(rootPath: string, maxFiles = 200, b
   return requestJson('/api/v1/model-registry:scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ root_path: rootPath, max_files: maxFiles }) }, baseUrl);
 }
 
+export async function addModelLibraryRoot(rootPath: string, baseUrl = ''): Promise<{ path: string; saved: boolean; copied: false }> {
+  return requestJson('/api/v1/model-registry/roots', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ root_path: rootPath }) }, baseUrl);
+}
+
 export async function pickLocalModelFile(baseUrl = '', signal?: AbortSignal): Promise<{ selection: { selected: boolean; path: string | null; uploaded: false; copied: false } }> {
   return requestJson('/api/v1/system/dialogs:model-file', { method: 'POST', signal }, baseUrl);
 }

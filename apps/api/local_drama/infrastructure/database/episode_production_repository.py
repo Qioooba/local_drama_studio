@@ -542,6 +542,9 @@ class SqliteEpisodeProductionReadRepository:
         A shot may have many immutable historical variants.  Freshness belongs to
         the current working line, so this query starts from the shot-scoped slot
         and walks backwards to its owning variant and frozen inputs.
+        Profile preferences use canonical capabilities from the frozen Profile;
+        intent purposes such as T2I/I2V_FORMAL are transport operations, not
+        capability keys and cannot identify the current Profile.
         """
         if not shot_ids:
             return []
@@ -614,24 +617,24 @@ class SqliteEpisodeProductionReadRepository:
             LEFT JOIN execution_profile_versions source_profile ON source_profile.id=gv.capability_profile_version_id
             LEFT JOIN generation_preference_sets shot_pref ON shot_pref.project_id=gi.project_id
               AND shot_pref.owner_type='SHOT' AND shot_pref.owner_id=ws.shot_id
-              AND UPPER(shot_pref.capability)=UPPER(gi.purpose) AND shot_pref.status='ACTIVE'
+              AND UPPER(shot_pref.capability)=UPPER(source_profile.capability) AND shot_pref.status='ACTIVE'
             LEFT JOIN generation_preference_versions shot_pref_version ON shot_pref_version.id=shot_pref.current_version_id
             LEFT JOIN execution_profile_versions shot_profile ON shot_profile.id=shot_pref_version.execution_profile_version_id
             LEFT JOIN shots shot ON shot.id=ws.shot_id
             LEFT JOIN generation_preference_sets episode_pref ON episode_pref.project_id=gi.project_id
               AND episode_pref.owner_type='EPISODE' AND episode_pref.owner_id=shot.episode_id
-              AND UPPER(episode_pref.capability)=UPPER(gi.purpose) AND episode_pref.status='ACTIVE'
+              AND UPPER(episode_pref.capability)=UPPER(source_profile.capability) AND episode_pref.status='ACTIVE'
             LEFT JOIN generation_preference_versions episode_pref_version ON episode_pref_version.id=episode_pref.current_version_id
             LEFT JOIN execution_profile_versions episode_profile ON episode_profile.id=episode_pref_version.execution_profile_version_id
             LEFT JOIN generation_preference_sets project_pref ON project_pref.project_id=gi.project_id
               AND project_pref.owner_type='PROJECT' AND project_pref.owner_id=gi.project_id
-              AND UPPER(project_pref.capability)=UPPER(gi.purpose) AND project_pref.status='ACTIVE'
+              AND UPPER(project_pref.capability)=UPPER(source_profile.capability) AND project_pref.status='ACTIVE'
             LEFT JOIN generation_preference_versions project_pref_version ON project_pref_version.id=project_pref.current_version_id
             LEFT JOIN execution_profile_versions project_profile ON project_profile.id=project_pref_version.execution_profile_version_id
             LEFT JOIN execution_profile_versions auto_profile ON auto_profile.id=(
               SELECT candidate.id FROM execution_profile_versions candidate
               JOIN execution_profiles candidate_profile ON candidate_profile.id=candidate.execution_profile_id
-              WHERE candidate.status='PUBLISHED' AND UPPER(candidate.capability)=UPPER(gi.purpose)
+              WHERE candidate.status='PUBLISHED' AND UPPER(candidate.capability)=UPPER(source_profile.capability)
               ORDER BY candidate.updated_at DESC,candidate_profile.code,candidate.version_no DESC LIMIT 1)
             LEFT JOIN variant_input_bindings input ON input.variant_id=gv.id
             LEFT JOIN story_asset_references sr ON sr.media_version_id=input.media_version_id

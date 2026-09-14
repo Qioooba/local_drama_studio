@@ -51,3 +51,8 @@ class ModelRegistryScanRequest(BaseModel):
 
     root_path: str = Field(min_length=3, max_length=2048)
     max_files: int = Field(default=200, ge=1, le=2000)
+
+
+class ModelLibraryRootRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    root_path: str = Field(min_length=3, max_length=2048)

@@ -1518,73 +1518,85 @@ class LocalLLMService:
         actor: str = "local-user",
         probe_job_id: str | None = None,
     ) -> dict[str, Any]:
-        with self.database.transaction() as connection:
+        with self.database.connect() as connection:
             row = connection.execute(
                 """SELECT version.id, version.capability, version.capability_json, version.model_bundle_json,
-                          version.version_no, profile.code AS profile_code
+                          version.version_no, version.revision, profile.code AS profile_code
                    FROM execution_profile_versions AS version
                    JOIN execution_profiles AS profile ON profile.id=version.execution_profile_id
                    WHERE version.id=?""",
                 (profile_version_id,),
             ).fetchone()
-            if row is None:
-                raise DomainRuleError("PROFILE_NOT_FOUND", "Profile 版本不存在")
-            try:
-                profile_capability = normalize_capability(str(row["capability"]))
-            except ValueError as error:
-                raise DomainRuleError(
-                    "PROFILE_CAPABILITY_INVALID",
-                    "Profile capability 不是可识别的 canonical capability",
-                    {"profile_version_id": profile_version_id},
-                ) from error
-            if profile_capability not in {"LLM_STORY_PARSE", "QC_VISUAL", "QC_FACE", "QC_IDENTITY"}:
-                raise DomainRuleError("PROFILE_CAPABILITY_MISMATCH", "Profile 不是本地 LLM 能力")
-            capability = json.loads(row["capability_json"] or "{}")
-            bundle = json.loads(row["model_bundle_json"] or "{}")
-            provider_connection_id = str(bundle.get("provider_connection_id") or capability.get("provider_connection_id") or "").strip() or None
-            if provider_connection_id:
-                from local_drama.application.provider_connections import ProviderConnectionService
+        if row is None:
+            raise DomainRuleError("PROFILE_NOT_FOUND", "Profile 版本不存在")
+        try:
+            profile_capability = normalize_capability(str(row["capability"]))
+        except ValueError as error:
+            raise DomainRuleError(
+                "PROFILE_CAPABILITY_INVALID",
+                "Profile capability 不是可识别的 canonical capability",
+                {"profile_version_id": profile_version_id},
+            ) from error
+        if profile_capability not in {"LLM_STORY_PARSE", "QC_VISUAL", "QC_FACE", "QC_IDENTITY"}:
+            raise DomainRuleError("PROFILE_CAPABILITY_MISMATCH", "Profile 不是本地 LLM 能力")
+        capability = json.loads(row["capability_json"] or "{}")
+        bundle = json.loads(row["model_bundle_json"] or "{}")
+        provider_connection_id = str(bundle.get("provider_connection_id") or capability.get("provider_connection_id") or "").strip() or None
+        if provider_connection_id:
+            from local_drama.application.provider_connections import ProviderConnectionService
 
-                selected_connection = ProviderConnectionService(self.database, self.settings).resolve_for_execution(provider_connection_id)
-                provider = "OLLAMA_LOOPBACK" if str(selected_connection["protocol"]).upper() == "OLLAMA" else "OPENAI_COMPAT"
-                base_url = str(selected_connection["base_url"])
-                model = str(bundle.get("model") or selected_connection.get("model") or "")
-                resolved_key = selected_connection.get("secret")
-            else:
-                provider = str(capability.get("provider") or "OLLAMA_LOOPBACK")
-                base_url = str(capability.get("base_url") or self.settings.llm_base_url)
-                model = str(capability.get("model") or "")
-                resolved_key = self._resolve_api_key(capability, explicit_key=api_key)
+            selected_connection = ProviderConnectionService(self.database, self.settings).resolve_for_execution(provider_connection_id)
+            provider = "OLLAMA_LOOPBACK" if str(selected_connection["protocol"]).upper() == "OLLAMA" else "OPENAI_COMPAT"
+            base_url = str(selected_connection["base_url"])
+            model = str(bundle.get("model") or selected_connection.get("model") or "")
+            resolved_key = selected_connection.get("secret")
+        else:
+            provider = str(capability.get("provider") or "OLLAMA_LOOPBACK")
+            base_url = str(capability.get("base_url") or self.settings.llm_base_url)
+            model = str(capability.get("model") or "")
+            resolved_key = self._resolve_api_key(capability, explicit_key=api_key)
 
-            is_remote = endpoint_is_remote(base_url)
-            if provider == "OPENAI_COMPAT" and is_remote and not (allow_remote_outbound or capability.get("allow_remote_outbound")):
-                raise DomainRuleError("OUTBOUND_CONFIRMATION_REQUIRED", "数据将离开本机：发布远程 LLM Profile 需要显式确认出境安全许可")
+        is_remote = endpoint_is_remote(base_url)
+        if provider == "OPENAI_COMPAT" and is_remote and not (allow_remote_outbound or capability.get("allow_remote_outbound")):
+            raise DomainRuleError("OUTBOUND_CONFIRMATION_REQUIRED", "数据将离开本机：发布远程 LLM Profile 需要显式确认出境安全许可")
 
-            client = LocalLLMClient(
-                base_url,
-                model,
+        client = LocalLLMClient(
+            base_url,
+            model,
+            provider=provider,
+            api_key=resolved_key,
+            allow_private_network=self.settings.allows_private_network,
+        )
+        probe = (
+            self.verified_probe_evidence(
+                probe_job_id,
                 provider=provider,
-                api_key=resolved_key,
-                allow_private_network=self.settings.allows_private_network,
+                base_url=base_url,
+                model=model,
             )
-            probe = (
-                self.verified_probe_evidence(
-                    probe_job_id,
-                    provider=provider,
-                    base_url=base_url,
-                    model=model,
-                )
-                if probe_job_id
-                else client.probe(load_test=True)
-            )
-            if probe.get("status") != "PASS" or probe.get("probe_level_passed", 4) < 4:
-                raise DomainRuleError("LOCAL_LLM_VALIDATION_REQUIRED", "LLM 必须通过 4 级验证后才能发布", {"model": model, "probe": probe})
+            if probe_job_id
+            else client.probe(load_test=True)
+        )
+        if probe.get("status") != "PASS" or probe.get("probe_level_passed", 4) < 4:
+            raise DomainRuleError("LOCAL_LLM_VALIDATION_REQUIRED", "LLM 必须通过 4 级验证后才能发布", {"model": model, "probe": probe})
 
-            capability["readiness_probe"] = probe
-            capability["published"] = True
-            capability["has_api_key"] = bool(resolved_key)
-            capability["masked_api_key"] = _mask_key(resolved_key)
-            now = _now()
+        capability["readiness_probe"] = probe
+        capability["published"] = True
+        capability["has_api_key"] = bool(resolved_key)
+        capability["masked_api_key"] = _mask_key(resolved_key)
+        now = _now()
+        # The managed model gateway also writes GPU leases to this database.
+        # Never hold a write transaction while waiting for its inference.
+        with self.database.transaction() as connection:
+            current = connection.execute(
+                "SELECT revision FROM execution_profile_versions WHERE id=?",
+                (profile_version_id,),
+            ).fetchone()
+            if current is None or current["revision"] != row["revision"]:
+                raise DomainRuleError(
+                    "LOCAL_LLM_PROFILE_CONFIG_MISMATCH",
+                    "验证期间 Profile 已变化；请重新同步并发布",
+                )
             connection.execute(
                 "UPDATE execution_profile_versions SET status='PUBLISHED', capability_json=?, updated_at=?, revision=revision+1 WHERE id=?",
                 (_json(capability), now, profile_version_id),

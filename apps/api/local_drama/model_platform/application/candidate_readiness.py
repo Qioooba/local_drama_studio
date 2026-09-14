@@ -149,7 +149,7 @@ def _capability_readiness(
 ) -> CandidateCapabilityReadiness:
     status: str
     blockers: tuple[str, ...]
-    if published_profile_count and installation_ready:
+    if published_profile_count and installation_ready and offering_validation_status == "SMOKE_PASSED":
         status, blockers = "ASSIGNABLE", ()
     elif published_profile_count:
         status, blockers = "INSTALLATION_VERIFICATION_REQUIRED", ("INSTALLATION_NOT_READY",)

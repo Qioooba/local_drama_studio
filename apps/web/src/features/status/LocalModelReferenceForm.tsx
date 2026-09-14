@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   createGlobalModelCompatibilityReport,
+  addModelLibraryRoot,
   getClientCapabilities,
   listModelLibraryRoots,
   pickLocalModelFile,
@@ -90,6 +91,9 @@ export function LocalModelReferenceForm({ onRegistered }: { onRegistered: () => 
   const [scanItems, setScanItems] = useState<ModelRegistryScanItem[]>([]);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [libraryPath, setLibraryPath] = useState("");
+  const [savingLibrary, setSavingLibrary] = useState(false);
+  const [libraryMessage, setLibraryMessage] = useState<string | null>(null);
 
   const capabilities = useQuery({
     queryKey: ["client-capabilities"],
@@ -181,6 +185,24 @@ export function LocalModelReferenceForm({ onRegistered }: { onRegistered: () => 
 
   const roots = modelRoots.data?.items ?? [];
   const serverDialogs = capabilities.data?.capabilities.server_file_dialogs ?? false;
+  const canConfigureLibraries = capabilities.data?.capabilities.client_location === "SERVER_LOOPBACK";
+  const saveLibrary = async () => {
+    if (!libraryPath.trim() || savingLibrary) return;
+    setSavingLibrary(true);
+    setLibraryMessage(null);
+    try {
+      const saved = await addModelLibraryRoot(libraryPath.trim());
+      await modelRoots.refetch();
+      setScanDir(saved.path);
+      setScanItems([]);
+      setScanMessage(null);
+      setLibraryMessage("模型文件夹已保存。现在可以读取文件夹并选择模型，原文件不会移动。");
+    } catch (error) {
+      setLibraryMessage(`保存失败：${String(error)}`);
+    } finally {
+      setSavingLibrary(false);
+    }
+  };
 
   return <div className="model-license-import local-model-reference-form">
     <button
@@ -218,9 +240,17 @@ export function LocalModelReferenceForm({ onRegistered }: { onRegistered: () => 
         </div>}
 
         {modelRoots.error && <p className="inline-error" role="alert">模型文件夹读取失败：{String(modelRoots.error)}</p>}
+        {canConfigureLibraries && <details className="local-model-setup-guidance">
+          <summary>配置本机模型文件夹</summary>
+          <label htmlFor="model-library-path">模型文件夹完整路径</label>
+          <input id="model-library-path" type="text" value={libraryPath} disabled={savingLibrary} onChange={(event) => setLibraryPath(event.target.value)} placeholder="例如 E:\\AI\\Models" />
+          <small>填写运行本服务的电脑上的现有文件夹。保存后会加入可选目录，不删除已有目录，也不移动模型文件。</small>
+          <button type="button" className="secondary" disabled={savingLibrary || !libraryPath.trim()} onClick={() => void saveLibrary()}>{savingLibrary ? "正在保存…" : "保存模型文件夹"}</button>
+          {libraryMessage && <p role="status">{libraryMessage}</p>}
+        </details>}
         {!modelRoots.isPending && roots.length === 0 && !serverDialogs && <div className="local-model-setup-guidance">
           <strong>还没有可读取的模型文件夹</strong>
-          <span>在 Windows 服务配置的 <code>runtime.model_library_roots</code> 中添加模型目录并重启服务。</span>
+          <span>{canConfigureLibraries ? "展开“配置本机模型文件夹”，填写现有目录并保存。" : "请让管理员在运行服务的电脑上打开此页面，添加本机模型文件夹。"}</span>
         </div>}
         {!modelRoots.isPending && roots.length === 0 && serverDialogs && <p className="local-model-setup-hint">尚未设置常用模型文件夹，可以先选择单个模型文件。</p>}
         {scanMessage && <p className="local-model-scan-message" role="status">{scanMessage}</p>}

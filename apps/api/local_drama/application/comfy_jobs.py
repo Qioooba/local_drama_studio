@@ -100,7 +100,7 @@ class ComfyGenerationService:
             # but their immutable snapshot/handler contract is intentionally
             # owned by LocalMediaWorker.  Never let this legacy workflow
             # compiler claim one and reinterpret its input snapshot.
-            exclude_job_types=["MODEL_PLATFORM_EXECUTION"],
+            exclude_job_types=["MODEL_PLATFORM_EXECUTION", "MODEL_PLATFORM_COMFY_SMOKE"],
         )
         if claim is None:
             return None

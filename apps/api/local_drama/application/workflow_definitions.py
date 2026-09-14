@@ -16,7 +16,8 @@ from local_drama.domain.image_input_roles import COMFY_IMAGE_INPUT_ROLES, IDENTI
 from local_drama.infrastructure.comfy import ComfyClient
 
 from .h3_workflows import H3WorkflowFactory, production_tiers_payload
-from .qwen_identity_workflows import build_qwen_identity_workflow
+from .comfy_smoke_contract import parse_comfy_smoke_contract
+from .qwen_identity_workflows import build_qwen_identity_workflow, build_qwen_text_workflow
 
 WorkflowCompiler = Callable[[Settings, dict[str, Any]], dict[str, Any]]
 
@@ -266,6 +267,35 @@ for _reference_count in (1, 2, 3):
     WORKFLOW_DEFINITIONS[_definition.code] = _definition
 
 
+def _qwen_text_definition(capability: str, title: str) -> WorkflowDefinition:
+    base = _qwen_identity_definition(0)
+    fields = {
+        **base.fields,
+        "model": _field("string", "Qwen Image GGUF 模型文件", "Qwen-Image-2512/qwen-image-2512-Q5_K_M.gguf", runtime_input=("UnetLoaderGGUF", "unet_name")),
+        "prompt": _field("textarea", "验证占位提示词", "电影画面，雨后的旧街，暖色灯光，细腻光影", effect="SEMANTIC_DEFAULT"),
+    }
+    bindings = {
+        **base.semantic_bindings,
+        "PROMPT": {"node_id": "5", "input": "text"},
+        "NEGATIVE_PROMPT": {"node_id": "6", "input": "text"},
+        "OUTPUT_PREFIX": {"node_id": "10", "input": "filename_prefix"},
+    }
+    return WorkflowDefinition(
+        f"QWEN_{capability}", title, "使用 Qwen Image 从文字生成图片，无需先上传参考图；模型文件从本机运行时选择。",
+        capability, "IMAGE", fields, bindings, base.runtime_contract,
+        lambda _settings, values: build_qwen_text_workflow(values), revision=2,
+    )
+
+
+for _capability, _title in (
+    ("IMAGE_CONCEPT", "Qwen 文生关键帧"),
+    ("IMAGE_CHARACTER", "Qwen 人物设定图"),
+    ("IMAGE_SCENE", "Qwen 场景背景图"),
+):
+    _definition = _qwen_text_definition(_capability, _title)
+    WORKFLOW_DEFINITIONS[_definition.code] = _definition
+
+
 class WorkflowDefinitionService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -377,6 +407,23 @@ class WorkflowDefinitionService:
             "parameter_effects": parameter_effects,
             "authoring_parameters": values,
         }
+        if definition.code in {"QWEN_IMAGE_CONCEPT", "QWEN_IMAGE_CHARACTER", "QWEN_IMAGE_SCENE"}:
+            contract["smoke_contract"] = {
+                "schema_version": "localdramastudio.comfy-smoke-contract.v1",
+                "semantic_inputs": {
+                    "PROMPT": "A quiet street after rain, warm light, cinematic composition",
+                    "NEGATIVE_PROMPT": "blurry, watermark, text",
+                    "SEED": 260914,
+                    "WIDTH": 256,
+                    "HEIGHT": 256,
+                    "STEPS": 4,
+                    "CFG": 4.0,
+                    "OUTPUT_PREFIX": "local_drama/qwen_capability_smoke",
+                },
+                "timeout_seconds": 300,
+                "expected_output": {"media_kind": "IMAGE", "min_count": 1, "max_count": 1},
+            }
+            parse_comfy_smoke_contract(contract, definition.semantic_bindings)
         if definition.code.startswith("H3_"):
             contract["production_tier"] = values["tier"] if values["use_production_tier"] else None
             contract["sampling_mode"] = "PRODUCTION_TIER" if values["use_production_tier"] else "FREEFORM"

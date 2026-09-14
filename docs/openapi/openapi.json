@@ -6655,6 +6655,47 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "phase-gates"
+        ],
+        "summary": "Add Model Library Root",
+        "operationId": "addModelLibraryRoot",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelLibraryRootRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Addmodellibraryroot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/model-registry:scan": {
@@ -42634,6 +42675,22 @@
           "model_artifact_id"
         ],
         "title": "ModelCompatibilityRequest"
+      },
+      "ModelLibraryRootRequest": {
+        "properties": {
+          "root_path": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 3,
+            "title": "Root Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "root_path"
+        ],
+        "title": "ModelLibraryRootRequest"
       },
       "ModelLicenseEvidenceRequest": {
         "properties": {

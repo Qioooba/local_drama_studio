@@ -142,7 +142,7 @@ async def sync_profile(
 
 
 @router.post("/local-llm/profile:publish", operation_id="publishLocalLLMProfile")
-async def publish_profile(
+def publish_profile(
     request: Request,
     payload: LLMProfilePublishRequest = Body(...),  # noqa: B008 - FastAPI request body declaration
 ) -> dict[str, object]:
