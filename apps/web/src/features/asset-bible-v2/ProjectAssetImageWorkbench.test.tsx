@@ -2,12 +2,13 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectAssetImageWorkbench } from "./ProjectAssetImageWorkbench";
-import { listAssetImageBatches, planAssetImageBatch, submitAssetImageBatch } from "./assetImageBatchClient";
+import { findAssetImageBatchByCommandKey, listAssetImageBatches, planAssetImageBatch, submitAssetImageBatch } from "./assetImageBatchClient";
+import { ApiRequestError } from "../../generated/api";
 import type { AssetBibleItem } from "./api";
 
 vi.mock("./assetImageBatchClient", async () => {
   const actual = await vi.importActual<typeof import("./assetImageBatchClient")>("./assetImageBatchClient");
-  return { ...actual, listAssetImageBatches: vi.fn(), planAssetImageBatch: vi.fn(), submitAssetImageBatch: vi.fn() };
+  return { ...actual, listAssetImageBatches: vi.fn(), planAssetImageBatch: vi.fn(), submitAssetImageBatch: vi.fn(), findAssetImageBatchByCommandKey: vi.fn() };
 });
 
 function item(id: string, kind: "CHARACTER" | "SCENE" | "PROP"): AssetBibleItem {
@@ -39,14 +40,16 @@ function batch(kind: "CHARACTER" | "SCENE" | "PROP", id: string) {
 describe("ProjectAssetImageWorkbench grouped receipts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
     vi.mocked(planAssetImageBatch).mockImplementation(async (_projectId, request) => plan(request.asset_kind));
     vi.mocked(listAssetImageBatches).mockResolvedValue([]);
+    vi.mocked(findAssetImageBatchByCommandKey).mockResolvedValue(null);
   });
 
   it("retains accepted, rejected and unknown groups independently and always refreshes", async () => {
     vi.mocked(submitAssetImageBatch)
       .mockResolvedValueOnce(batch("CHARACTER", "batch-character"))
-      .mockRejectedValueOnce(Object.assign(new Error("配置已失效"), { status: 409 }))
+      .mockRejectedValueOnce(new ApiRequestError("配置已失效", 422, "ASSET_IMAGE_BATCH_BLOCKED", null, false, null, null))
       .mockRejectedValueOnce(new TypeError("网络中断"));
     const changed = vi.fn();
     render(<MemoryRouter><ProjectAssetImageWorkbench projectId="p1" items={[item("c1", "CHARACTER"), item("s1", "SCENE"), item("p1", "PROP")]} onChanged={changed} /></MemoryRouter>);

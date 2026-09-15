@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -41,6 +42,42 @@ def _canonical(value: object) -> str:
 
 def _digest(value: object) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def asset_batch_request_identity(
+    project_id: str,
+    asset_kind: str,
+    asset_ids: list[str],
+    profile_version_id: str | None,
+    mode: str,
+    expected_plan_hash: str,
+) -> tuple[str, str]:
+    """Stable request fingerprint for asset-image batch idempotency.
+
+    Mirrors the plan dedup rule (first-occurrence order, stripped). Excludes
+    timestamps and refresh counts so UNKNOWN recovery can replay the frozen
+    original request.
+    """
+    normalized_ids = list(dict.fromkeys(
+        str(value).strip() for value in asset_ids if str(value).strip()
+    ))
+    payload = {
+        "schema_version": "asset-image-submit.v1",
+        "project_id": project_id,
+        "asset_kind": asset_kind.strip().upper(),
+        "asset_ids": normalized_ids,
+        "profile_version_id": profile_version_id,
+        "mode": mode,
+        "expected_plan_hash": expected_plan_hash,
+    }
+    canonical = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return canonical, hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _asset_batch_idempotency_scope(project_id: str) -> str:
+    return f"asset-image-batch:submit:{project_id}"
 
 
 @dataclass(frozen=True)
@@ -389,15 +426,54 @@ class AssetImageGenerationBatchService:
     ) -> dict[str, Any]:
         if not idempotency_key.strip():
             raise DomainRuleError("IDEMPOTENCY_KEY_REQUIRED", "批量生成必须提供幂等键")
+        scope = _asset_batch_idempotency_scope(project_id)
+        _, payload_hash = asset_batch_request_identity(
+            project_id, asset_kind, asset_ids, profile_version_id, mode, expected_plan_hash
+        )
+        # 1. Replay check first, before plan freshness: a completed task may
+        # have changed plan_hash, but UNKNOWN recovery must still find the
+        # original batch via the frozen command identity.
         with self.database.connect() as connection:
-            replay = connection.execute(
+            prior = connection.execute(
+                "SELECT payload_hash, response_json FROM command_idempotencies WHERE scope=? AND idempotency_key=?",
+                (scope, idempotency_key),
+            ).fetchone()
+            if prior is not None:
+                if not hmac.compare_digest(str(prior["payload_hash"]), payload_hash):
+                    try:
+                        existing_id = str(json.loads(str(prior["response_json"] or "{}")).get("batch_id") or "")
+                    except (TypeError, ValueError):
+                        existing_id = ""
+                    raise DomainRuleError(
+                        "IDEMPOTENCY_PAYLOAD_MISMATCH",
+                        "相同幂等键的资产主图请求内容不一致，请核对已有批次后由人工确认",
+                        {"existing_batch_id": existing_id, "scope": scope},
+                    )
+                try:
+                    batch_id = str(json.loads(str(prior["response_json"] or "{}"))["batch_id"])
+                except (TypeError, ValueError, KeyError) as error:
+                    raise DomainRuleError(
+                        "ASSET_IMAGE_BATCH_RECEIPT_CORRUPT",
+                        "已受理回执损坏，请核对批次后人工处理",
+                        {"scope": scope},
+                    ) from error
+                result = self.get_batch(batch_id)
+                result["idempotent_replay"] = True
+                return result
+            legacy = connection.execute(
                 "SELECT id FROM asset_image_generation_batches WHERE project_id=? AND idempotency_key=?",
                 (project_id, idempotency_key),
             ).fetchone()
-        if replay is not None:
-            result = self.get_batch(str(replay["id"]))
-            result["idempotent_replay"] = True
-            return result
+            if legacy is not None:
+                # Historical batch without a full request fingerprint: read-only
+                # query may show facts, but change-type replay must not silently
+                # accept异参. The new frontend recovers via exact read-only
+                # query, so this path only triggers explicit resubmits.
+                raise DomainRuleError(
+                    "IDEMPOTENCY_PAYLOAD_MISMATCH",
+                    "历史批次缺少完整请求指纹，无法证明异参回放安全；请用精确回执查询核对已有批次",
+                    {"existing_batch_id": str(legacy["id"]), "scope": scope},
+                )
 
         plan = self.plan(
             project_id,
@@ -413,21 +489,99 @@ class AssetImageGenerationBatchService:
 
         ready_items = [item for item in plan["items"] if item["status"] == "READY"]
         batch_id, now = str(uuid.uuid4()), _now()
-        with self.database.transaction() as connection:
-            connection.execute(
-                """INSERT INTO asset_image_generation_batches
-                (id,project_id,asset_kind,capability,profile_version_id,mode,status,plan_hash,idempotency_key,
-                 selected_count,queued_count,created_at,updated_at,created_by,revision,schema_version)
-                VALUES (?,?,?,?,?,?,'QUEUING',?,?,?,0,?,?,?,1,'v1')""",
-                (batch_id, project_id, plan["asset_kind"], plan["capability"], plan["profile_version_id"], mode, expected_plan_hash, idempotency_key, len(ready_items), now, now, actor),
-            )
-            for item in ready_items:
+        # 3. Short reservation transaction: re-check scope/key, verify
+        # authoritative in-transit scope, reserve batch/items/receipt.
+        # Model/GPU/network work stays outside this transaction.
+        try:
+            with self.database.transaction() as connection:
+                recheck = connection.execute(
+                    "SELECT payload_hash, response_json FROM command_idempotencies WHERE scope=? AND idempotency_key=?",
+                    (scope, idempotency_key),
+                ).fetchone()
+                if recheck is not None:
+                    if not hmac.compare_digest(str(recheck["payload_hash"]), payload_hash):
+                        try:
+                            existing_id = str(json.loads(str(recheck["response_json"] or "{}")).get("batch_id") or "")
+                        except (TypeError, ValueError):
+                            existing_id = ""
+                        raise DomainRuleError(
+                            "IDEMPOTENCY_PAYLOAD_MISMATCH",
+                            "相同幂等键的资产主图请求内容不一致，请核对已有批次后由人工确认",
+                            {"existing_batch_id": existing_id, "scope": scope},
+                        )
+                    # Concurrent creator won the reservation; caller replays.
+                    batch_id = str(json.loads(str(recheck["response_json"] or "{}"))["batch_id"])
+                    result = self.get_batch(batch_id)
+                    result["idempotent_replay"] = True
+                    return result
+                # MISSING_ONLY in-transit overlap guard: same project/assets
+                # with an unfinished batch item must not fork a second batch.
+                if ready_items:
+                    placeholders = ",".join("?" for _ in ready_items)
+                    overlap = connection.execute(
+                        f"""SELECT b.id AS batch_id FROM asset_image_generation_batch_items bi
+                        JOIN asset_image_generation_batches b ON b.id=bi.batch_id
+                        WHERE b.project_id=? AND bi.asset_id IN ({placeholders})
+                        AND bi.status IN ('PLANNED','QUEUED','RUNNING') LIMIT 1""",
+                        [project_id, *[item["asset_id"] for item in ready_items]],
+                    ).fetchone()
+                    if overlap is not None:
+                        raise DomainRuleError(
+                            "ASSET_IMAGE_BATCH_ALREADY_IN_PROGRESS",
+                            "已有进行中的相同补齐任务，请查看批次进度，不要重复提交",
+                            {"existing_batch_id": str(overlap["batch_id"])},
+                        )
                 connection.execute(
-                    """INSERT INTO asset_image_generation_batch_items
-                    (id,batch_id,asset_id,asset_revision,status,prompt_snapshot,created_at,updated_at,revision,schema_version)
-                    VALUES (?,?,?,?,'PLANNED',?,?,?,1,'v1')""",
-                    (str(uuid.uuid4()), batch_id, item["asset_id"], item["revision"], item["prompt"], now, now),
+                    """INSERT INTO asset_image_generation_batches
+                    (id,project_id,asset_kind,capability,profile_version_id,mode,status,plan_hash,idempotency_key,
+                     selected_count,queued_count,created_at,updated_at,created_by,revision,schema_version)
+                    VALUES (?,?,?,?,?,?,'QUEUING',?,?,?,0,?,?,?,1,'v1')""",
+                    (batch_id, project_id, plan["asset_kind"], plan["capability"], plan["profile_version_id"], mode, expected_plan_hash, idempotency_key, len(ready_items), now, now, actor),
                 )
+                for item in ready_items:
+                    connection.execute(
+                        """INSERT INTO asset_image_generation_batch_items
+                        (id,batch_id,asset_id,asset_revision,status,prompt_snapshot,created_at,updated_at,revision,schema_version)
+                        VALUES (?,?,?,?,'PLANNED',?,?,?,1,'v1')""",
+                        (str(uuid.uuid4()), batch_id, item["asset_id"], item["revision"], item["prompt"], now, now),
+                    )
+                connection.execute(
+                    "INSERT INTO command_idempotencies (scope,idempotency_key,payload_hash,response_json) VALUES (?,?,?,?)",
+                    (scope, idempotency_key, payload_hash, _canonical({"batch_id": batch_id})),
+                )
+        except sqlite3.IntegrityError as error:
+            message = str(error)
+            if "uq_asset_image_batch_idempotency" in message or "command_idempotencies" in message:
+                with self.database.connect() as connection:
+                    contested = connection.execute(
+                        "SELECT payload_hash, response_json FROM command_idempotencies WHERE scope=? AND idempotency_key=?",
+                        (scope, idempotency_key),
+                    ).fetchone()
+                    if contested is not None:
+                        if not hmac.compare_digest(str(contested["payload_hash"]), payload_hash):
+                            try:
+                                existing_id = str(json.loads(str(contested["response_json"] or "{}")).get("batch_id") or "")
+                            except (TypeError, ValueError):
+                                existing_id = ""
+                            raise DomainRuleError(
+                                "IDEMPOTENCY_PAYLOAD_MISMATCH",
+                                "相同幂等键的资产主图请求内容不一致，请核对已有批次后由人工确认",
+                                {"existing_batch_id": existing_id, "scope": scope},
+                            ) from error
+                        replay_id = str(json.loads(str(contested["response_json"] or "{}"))["batch_id"])
+                        result = self.get_batch(replay_id)
+                        result["idempotent_replay"] = True
+                        return result
+                    legacy_row = connection.execute(
+                        "SELECT id FROM asset_image_generation_batches WHERE project_id=? AND idempotency_key=?",
+                        (project_id, idempotency_key),
+                    ).fetchone()
+                    raise DomainRuleError(
+                        "IDEMPOTENCY_PAYLOAD_MISMATCH",
+                        "历史批次缺少完整请求指纹，无法证明异参回放安全；请用精确回执查询核对已有批次",
+                        {"existing_batch_id": str(legacy_row["id"]) if legacy_row is not None else "", "scope": scope},
+                    ) from error
+            raise
 
         profile_id = str(plan["profile_version_id"])
         queued_count = 0
@@ -481,7 +635,23 @@ class AssetImageGenerationBatchService:
         result["idempotent_replay"] = False
         return result
 
-    def list_batches(self, project_id: str, *, asset_kind: str | None = None, limit: int = 5) -> list[dict[str, Any]]:
+    def list_batches(
+        self,
+        project_id: str,
+        *,
+        asset_kind: str | None = None,
+        limit: int = 5,
+        idempotency_key: str | None = None,
+    ) -> list[dict[str, Any]]:
+        # Exact receipt query: project + key, 0/1 items, never bounded by the
+        # recent-5 window and never leaking another project.
+        if idempotency_key:
+            with self.database.connect() as connection:
+                row = connection.execute(
+                    "SELECT id FROM asset_image_generation_batches WHERE project_id=? AND idempotency_key=?",
+                    (project_id, idempotency_key),
+                ).fetchone()
+            return [self.get_batch(str(row["id"]))] if row is not None else []
         where = ["project_id=?"]
         params: list[Any] = [project_id]
         if asset_kind:

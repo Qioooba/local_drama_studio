@@ -22059,6 +22059,22 @@
               "default": 5,
               "title": "Limit"
             }
+          },
+          {
+            "name": "idempotency_key",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency Key"
+            }
           }
         ],
         "responses": {

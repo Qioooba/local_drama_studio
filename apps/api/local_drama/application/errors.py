@@ -75,6 +75,7 @@ def api_error_from_domain(error: DomainRuleError) -> ApiError:
         "TIMELINE_REVISION_CONFLICT",
         "TIMELINE_UPSTREAM_CONFLICT",
         "TIMELINE_VIDEO_SELECTION_CONFLICT",
+        "ASSET_IMAGE_BATCH_ALREADY_IN_PROGRESS",
     }:
         status = 409
     else:

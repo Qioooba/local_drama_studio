@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
@@ -13,7 +13,7 @@ import {
   type ShotStudio,
 } from "../../generated/api";
 import { composePromptFromIntent, deriveShotSeed } from "../generation/generationDefaults";
-import { notifyDraftDirty } from "../drafts/draftGuard";
+import { draftRegistry, type DraftHandle } from "../drafts/draftRegistry";
 import { AssetMentionInput, type AssetMentionReference } from "./AssetMentionInput";
 import {
   planShotKeyframeBatch,
@@ -166,16 +166,71 @@ export function ShotGenerationInspector({ episodeId, shotId, shotCode, shotRevis
   const [mentionReferences, setMentionReferences] = useState<AssetMentionReference[]>(savedMentionReferences);
   const [mentionVersion, setMentionVersion] = useState(0);
   const [savingMentions, setSavingMentions] = useState(false);
-  const mentionRegistrationToken = useMemo(() => globalThis.crypto?.randomUUID?.() ?? `asset-mentions-${shotId}-${Date.now()}`, [shotId]);
+  const [mentionRefreshWarning, setMentionRefreshWarning] = useState<string | null>(null);
+  const mentionOwnerId = `shot-asset-mentions:${shotId}`;
+  const mentionEntityKey = `镜头 ${shotCode} 的资产引用`;
+  const mentionVersionRef = useRef(0);
+  const mentionPromptRef = useRef(mentionPrompt);
+  const mentionReferencesRef = useRef(mentionReferences);
+  const mentionBaselineRef = useRef(JSON.stringify({ prompt: savedMentionPrompt, references: savedMentionReferences }));
+  const mentionRevisionRef = useRef(shotRevision);
+  const mentionFieldsRef = useRef(fields);
+  const mentionSavingRef = useRef(false);
+  const mentionHandleRef = useRef<DraftHandle | null>(null);
+  const onSubmittedRef = useRef(onSubmitted);
+  mentionPromptRef.current = mentionPrompt;
+  mentionReferencesRef.current = mentionReferences;
+  mentionRevisionRef.current = shotRevision;
+  mentionFieldsRef.current = fields;
+  onSubmittedRef.current = onSubmitted;
   const mentionOptions = useMemo(() => (currentShot.assets ?? []).map((asset) => ({ assetId: asset.id, bindingId: asset.binding_id, stateId: asset.effective_state_id, name: asset.name, kind: asset.kind, status: asset.status })), [currentShot.assets]);
   const mentionBaseline = useMemo(() => JSON.stringify({ prompt: savedMentionPrompt, references: savedMentionReferences }), [savedMentionPrompt, savedMentionReferences]);
+  useEffect(() => { mentionBaselineRef.current = mentionBaseline; }, [mentionBaseline]);
   const mentionDirty = JSON.stringify({ prompt: mentionPrompt, references: mentionReferences }) !== mentionBaseline;
   const expiredMentionCount = mentionReferences.filter((reference) => {
     const current = mentionOptions.find((option) => option.bindingId === reference.bindingId);
     return !current || current.status !== "ACTIVE" || current.assetId !== reference.assetId || current.stateId !== reference.stateId;
   }).length;
-  useEffect(() => { setMentionPrompt(savedMentionPrompt); setMentionReferences(savedMentionReferences); }, [savedMentionPrompt, savedMentionReferences, shotId, shotRevision]);
-  useEffect(() => { setMentionVersion((version) => version + 1); }, [mentionPrompt, mentionReferences]);
+  // Mount-only registration; old cleanups must not disturb the live handle.
+  useEffect(() => {
+    const handle = draftRegistry.register({
+      ownerId: mentionOwnerId,
+      entityKey: mentionEntityKey,
+      version: mentionVersionRef.current,
+      dirty: JSON.stringify({ prompt: mentionPromptRef.current, references: mentionReferencesRef.current }) !== mentionBaselineRef.current,
+    });
+    mentionHandleRef.current = handle;
+    return () => {
+      const live = mentionHandleRef.current;
+      if (live && live.token === handle.token) {
+        draftRegistry.unregister(handle);
+        mentionHandleRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mentionOwnerId]);
+  useEffect(() => {
+    // Server baseline refresh must not silently clear unsaved mention edits.
+    const liveJson = JSON.stringify({ prompt: mentionPromptRef.current, references: mentionReferencesRef.current });
+    if (liveJson !== mentionBaselineRef.current) return;
+    setMentionPrompt(savedMentionPrompt);
+    mentionPromptRef.current = savedMentionPrompt;
+    setMentionReferences(savedMentionReferences);
+    mentionReferencesRef.current = savedMentionReferences;
+  }, [savedMentionPrompt, savedMentionReferences, shotId, shotRevision]);
+
+  const applyMentionEdit = useCallback((prompt: string, references: AssetMentionReference[]) => {
+    const nextVersion = mentionVersionRef.current + 1;
+    mentionVersionRef.current = nextVersion;
+    setMentionVersion(nextVersion);
+    setMentionPrompt(prompt);
+    mentionPromptRef.current = prompt;
+    setMentionReferences(references);
+    mentionReferencesRef.current = references;
+    setMentionRefreshWarning(null);
+    const handle = mentionHandleRef.current;
+    if (handle) draftRegistry.update(handle, { version: nextVersion, dirty: true, entityKey: mentionEntityKey });
+  }, [mentionEntityKey]);
   const effectivePositiveOverride = [positiveOverride.trim(), savedMentionPrompt.trim()].filter(Boolean).join("\n");
   const prompt = useMemo(() => compilePromptPreview(defaultPrompt, effectivePositiveOverride, negativePrompt), [defaultPrompt, effectivePositiveOverride, negativePrompt]);
   const promptBundle = useMemo<ShotPromptBundleRequest>(() => ({
@@ -202,28 +257,101 @@ export function ShotGenerationInspector({ episodeId, shotId, shotCode, shotRevis
     && planHasExecutableContract(plannedFrameDraw.plan),
   );
 
-  const saveMentionDraft = useCallback(async () => {
-    if (!mentionDirty) return { status: "saved" as const, savedVersion: mentionVersion };
-    if (expiredMentionCount) return { status: "blocked" as const, reason: "资产引用已过期，请移除后重新选择。" };
+  const saveMentionDraft = useCallback(async (expectedVersion: number) => {
+    if (mentionVersionRef.current !== expectedVersion) {
+      return { status: "blocked" as const, reason: `“${mentionEntityKey}”产生了新修改，请重新确认。` };
+    }
+    const liveJson = JSON.stringify({ prompt: mentionPromptRef.current, references: mentionReferencesRef.current });
+    if (liveJson === mentionBaselineRef.current) {
+      const handle = mentionHandleRef.current;
+      if (handle) draftRegistry.update(handle, { version: expectedVersion, dirty: false, entityKey: mentionEntityKey });
+      return { status: "saved" as const, savedVersion: expectedVersion };
+    }
+    const liveReferences = mentionReferencesRef.current;
+    const liveOptions = (currentShot.assets ?? []).map((asset) => ({ assetId: asset.id, bindingId: asset.binding_id, stateId: asset.effective_state_id, status: asset.status }));
+    const liveExpired = liveReferences.filter((reference) => {
+      const current = liveOptions.find((option) => option.bindingId === reference.bindingId);
+      return !current || current.status !== "ACTIVE" || current.assetId !== reference.assetId || current.stateId !== reference.stateId;
+    }).length;
+    if (liveExpired) return { status: "blocked" as const, reason: "资产引用已过期，请移除后重新选择。" };
+    if (mentionSavingRef.current) return { status: "blocked" as const, reason: "正在保存资产引用，请稍候。" };
+    const submittedPrompt = mentionPromptRef.current;
+    const submittedReferences = JSON.parse(JSON.stringify(liveReferences)) as AssetMentionReference[];
+    const submittedFields = { ...mentionFieldsRef.current };
+    const submittedRevision = mentionRevisionRef.current;
+    const submittedVersion = expectedVersion;
+    const submittedJson = liveJson;
+    mentionSavingRef.current = true;
     setSavingMentions(true);
+    setMentionRefreshWarning(null);
     try {
       await putShotDraftV2(shotId, {
-        fields: { ...fields, asset_reference_prompt: mentionPrompt, asset_prompt_references: mentionReferences },
-        expected_revision_no: shotRevision,
+        fields: { ...submittedFields, asset_reference_prompt: submittedPrompt, asset_prompt_references: submittedReferences },
+        expected_revision_no: submittedRevision,
       });
-      await onSubmitted("资产引用草稿已保存到新的镜头修订；生成前会再次校验当前绑定与身份包版本。");
-      return { status: "saved" as const, savedVersion: mentionVersion };
     } catch (error) {
-      setActionFeedback({ kind: "error", message: `资产引用保存失败：${errorText(error)}` });
-      return { status: "blocked" as const, reason: `资产引用保存失败：${errorText(error)}` };
-    } finally { setSavingMentions(false); }
-  }, [expiredMentionCount, fields, mentionDirty, mentionPrompt, mentionReferences, mentionVersion, onSubmitted, shotId, shotRevision]);
+      const reason = `资产引用保存失败：${errorText(error)}`;
+      setActionFeedback({ kind: "error", message: reason });
+      mentionSavingRef.current = false;
+      setSavingMentions(false);
+      return { status: "blocked" as const, reason };
+    }
+    // Write confirmed. Only clear when the live payload still matches the
+    // submitted version; newer edits are preserved, never overwritten.
+    const stillCurrent =
+      mentionVersionRef.current === submittedVersion &&
+      JSON.stringify({ prompt: mentionPromptRef.current, references: mentionReferencesRef.current }) === submittedJson;
+    if (stillCurrent) {
+      mentionBaselineRef.current = submittedJson;
+      const handle = mentionHandleRef.current;
+      if (handle) draftRegistry.update(handle, { version: submittedVersion, dirty: false, entityKey: mentionEntityKey });
+    }
+    try {
+      await onSubmittedRef.current("资产引用草稿已保存到新的镜头修订；生成前会再次校验当前绑定与身份包版本。");
+    } catch (error) {
+      const warning = `资产引用已保存，但页面同步失败：${errorText(error)}。请刷新状态，不要重复提交。`;
+      setMentionRefreshWarning(warning);
+      mentionSavingRef.current = false;
+      setSavingMentions(false);
+      if (!stillCurrent) {
+        return { status: "blocked" as const, reason: `“${mentionEntityKey}”在保存过程中出现了新修改，已保留新修改。${warning}` };
+      }
+      return { status: "saved" as const, savedVersion: submittedVersion };
+    }
+    mentionSavingRef.current = false;
+    setSavingMentions(false);
+    if (!stillCurrent) {
+      return { status: "blocked" as const, reason: `“${mentionEntityKey}”在保存过程中出现了新修改，已保留新修改。` };
+    }
+    return { status: "saved" as const, savedVersion: submittedVersion };
+  }, [currentShot.assets, mentionEntityKey, shotId]);
+
+  const discardMentionDraft = useCallback(async (expectedVersion: number) => {
+    if (mentionVersionRef.current !== expectedVersion) {
+      return { status: "blocked" as const, reason: `“${mentionEntityKey}”产生了新修改，请重新确认。` };
+    }
+    const restored = JSON.parse(mentionBaselineRef.current) as { prompt: string; references: AssetMentionReference[] };
+    setMentionPrompt(restored.prompt);
+    mentionPromptRef.current = restored.prompt;
+    setMentionReferences(restored.references);
+    mentionReferencesRef.current = restored.references;
+    setMentionRefreshWarning(null);
+    const handle = mentionHandleRef.current;
+    if (handle) draftRegistry.update(handle, { version: expectedVersion, dirty: false, entityKey: mentionEntityKey });
+    return { status: "discarded" as const, discardedVersion: expectedVersion };
+  }, [mentionEntityKey]);
 
   useEffect(() => {
-    const registration = { ownerId: `shot-asset-mentions:${shotId}`, entityKey: `镜头 ${shotCode} 的资产引用`, registrationToken: mentionRegistrationToken, version: mentionVersion, save: saveMentionDraft, discard: () => { setMentionPrompt(savedMentionPrompt); setMentionReferences(savedMentionReferences); return true; } };
-    notifyDraftDirty(mentionDirty, registration);
-    return () => notifyDraftDirty(false, registration);
-  }, [mentionDirty, mentionRegistrationToken, mentionVersion, saveMentionDraft, savedMentionPrompt, savedMentionReferences, shotCode, shotId]);
+    const handle = mentionHandleRef.current;
+    if (!handle) return;
+    draftRegistry.update(handle, {
+      version: mentionVersionRef.current,
+      dirty: JSON.stringify({ prompt: mentionPromptRef.current, references: mentionReferencesRef.current }) !== mentionBaselineRef.current,
+      entityKey: mentionEntityKey,
+      save: ((version: number) => saveMentionDraft(version)) as never,
+      discard: ((version: number) => discardMentionDraft(version)) as never,
+    });
+  }, [mentionDirty, mentionVersion, mentionEntityKey, saveMentionDraft, discardMentionDraft]);
 
   const readyMutation = useMutation({
     onMutate: () => setActionFeedback({ kind: "pending", message: "正在校验并提交镜头就绪状态…" }),
@@ -360,8 +488,9 @@ export function ShotGenerationInspector({ episodeId, shotId, shotCode, shotRevis
         placeholder="补充构图、表演或氛围要求…"
         aria-label="正向提示词补充"
       />
-      <AssetMentionInput value={mentionPrompt} references={mentionReferences} options={mentionOptions} disabled={busy} onChange={(value, references) => { setMentionPrompt(value); setMentionReferences(references); setPromptProvenance("PAGE_USER_EDIT"); }} />
-      {mentionDirty ? <button type="button" className="secondary" disabled={busy || expiredMentionCount > 0} onClick={() => void saveMentionDraft()}>{savingMentions ? "正在保存资产引用…" : "保存资产引用到镜头修订"}</button> : null}
+      <AssetMentionInput value={mentionPrompt} references={mentionReferences} options={mentionOptions} disabled={busy} onChange={(value, references) => { applyMentionEdit(value, references); setPromptProvenance("PAGE_USER_EDIT"); }} />
+      {mentionDirty ? <button type="button" className="secondary" disabled={busy || expiredMentionCount > 0} onClick={() => void saveMentionDraft(mentionVersionRef.current)}>{savingMentions ? "正在保存资产引用…" : "保存资产引用到镜头修订"}</button> : null}
+      {mentionRefreshWarning ? <p className="shot-draw-error" role="alert">{mentionRefreshWarning}</p> : null}
       {expiredMentionCount ? <p className="shot-draw-error" role="alert">{expiredMentionCount} 个引用已归档、解绑或状态版本过期；请移除后重新选择。</p> : null}
       <label className="shot-draw-field-label" htmlFor="shot-negative-prompt">反向提示词（页面编辑）</label>
       <textarea

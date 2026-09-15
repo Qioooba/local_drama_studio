@@ -87,6 +87,17 @@ export async function listAssetImageBatches(projectId: string, kind: AssetImageK
   return result.items;
 }
 
+/**
+ * Exact receipt lookup for one frozen command. Bypasses the recent-5 window
+ * and never matches another command via plan_hash. Returns null when the
+ * authoritative query succeeds but no batch exists for the key.
+ */
+export async function findAssetImageBatchByCommandKey(projectId: string, idempotencyKey: string): Promise<AssetImageBatch | null> {
+  const query = new URLSearchParams({ idempotency_key: idempotencyKey, limit: "5" });
+  const result = await requestJson<{ items: AssetImageBatch[] }>(`/projects/${encodeURIComponent(projectId)}/asset-image-batches?${query}`, { method: "GET" });
+  return result.items[0] ?? null;
+}
+
 export function isAssetImageBatchActive(batch: AssetImageBatch | null | undefined): boolean {
   return Boolean(batch && ["QUEUED", "RUNNING", "PARTIAL_RUNNING"].includes(batch.status));
 }

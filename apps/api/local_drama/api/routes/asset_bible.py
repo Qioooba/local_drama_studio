@@ -116,9 +116,9 @@ async def submit_asset_image_generation_batch(project_id: str, payload: AssetIma
 
 
 @router.get("/projects/{project_id}/asset-image-batches", operation_id="listAssetImageGenerationBatches")
-async def list_asset_image_generation_batches(project_id: str, request: Request, asset_kind: str | None = None, limit: int = 5) -> dict[str, object]:
+async def list_asset_image_generation_batches(project_id: str, request: Request, asset_kind: str | None = None, limit: int = 5, idempotency_key: str | None = None) -> dict[str, object]:
     try:
-        return {"items": _asset_images(request).list_batches(project_id, asset_kind=asset_kind, limit=limit)}
+        return {"items": _asset_images(request).list_batches(project_id, asset_kind=asset_kind, limit=limit, idempotency_key=idempotency_key)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

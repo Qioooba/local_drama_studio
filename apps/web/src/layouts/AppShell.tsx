@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useBlocker, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { BreadcrumbSeparatorIcon, StudioIcon, StudioMarkIcon, type StudioIconName } from "../components/icons";
 import { buildBreadcrumbs, parseRouteContext, routes } from "../app/routeRegistry";
@@ -8,6 +8,8 @@ import { getProjectEpisodeCatalog, listProjects } from "../generated/api";
 import { queryKeys } from "../query/queryKeys";
 import { Dialog } from "../components/ui";
 import { DRAFT_STATE_EVENT, retireWorkspaceTabPersistence, type DraftStateChange } from "../features/drafts/draftGuard";
+import { draftRegistry } from "../features/drafts/draftRegistry";
+import { settleDirtyDrafts } from "../features/drafts/settleDirtyDrafts";
 import { ShellToolbar } from "./ShellToolbar";
 import { EpisodeContextBar } from "./EpisodeContextBar";
 
@@ -68,10 +70,11 @@ export function AppShell() {
   const shotId = routeContext.shotId ?? undefined;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
-  const [draftDirty, setDraftDirty] = useState(false);
+  const draftSnapshot = useSyncExternalStore(draftRegistry.subscribe, draftRegistry.getSnapshot);
+  const draftDirty = useMemo(() => draftSnapshot.some((owner) => owner.dirty), [draftSnapshot]);
   const [draftActionPending, setDraftActionPending] = useState<"save" | "discard" | null>(null);
   const [draftActionError, setDraftActionError] = useState<string | null>(null);
-  const draftRegistryRef = useRef(new Map<string, DraftStateChange>());
+  const settleLockRef = useRef(false);
   const mobileNavTriggerRef = useRef<HTMLButtonElement>(null);
   const mobileNavRef = useRef<HTMLElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
@@ -143,19 +146,20 @@ export function AppShell() {
 
   useEffect(() => { retireWorkspaceTabPersistence(); }, []);
   useEffect(() => {
+    // Defensive fallback: notifyDraftDirty already writes synchronously into
+    // the registry; re-ingest direct CustomEvent dispatchers idempotently.
     const onDraftState = (event: Event) => {
       const detail = (event as CustomEvent<DraftStateChange>).detail;
-      const current = draftRegistryRef.current.get(detail.ownerId);
-      if (!detail.dirty) {
-        if (!current || current.registrationToken === detail.registrationToken) {
-          draftRegistryRef.current.delete(detail.ownerId);
-        }
-      } else if (!current || current.registrationToken === detail.registrationToken || detail.version >= current.version) {
-        draftRegistryRef.current.set(detail.ownerId, detail);
-      }
-      const hasDirtyDraft = Array.from(draftRegistryRef.current.values()).some((owner) => owner.dirty);
-      setDraftDirty(hasDirtyDraft);
-      if (!hasDirtyDraft) setDraftActionError(null);
+      if (!detail || typeof detail.ownerId !== "string") return;
+      draftRegistry.ingestLegacy({
+        ownerId: detail.ownerId,
+        entityKey: detail.entityKey,
+        registrationToken: detail.registrationToken,
+        version: detail.version,
+        dirty: detail.dirty,
+        save: detail.save,
+        discard: detail.discard,
+      });
     };
     window.addEventListener(DRAFT_STATE_EVENT, onDraftState);
     return () => window.removeEventListener(DRAFT_STATE_EVENT, onDraftState);
@@ -165,6 +169,9 @@ export function AppShell() {
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
+  }, [draftDirty]);
+  useEffect(() => {
+    if (!draftDirty) setDraftActionError(null);
   }, [draftDirty]);
   useEffect(() => { if (projectId && episodeId) rememberEpisode(projectId, episodeId); }, [episodeId, projectId]);
   useEffect(() => { setMobileNavOpen(false); }, [location.pathname, location.search]);
@@ -193,36 +200,42 @@ export function AppShell() {
   }, [mobileNavOpen]);
 
   const finishBlockedNavigation = async (action: "save" | "discard") => {
-    const snapshots = Array.from(draftRegistryRef.current.values()).filter((owner) => owner.dirty);
+    if (settleLockRef.current) return;
+    settleLockRef.current = true;
     setDraftActionPending(action);
     setDraftActionError(null);
     try {
-      for (const snapshot of snapshots) {
-        const callback = action === "save" ? snapshot.save : snapshot.discard;
-        if (!callback) {
-          setDraftActionError(action === "save" ? "有草稿不支持在此处保存，请返回编辑器完成保存。" : "有草稿不支持在此处放弃，请返回编辑器处理。");
-          return;
-        }
-        const result = await callback();
-        if (result === false || (typeof result === "object" && result?.status === "blocked")) {
-          setDraftActionError(typeof result === "object" && result?.status === "blocked"
-            ? result.reason
-            : action === "save" ? "保存未完成，请处理页面中的错误后重试。" : "未能放弃当前修改，请在页面内处理后重试。");
-          return;
-        }
-        const current = draftRegistryRef.current.get(snapshot.ownerId);
-        if (current && (current.registrationToken !== snapshot.registrationToken || current.version !== snapshot.version)) {
-          setDraftActionError(`“${current.entityKey}”在${action === "save" ? "保存" : "放弃"}过程中出现了新修改，请复核后再切换。`);
-          return;
-        }
-        if (current) draftRegistryRef.current.delete(snapshot.ownerId);
+      const intentKey = blocker.state === "blocked" && blocker.location
+        ? `${blocker.location.pathname}${blocker.location.search}${blocker.location.hash}`
+        : null;
+      const result = await settleDirtyDrafts(draftRegistry, action);
+      if (!result.allowed) {
+        setDraftActionError(result.reason);
+        return;
       }
-      setDraftDirty(false);
+      // Final recheck of the live set: dirty must be derived from the real
+      // registry, never manufactured via setState. New arrivals are not
+      // auto-saved; they block with NEW_DRAFT_PENDING inside the coordinator.
+      if (draftRegistry.getDirty().length > 0) {
+        const remaining = draftRegistry.getDirty().map((owner) => owner.entityKey).join("、");
+        setDraftActionError(`仍有未处理内容：${remaining}。`);
+        return;
+      }
+      if (blocker.state !== "blocked") return;
+      const currentIntentKey = blocker.location
+        ? `${blocker.location.pathname}${blocker.location.search}${blocker.location.hash}`
+        : null;
+      if (intentKey !== currentIntentKey) {
+        setDraftActionError("导航目标已变化，请重新确认。");
+        return;
+      }
+      // No await between this check and proceed() in the same sync segment.
       blocker.proceed?.();
     } catch (error) {
       setDraftActionError(`${action === "save" ? "保存" : "放弃"}失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setDraftActionPending(null);
+      settleLockRef.current = false;
     }
   };
 
@@ -321,7 +334,7 @@ export function AppShell() {
         <Outlet key={`${location.pathname}${location.search}`} />
       </section>
     </div>
-    <Dialog open={blocker.state === "blocked"} title="当前页面有未保存内容" onClose={() => { if (!draftActionPending) blocker.reset?.(); }} footer={<><button type="button" className="secondary" disabled={draftActionPending !== null} onClick={() => blocker.reset?.()}>取消切换</button><button type="button" className="secondary danger-outline" disabled={draftActionPending !== null || Array.from(draftRegistryRef.current.values()).some((owner) => owner.dirty && !owner.discard)} onClick={() => void finishBlockedNavigation("discard")}>{draftActionPending === "discard" ? "正在放弃…" : "放弃并切换"}</button><button type="button" className="primary-action" disabled={draftActionPending !== null || Array.from(draftRegistryRef.current.values()).some((owner) => owner.dirty && !owner.save)} onClick={() => void finishBlockedNavigation("save")}>{draftActionPending === "save" ? "正在保存…" : "保存并切换"}</button></>}>
+    <Dialog open={blocker.state === "blocked"} title="当前页面有未保存内容" onClose={() => { if (!draftActionPending) blocker.reset?.(); }} footer={<><button type="button" className="secondary" disabled={draftActionPending !== null} onClick={() => blocker.reset?.()}>取消切换</button><button type="button" className="secondary danger-outline" disabled={draftActionPending !== null || draftSnapshot.some((owner) => owner.dirty && !owner.discard)} onClick={() => void finishBlockedNavigation("discard")}>{draftActionPending === "discard" ? "正在放弃…" : "放弃并切换"}</button><button type="button" className="primary-action" disabled={draftActionPending !== null || draftSnapshot.some((owner) => owner.dirty && !owner.save)} onClick={() => void finishBlockedNavigation("save")}>{draftActionPending === "save" ? "正在保存…" : "保存并切换"}</button></>}>
       <p>“保存并切换”会先调用当前工作台的正式保存动作；“放弃并切换”会清理当前实体的本地草稿并恢复最近一次正式版本。</p>
       {draftActionError && <p className="inline-error" role="alert">{draftActionError}</p>}
     </Dialog>

@@ -160,6 +160,16 @@ def split_aligned_cue(
             valid.append((token, start_s, end_s))
     if not valid:
         return []
+    # Alignment tokens are timing evidence only.  Some aligners return ASR
+    # hypotheses, so feeding those tokens back into the cue would silently
+    # replace the authoritative dialogue text and make the subtitle revision
+    # fail its script-authority check.  When the token stream is not exactly
+    # the canonical dialogue (after the shared whitespace normalization),
+    # discard the alignment and let the caller keep one original-text cue.
+    aligned_text, _ = _normalized_text_with_offsets("".join(token for token, _start_s, _end_s in valid))
+    canonical_text, _ = _normalized_text_with_offsets(text)
+    if aligned_text != canonical_text:
+        return []
     audio_end_s = max(end_s for _token, _start_s, end_s in valid)
     scale = media_duration_us / max(1, int(audio_end_s * 1_000_000))
 
