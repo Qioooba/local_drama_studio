@@ -21,6 +21,10 @@ const FOCUS_ITEMS: Array<{ id: AudioFocus; label: string }> = [
   { id: "gaps", label: "缺口与证据" },
 ];
 const TRACK_LABELS: Record<string, string> = { BGM: "背景音乐", SFX: "音效" };
+const TRACK_DEFAULTS = {
+  BGM: { gainDb: -18, fadeInUs: 2_000_000, fadeOutUs: 3_000_000 },
+  SFX: { gainDb: -8, fadeInUs: 500_000, fadeOutUs: 500_000 },
+} as const;
 const GAP_LABELS: Record<string, string> = {
   DIALOGUE_TTS_MISSING: "缺少已采用的对白语音",
   DIALOGUE_TTS_STALE: "对白语音已过期",
@@ -106,17 +110,18 @@ function AddTrackForm({ projectId, episodeId, mixRevision, onSaved }: { projectI
     mutationFn: async () => {
       if (!file || !evidence) throw new Error("请选择音频文件和项目内授权证据");
       const mediaVersionId = await uploadProjectMediaFile(projectId, file);
+      const defaults = TRACK_DEFAULTS[kind];
       return createEpisodeAudioTrackV2(episodeId, {
         media_version_id: mediaVersionId, track_kind: kind, start_us: 0,
-        end_us: Math.round(Number(endSeconds) * 1_000_000), gain_db: 0,
+        end_us: Math.round(Number(endSeconds) * 1_000_000), gain_db: defaults.gainDb,
         license_status: "USER_OWNED", license_evidence_path_rel: evidence,
-        loop_enabled: true, fade_in_us: 500_000, fade_out_us: 500_000,
+        loop_enabled: true, fade_in_us: defaults.fadeInUs, fade_out_us: defaults.fadeOutUs,
         expected_mix_revision: mixRevision, idempotency_key: commandKey("audio-create"),
       });
     },
     onSuccess: () => { setOpen(false); setFile(null); onSaved(); },
   });
-  return <div className="post-audio-add"><button type="button" className="secondary" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{open ? "收起添加" : "添加本地音乐或音效"}</button>{open ? <form onSubmit={(event) => { event.preventDefault(); create.mutate(); }}><label>用途<select value={kind} onChange={(event) => setKind(event.target.value as "BGM" | "SFX")}><option value="BGM">背景音乐</option><option value="SFX">音效</option></select></label><label>本地音频<input type="file" accept="audio/*" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label><ProjectLocalResourceSelect projectId={projectId} kind="LICENSE_EVIDENCE" value={evidence} onChange={setEvidence} label="项目内授权证据" required emptyLabel="请选择授权证据" /><label>覆盖时长（秒）<input type="number" min="1" step="0.1" value={endSeconds} onChange={(event) => setEndSeconds(event.target.value)} /></label><p className="muted">导入后创建不可变音频源，并在当前混音 revision 上新增轨道；默认循环并使用 0.5 秒淡入淡出。</p><button type="submit" className="primary-action" disabled={!file || !evidence || create.isPending}>{create.isPending ? "正在校验并添加…" : "校验并添加"}</button>{create.error ? <p className="inline-error" role="alert">添加失败：{String(create.error)}。已导入媒体会保留为未绑定素材。</p> : null}</form> : null}</div>;
+  return <div className="post-audio-add"><button type="button" className="secondary" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{open ? "收起添加" : "添加本地音乐或音效"}</button>{open ? <form onSubmit={(event) => { event.preventDefault(); create.mutate(); }}><label>用途<select value={kind} onChange={(event) => setKind(event.target.value as "BGM" | "SFX")}><option value="BGM">背景音乐</option><option value="SFX">音效</option></select></label><label>本地音频<input type="file" accept="audio/*" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label><ProjectLocalResourceSelect projectId={projectId} kind="LICENSE_EVIDENCE" value={evidence} onChange={setEvidence} label="项目内授权证据" required emptyLabel="请选择授权证据" /><label>覆盖时长（秒）<input type="number" min="1" step="0.1" value={endSeconds} onChange={(event) => setEndSeconds(event.target.value)} /></label><p className="muted">导入后创建不可变音频源，并在当前混音 revision 上新增轨道；背景音乐默认 -18 dB、2 秒淡入和 3 秒淡出，音效默认 -8 dB，均可在添加后继续调整。</p><button type="submit" className="primary-action" disabled={!file || !evidence || create.isPending}>{create.isPending ? "正在校验并添加…" : "校验并添加"}</button>{create.error ? <p className="inline-error" role="alert">添加失败：{String(create.error)}。已导入媒体会保留为未绑定素材。</p> : null}</form> : null}</div>;
 }
 
 function TrackInspector({ track, mixRevision, onSaved }: { track: AudioTrackV2; mixRevision: number; onSaved: () => void }) {

@@ -3,15 +3,28 @@
 from typing import Any
 
 from local_drama.application.character_identity_packs import CharacterIdentityPackService
+from local_drama.application.production_identity_inputs import session_identity_snapshot_for_shot
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.image_input_roles import IDENTITY_REFERENCE_ROLES
 
 
-def shot_identity_references(connection: Any, project_id: str, shot_id: str,
-                             workflow_bindings: dict[str, Any]) -> dict[str, Any]:
-    snapshot = CharacterIdentityPackService.generation_snapshot_for_intent(
-        connection, {"owner_type": "SHOT", "owner_id": shot_id, "project_id": project_id},
-    )
+def shot_identity_references(
+    connection: Any,
+    project_id: str,
+    shot_id: str,
+    workflow_bindings: dict[str, Any],
+    *,
+    production_session_id: str | None = None,
+) -> dict[str, Any]:
+    intent = {"owner_type": "SHOT", "owner_id": shot_id, "project_id": project_id}
+    if production_session_id:
+        snapshot = session_identity_snapshot_for_shot(
+            connection, production_session_id, project_id, shot_id
+        )
+    else:
+        snapshot = CharacterIdentityPackService.generation_snapshot_for_intent(
+            connection, intent
+        )
     packs = (snapshot or {}).get("packs", [])
     roles = [role for role in IDENTITY_REFERENCE_ROLES if role in workflow_bindings]
     if not roles and "REFERENCE_IMAGE" in workflow_bindings:
@@ -40,5 +53,11 @@ def shot_identity_references(connection: Any, project_id: str, shot_id: str,
         instructions.append(f"参考图{index}对应人物{ref['character_name']}：{ref['description'][:400]}")
     if instructions:
         instructions.append("严格保持各人物参考图的脸型、性别、发型和服装，不要交换人物身份。仅绘制镜头描述中出场的人物；参考图不是必须全部出场的合影指令。按镜头描述重新构图，输出一张单镜头画面，不要拼接参考图。")
-    return {"snapshot_hash": (snapshot or {}).get("snapshot_hash"),
-            "references": references, "prompt": "；".join(instructions)}
+    return {
+        "snapshot_hash": (snapshot or {}).get("snapshot_hash"),
+        "references": references,
+        "prompt": "；".join(instructions),
+        "selection_authority": (snapshot or {}).get("selection_authority", "HUMAN_APPROVED"),
+        "human_approved": bool((snapshot or {}).get("human_approved", bool(packs))),
+        "production_session_id": (snapshot or {}).get("production_session_id"),
+    }

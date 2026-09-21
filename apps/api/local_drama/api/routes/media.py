@@ -51,6 +51,12 @@ async def import_media(payload: MediaImportRequest, request: Request) -> dict[st
     try:
         require_server_loopback(request, action="按绝对路径导入媒体到")
         media_service = service(request)
+        purpose = payload.purpose
+        # A shot-owned KEYFRAME is a production authority, not a generic T2I
+        # import.  Keep the asset purpose canonical so approval/adoption can be
+        # resolved by the shared formal-I2V keyframe query.
+        if payload.owner_type == "SHOT" and payload.media_kind == "IMAGE" and payload.stage == "KEYFRAME":
+            purpose = "KEYFRAME"
         if payload.media_kind == "IMAGE":
             source = Path(payload.source_path)
             if source.suffix.lower() not in IMAGE_EXTENSIONS:
@@ -62,7 +68,7 @@ async def import_media(payload: MediaImportRequest, request: Request) -> dict[st
             "media": media_service.import_file(
                 payload.project_id,
                 payload.source_path,
-                purpose=payload.purpose,
+                purpose=purpose,
                 owner_type=payload.owner_type,
                 owner_id=payload.owner_id,
                 media_kind=payload.media_kind,

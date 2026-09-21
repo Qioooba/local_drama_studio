@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ProductionSettingsOverview } from "../features/production-settings-v2/ProductionSettingsOverview";
+import { VideoUpscaleDefaultsPanel } from "../features/production-settings-v2/VideoUpscaleDefaultsPanel";
 import { MediaDerivativeMaintenancePanel } from "../features/production-settings-v2/MediaDerivativeMaintenancePanel";
 import { ProjectAssetGrantPanel } from "../features/projects/ProjectAssetGrantPanel";
 import { ProjectPackageAction } from "../features/projects/ProjectPackageAction";
@@ -63,6 +64,7 @@ export function ProductionSettingsPage() {
 
     {section === "delivery" && <section className="v2-section-grid" aria-label="交付与品牌">
       {configuration.data?.configuration && <ProjectConfigurationSnapshot configuration={configuration.data.configuration} projectId={projectId} onChanged={() => void configuration.refetch()} />}
+      <VideoUpscaleDefaultsPanel projectId={projectId} />
       <BrandKitPanel projectId={projectId} />
     </section>}
 

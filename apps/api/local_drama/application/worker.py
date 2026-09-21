@@ -23,7 +23,12 @@ from local_drama.application.job_resources import GpuRuntime, gpu_runtime_for_jo
 from local_drama.application.jobs import JobService
 from local_drama.application.local_llm import LocalLLMService
 from local_drama.application.media import MediaService
+from local_drama.application.production_choices import ProductionChoiceService
+from local_drama.application.production_identity_inputs import (
+    ProductionIdentityGenerationCompletionService,
+)
 from local_drama.application.timeline import TimelineService
+from local_drama.application.video_upscale.plans import VideoUpscalePlanService
 from local_drama.application.worker_dispatch import WorkerExecution, WorkerHandler, WorkerJobDispatcher
 from local_drama.application.worker_handlers.adaptation_analysis import run_adaptation_analysis_job
 from local_drama.application.worker_handlers.automation_task import advance_automation_run, run_automation_task
@@ -111,6 +116,21 @@ def _make_delivery_build_handler(
             delivery_planner=operations,
             delivery_builder=worker._timeline_service(),
             atomic_writer=worker._atomic_file,
+        )
+
+    return handler
+
+
+def _make_video_upscale_preflight_handler(
+    worker: LocalMediaWorker,
+    plan_factory: Callable[[Any, Settings], VideoUpscalePlanService] = VideoUpscalePlanService,
+) -> Callable[[dict[str, Any], Path], tuple[str, str]]:
+    """Run source integrity/probe/geometry checks without contacting a GPU."""
+
+    def handler(job: dict[str, Any], output_root: Path) -> tuple[str, str]:
+        snapshot = job.get("input_snapshot") or {}
+        return plan_factory(worker.database, worker.settings).run_preflight(
+            str(snapshot["plan_id"]), output_root
         )
 
     return handler
@@ -296,6 +316,7 @@ def _make_story_pipeline_apply_handler(
 # application/worker_handlers; the runner binds each flow to its ports through
 # _EXTRACTED_HANDLER_PROVIDERS at dispatch time (design §13.2).
 _EXTRACTED_HANDLER_PROVIDERS: dict[str, Callable[[LocalMediaWorker], Callable[[dict[str, Any], Path], tuple[str, str]]]] = {
+    "VIDEO_UPSCALE_PREFLIGHT": _make_video_upscale_preflight_handler,
     "DELIVERY_BUILD": _make_delivery_build_handler,
     "EPISODE_COMPOSE": lambda worker: _make_timeline_job_handler(worker, run_episode_compose_job),
     "SEGMENTED_EPISODE_COMPOSE": lambda worker: _make_timeline_job_handler(worker, run_segmented_compose_job),
@@ -333,7 +354,13 @@ class LocalMediaWorker:
             LocalAiSubprocessRuntime(settings) if settings.local_ai_python is not None else None
         )
         self.gpu_coordinator = gpu_coordinator
-        self.model_execution_handlers = model_execution_handlers or production_worker_execution_handlers(settings)
+        self.model_execution_handlers = model_execution_handlers or production_worker_execution_handlers(
+            settings,
+            database,
+            cancel_check=self._cancel_requested,
+            report_progress=self._report_progress,
+            attempt_context=self._current_attempt_context,
+        )
         self.comfy_smoke_worker_factory = comfy_smoke_worker_factory or (lambda: ComfyCapabilitySmokeWorker(database, settings))
         self._active_job_context: tuple[str, str, str] | None = None
         self._last_cancel_check = 0.0
@@ -439,6 +466,9 @@ class LocalMediaWorker:
             {"detail": "本机媒体处理中，可安全取消"},
             force=True,
         )
+
+    def _current_attempt_context(self) -> tuple[str, str, str] | None:
+        return self._active_job_context
 
     def _timeline_service(self) -> TimelineService:
         timeline = TimelineService(self.database, self.settings)
@@ -712,6 +742,7 @@ class LocalMediaWorker:
                 configuration_factory=lambda: ConfigurationService(self.database),
                 timeline_factory=self._timeline_service,
                 atomic_writer=self._atomic_file,
+                production_choice_factory=lambda: ProductionChoiceService(self.database, self.settings),
             )
             return WorkerExecution(kind, relative, report, produced_bytes)
 
@@ -810,6 +841,13 @@ class LocalMediaWorker:
                 keyframe_completion.finalize_job(str(job["id"]), artifacts)
             except DomainRuleError as error:
                 keyframe_completion.record_failure(str(job["id"]), error)
+            identity_completion = ProductionIdentityGenerationCompletionService(
+                self.database, self.settings
+            )
+            try:
+                identity_completion.finalize_job(str(job["id"]), artifacts)
+            except DomainRuleError as error:
+                identity_completion.record_failure(str(job["id"]), error)
             advance_error: str | None = None
             if execution.report is not None:
                 advance_error = advance_automation_run(
@@ -831,6 +869,7 @@ class LocalMediaWorker:
                 error_code=error.code,
                 error_detail_redacted=_worker_error_detail(error),
                 retryable=self._retryable_error(error.code),
+                needs_attention=error.code in {"DISK_FULL", "UPSCALE_GPU_OUT_OF_MEMORY"},
             )
             return {"job": job, "attempt": attempt, "result": result, "error": error.code}
         except OSError as error:
@@ -840,6 +879,7 @@ class LocalMediaWorker:
             result = self.jobs.complete(
                 attempt_id, token, worker_id, success=False,
                 error_code=code, error_detail_redacted=detail,
+                needs_attention=disk_full,
             )
             return {"job": job, "attempt": attempt, "result": result, "error": code}
         except MemoryError:

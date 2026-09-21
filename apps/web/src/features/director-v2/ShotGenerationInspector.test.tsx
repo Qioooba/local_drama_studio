@@ -208,7 +208,11 @@ describe("ShotGenerationInspector", () => {
       4,
       "d".repeat(64),
       expect.any(String),
-      expect.objectContaining({ provenance: "AI_GENERATED", negative_prompt: expect.stringContaining("triptych"), frame_reframe_mode: "SINGLE_MOMENT" }),
+      expect.objectContaining({
+        provenance: "AI_GENERATED",
+        negative_prompt: expect.stringMatching(/triptych.*extra people.*scene change.*hard cut.*unrelated location/),
+        frame_reframe_mode: "SINGLE_MOMENT",
+      }),
     ));
     expect(onSubmitted).toHaveBeenCalledWith(expect.stringContaining("已排队 8 张"));
   });

@@ -52,6 +52,7 @@ describe("ProductionSpecEditor", () => {
         upscale: {
           enabled: true,
           required: true,
+          allow_cross_orientation: false,
           stage: "COMPOSE_QC",
           executor: "builtin:ffmpeg",
           target: "PRESENTATION_SPEC",

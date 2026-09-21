@@ -122,7 +122,10 @@ def default_override_schema(capability: str) -> dict[str, Any]:
             "native_audio": {
                 "type": "boolean",
                 "label": "生成视频原生音轨",
-                "default": True,
+                # Ref2V currently requires its Audio VAE chain.  Every other
+                # video path is silent by default so omitted overrides cannot
+                # introduce unscripted voices alongside authored TTS.
+                "default": native_audio_locked,
                 "editable": not native_audio_locked,
                 **({"locked_reason": "当前 Ref2V 节点要求 Audio VAE，关闭开关前不能提交"} if native_audio_locked else {}),
                 "scopes": ["PROJECT", "SHOT", "RUN"],
@@ -240,12 +243,20 @@ def effective_schema(profile: dict[str, Any]) -> dict[str, Any]:
     fallback = default_override_schema(str(profile.get("capability") or ""))
     schema = profile.get("override_schema")
     if isinstance(schema, dict) and isinstance(schema.get("fields"), dict):
-        return {
+        effective = {
             **fallback,
             **schema,
             "fields": {**dict(fallback.get("fields") or {}), **dict(schema.get("fields") or {})},
         }
-    return fallback
+    else:
+        effective = fallback
+    native_audio = effective.get("fields", {}).get("native_audio")
+    if isinstance(native_audio, dict) and native_audio.get("editable") is not False:
+        # Old immutable profile bundles used an unsafe true default.  Keep the
+        # schema/history intact, but expose a safe effective default; users can
+        # still opt in explicitly when they intend to retain model sound.
+        native_audio["default"] = False
+    return effective
 
 
 def validate_overrides(settings: dict[str, Any] | None, profile: dict[str, Any], *, scope: str) -> dict[str, Any]:

@@ -9,7 +9,7 @@ Push-Location (Join-Path $repoRoot 'apps/api')
 $previousComfyAccess = $env:LOCAL_DRAMA_COMFY_ACCESS
 try {
   $env:LOCAL_DRAMA_COMFY_ACCESS = 'disabled'
-  & $python -m pytest -m 'not comfyui'
+  & $python -m pytest -m 'not comfyui and not video_upscale_gpu'
   if ($LASTEXITCODE -ne 0) {
     throw "Non-ComfyUI API test suite failed with exit code $LASTEXITCODE"
   }

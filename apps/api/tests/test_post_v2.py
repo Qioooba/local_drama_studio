@@ -47,8 +47,18 @@ def test_post_v2_overview_and_review_targets_are_typed_bounded_and_path_safe(wor
         assert page["items"][0]["target_id"] == media_id
         assert page["items"][0]["target_kind"] == "MEDIA_VERSION"
         assert page["items"][0]["shot_id"] == shot["id"]
+        assert page["items"][0]["is_adopted"] is False
         assert "rel_path" not in page["items"][0]
         assert page["items"][0]["allowed_actions"] == ["SUBMIT_REVIEW_DECISION"]
+
+        adopted = client.post(f"/api/v2/media-versions/{media_id}:adopt")
+        assert adopted.status_code == 200, adopted.text
+        adopted_target = client.get(
+            f"/api/v2/episodes/{episode['id']}/review-targets",
+            params={"target_kind": "MEDIA_VERSION", "target_id": media_id, "limit": 1},
+        )
+        assert adopted_target.status_code == 200, adopted_target.text
+        assert adopted_target.json()["items"][0]["is_adopted"] is True
 
         deep_link = client.get(
             f"/api/v2/episodes/{episode['id']}/review-targets",

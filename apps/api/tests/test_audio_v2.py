@@ -4,6 +4,7 @@ import subprocess
 
 from fastapi.testclient import TestClient
 
+from local_drama.api.schemas.audio_v2 import AudioTrackCreateCommand
 from local_drama.application.dialogue import DialogueService
 from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
@@ -64,6 +65,17 @@ def test_audio_workspace_v2_tracks_mix_revision_and_gaps(workspace, database) ->
         assert workspace_response["tracks"][0]["allowed_actions"] == ["UPDATE_MIX_TRACK", "REMOVE_MIX_TRACK"]
         assert "license_evidence_path_rel" not in workspace_response["tracks"][0]
         assert workspace_response["project_id"] == project["id"]
+
+
+def test_audio_track_create_uses_dialogue_safe_gain_only_when_omitted() -> None:
+    common = {
+        "media_version_id": "media-1", "start_us": 0, "end_us": 10_000_000,
+        "license_status": "USER_OWNED", "license_evidence_path_rel": "licenses/audio.json",
+        "expected_mix_revision": 0, "idempotency_key": "audio-safe-default",
+    }
+    assert AudioTrackCreateCommand.model_validate({**common, "track_kind": "BGM"}).gain_db == -18
+    assert AudioTrackCreateCommand.model_validate({**common, "track_kind": "SFX"}).gain_db == -8
+    assert AudioTrackCreateCommand.model_validate({**common, "track_kind": "BGM", "gain_db": -12}).gain_db == -12
 
 
 def test_audio_workspace_v2_exposes_canonical_dialogue_text_revision_number(workspace, database) -> None:

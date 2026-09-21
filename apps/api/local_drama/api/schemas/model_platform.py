@@ -99,6 +99,49 @@ class ModelPlatformProfilePublishRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class ModelPlatformNcnnUpscaleProvisionRequest(BaseModel):
+    """Explicit local-machine NCNN smoke and publication request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    executable_path: str = Field(min_length=1, max_length=1000)
+    model_directory: str = Field(min_length=1, max_length=1000)
+    model_name: Literal[
+        "realesr-animevideov3",
+        "realesrgan-x4plus-anime",
+        "realesrgan-x4plus",
+    ] = "realesr-animevideov3"
+    gpu_device: int = Field(default=0, ge=0, le=31)
+    tile_size: Literal[0, 64, 128, 256, 512, 1024] = 0
+    load_threads: int = Field(default=1, ge=1, le=4)
+    proc_threads: int = Field(default=1, ge=1, le=4)
+    save_threads: int = Field(default=2, ge=1, le=4)
+    actor: str = Field(default="local-user", min_length=1, max_length=120)
+    confirm_publish: Literal[True]
+
+
+class ModelPlatformNcnnUpscaleProvisionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile_version_id: str
+    runtime_model_installation_id: str
+    validation_run_id: str
+    status: str
+    model_name: str
+    verified_native_scales: list[int]
+    runtime_sha256: str
+    model_bundle_sha256: str
+    reused_profile: bool
+
+
+class ModelPlatformNcnnUpscaleProvisionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile: ModelPlatformNcnnUpscaleProvisionResult
+    network_used: Literal[False]
+    real_smoke_required: Literal[True]
+
+
 class ModelPlatformComfyWorkflowBindingRequest(BaseModel):
     """Reference an already published immutable workflow; no graph is sent from UI."""
 

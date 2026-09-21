@@ -621,6 +621,37 @@ def test_asset_image_batch_plan_skips_existing_hero_and_reports_missing_profile(
     assert {item["code"] for item in blocked["blockers"]} == {"ASSET_IMAGE_PROFILE_REQUIRED"}
 
 
+def test_asset_image_batch_does_not_reuse_corrupt_hero_reference(workspace, database) -> None:
+    _, project, _, _ = _project(workspace, database, "bible_asset_image_corrupt_hero")
+    project_id = str(project["id"])
+    asset = StoryAssetService(database, workspace).create_asset(
+        project_id, "CHARACTER", "CHAR_CORRUPT", "阿舟"
+    )
+    hero = _image(workspace, database, project_id, "batch-corrupt-hero.png")
+    _write_service(
+        database,
+        lambda service: service.add_reference(
+            project_id, str(asset["id"]), hero, "HERO", is_locked=True
+        ),
+    )
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE media_versions SET integrity_status='CORRUPT' WHERE id=?", (hero,)
+        )
+    profile_id = _published_asset_image_profile(workspace, database)
+
+    plan = build_asset_image_batch(database, workspace).plan(
+        project_id,
+        asset_kind="CHARACTER",
+        asset_ids=[str(asset["id"])],
+        profile_version_id=profile_id,
+    )
+
+    assert plan["valid"] is True
+    assert plan["items"][0]["has_hero"] is False
+    assert plan["items"][0]["status"] == "READY"
+
+
 def test_asset_image_batch_api_is_read_only_during_plan(workspace, database) -> None:
     _, project, _, _ = _project(workspace, database, "bible_asset_image_api")
     project_id = str(project["id"])

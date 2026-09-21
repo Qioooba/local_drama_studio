@@ -374,6 +374,21 @@ def test_single_moment_reframe_separates_first_and_last_visual_moments() -> None
     assert "镜头扫过干裂田地" not in end
 
 
+def test_keyframe_prompt_excludes_spoken_text_and_has_no_hardcoded_portrait_layout() -> None:
+    fields = {
+        "subject_action": "母亲把怀表递给林舟。",
+        "dialogue": "不要把这句话画在画面里。",
+        "prompt_modifiers": ["16:9横屏单画幅"],
+    }
+    regular = ShotKeyframeGenerationBatchService._frame_prompt(fields, "S001", "FIRST_FRAME")
+    reframed = ShotKeyframeGenerationBatchService._frame_prompt(
+        fields, "S001", "FIRST_FRAME", reframe_mode="SINGLE_MOMENT"
+    )
+    assert "不要把这句话画在画面里" not in regular
+    assert "竖屏" not in reframed
+    assert "服从项目画幅方向" in reframed
+
+
 def test_single_moment_reframe_preserves_source_base_and_compiles_distinct_roles(workspace, database) -> None:
     _, episode, shot, profile_id = _setup(workspace, database)
     fields = {

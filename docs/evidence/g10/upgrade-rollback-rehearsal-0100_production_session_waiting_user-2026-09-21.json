@@ -1,0 +1,51 @@
+{
+  "schema_version": "g10.upgrade_rollback_rehearsal.v3",
+  "observed_at": "2026-09-20T23:22:20.592808+00:00",
+  "status": "PASS",
+  "scope": "isolated copy of a production pre-migration backup",
+  "source_backup": {
+    "path": "backups/pre_migration_20260905T103407Z.sqlite3",
+    "migration": "0093_shot_prompt_bundle_snapshots",
+    "migration_heads": [
+      "0093_shot_prompt_bundle_snapshots"
+    ],
+    "integrity": "ok",
+    "bytes": 45543424,
+    "sha256": "c5480aebabc793c504c5b8e525ee574e065ecb26e6b546fa7aa7944b1c49c9d4"
+  },
+  "upgrade_copy": {
+    "operation": "alembic upgrade heads on isolated copy",
+    "from_migration": "0093_shot_prompt_bundle_snapshots",
+    "to_migration": "0100_production_session_waiting_user",
+    "expected_heads": [
+      "0100_production_session_waiting_user"
+    ],
+    "migration": "0100_production_session_waiting_user",
+    "migration_heads": [
+      "0100_production_session_waiting_user"
+    ],
+    "integrity": "ok",
+    "bytes": 45907968,
+    "sha256": "a1738edffa5947f3f3ef00c079f798f514a25d6f5a809f26894a46c89706b157"
+  },
+  "restore_copy": {
+    "operation": "restore source backup to a separate copy",
+    "migration": "0093_shot_prompt_bundle_snapshots",
+    "migration_heads": [
+      "0093_shot_prompt_bundle_snapshots"
+    ],
+    "integrity": "ok",
+    "bytes": 45543424,
+    "sha256": "c5480aebabc793c504c5b8e525ee574e065ecb26e6b546fa7aa7944b1c49c9d4",
+    "matches_source_sha256": true
+  },
+  "safety": {
+    "production_database_mutated": false,
+    "api_contacted": false,
+    "comfyui_contacted": false,
+    "network_contacted": false,
+    "jobs_created": false,
+    "temporary_directory_retained": "temp/release-rehearsal-0100-20260921T0725Z"
+  },
+  "interpretation": "Current migration upgrade and exact backup restore are verified on isolated copies; this does not authorize final release."
+}

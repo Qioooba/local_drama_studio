@@ -100,12 +100,18 @@ class BreakdownApplyService:
         actor: str = "local-user",
         *,
         scene_nos: list[int] | None = None,
+        application_authority: str = "HUMAN_CONFIRMED",
     ) -> dict[str, Any]:
         """Materialize one DRAFT_READY breakdown draft into the target episode.
 
         Raises ``DomainRuleError`` with the documented codes on any invalid
         precondition or write conflict; the whole transaction rolls back.
         """
+        if application_authority not in {"HUMAN_CONFIRMED", "MACHINE_TEMPORARY"}:
+            raise DomainRuleError(
+                "BREAKDOWN_APPLICATION_AUTHORITY_INVALID",
+                "拆解应用权威类型不受支持",
+            )
         with self.database.transaction() as connection:
             draft = connection.execute("SELECT * FROM script_breakdown_drafts WHERE id=?", (draft_id,)).fetchone()
             if draft is None:
@@ -301,7 +307,7 @@ class BreakdownApplyService:
 
                     # Resolve every entity through one alias-aware index. Ambiguous
                     # aliases intentionally remain unbound for human review.
-                    per_shot_characters = [str(name).strip() for name in (shot.get("characters") or character_names) if str(name).strip()]
+                    per_shot_characters = self._shot_character_names(shot, character_names)
                     per_shot_props = [str(name).strip() for name in (shot.get("props") or []) if str(name).strip()]
                     self._bind_assets(connection, shot_id, asset_aliases, "CHARACTER", per_shot_characters, "main", now, actor)
                     self._bind_assets(connection, shot_id, asset_aliases, "SCENE", [title, str(scene.get("location") or "")], "location", now, actor)
@@ -364,40 +370,78 @@ class BreakdownApplyService:
                 {"name": name, "scene_count": count}
                 for name, count in sorted(extracted_characters.items(), key=lambda item: (-item[1], item[0]))
             ]
-            proposal_characters: list[dict[str, Any]] = []
+            proposal_entities: list[dict[str, Any]] = []
             if fully_applied:
                 all_characters: dict[str, int] = {}
+                all_locations: dict[str, set[int]] = {}
+                all_props: dict[str, dict[str, Any]] = {}
                 for scene in scenes:
+                    scene_no = int(scene.get("scene_no") or 0)
                     for raw_name in scene.get("characters") or []:
                         name = str(raw_name).strip()
                         if name:
                             all_characters[name] = all_characters.get(name, 0) + 1
-                proposal_characters = [
-                    {"name": name, "scene_count": count}
+                    location = str(scene.get("location") or "").strip()
+                    if location:
+                        all_locations.setdefault(location, set()).add(scene_no)
+                    for shot in scene.get("shots") or []:
+                        if not isinstance(shot, dict):
+                            continue
+                        for raw_name in shot.get("props") or []:
+                            name = str(raw_name).strip()
+                            if not name:
+                                continue
+                            item = all_props.setdefault(
+                                name, {"shot_count": 0, "scene_nos": set()}
+                            )
+                            item["shot_count"] += 1
+                            item["scene_nos"].add(scene_no)
+                proposal_entities.extend(
+                    {"kind": "CHARACTER", "name": name, "scene_count": count}
                     for name, count in sorted(all_characters.items(), key=lambda item: (-item[1], item[0]))
-                ]
-            for character in proposal_characters:
-                normalized_name = unicodedata.normalize("NFKC", character["name"]).strip().casefold()
-                suggested = connection.execute(
-                    """SELECT id FROM story_assets WHERE project_id=? AND kind='CHARACTER' AND status='ACTIVE'
-                    AND lower(name)=lower(?) ORDER BY created_at,id LIMIT 1""",
-                    (project_id, character["name"]),
-                ).fetchone()
+                )
+                proposal_entities.extend(
+                    {
+                        "kind": "SCENE",
+                        "name": name,
+                        "scene_count": len(scene_nos_for_location),
+                        "scene_nos": sorted(scene_nos_for_location),
+                        "evidence_field": "location",
+                    }
+                    for name, scene_nos_for_location in sorted(all_locations.items())
+                )
+                proposal_entities.extend(
+                    {
+                        "kind": "PROP",
+                        "name": name,
+                        "shot_count": int(item["shot_count"]),
+                        "scene_nos": sorted(item["scene_nos"]),
+                        "evidence_field": "shots[].props",
+                    }
+                    for name, item in sorted(all_props.items())
+                )
+            for entity in proposal_entities:
+                kind = str(entity["kind"])
+                normalized_name = unicodedata.normalize("NFKC", entity["name"]).strip().casefold()
+                alias_matches = asset_aliases.get(kind, {}).get(
+                    normalized_entity_name(entity["name"]), set()
+                )
+                suggested_id = next(iter(alias_matches)) if len(alias_matches) == 1 else None
                 proposal_id = str(uuid.uuid4())
                 connection.execute(
                     """INSERT INTO story_asset_proposals
                     (id,project_id,breakdown_draft_id,proposal_key,kind,name,evidence_json,suggested_asset_id,
                      resolved_asset_id,status,decision_note,created_at,updated_at,created_by,revision,schema_version)
                     VALUES (?,?,?,?,?,?,?, ?,NULL,'PENDING','',?,?,?,1,'v2')""",
-                    (proposal_id, project_id, draft_id, f"CHARACTER:{normalized_name}", "CHARACTER", character["name"],
-                     _json({"scene_count": character["scene_count"], "source": "script_breakdown_draft"}),
-                     suggested["id"] if suggested else None, now, now, actor),
+                    (proposal_id, project_id, draft_id, f"{kind}:{normalized_name}", kind, entity["name"],
+                     _json({**entity, "source": "script_breakdown_draft"}),
+                     suggested_id, now, now, actor),
                 )
                 connection.execute(
                     """INSERT INTO audit_events
                     (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
-                    VALUES (?,'writer','STORY_ASSET_PROPOSAL_CREATED','story_asset_proposal',?,'AI 提取角色形成待审核资产建议',?)""",
-                    (actor, proposal_id, _json({"draft_id": draft_id, "suggested_asset_id": suggested["id"] if suggested else None})),
+                    VALUES (?,'writer','STORY_ASSET_PROPOSAL_CREATED','story_asset_proposal',?,'AI 提取结构化实体形成待审核资产建议',?)""",
+                    (actor, proposal_id, _json({"draft_id": draft_id, "kind": kind, "suggested_asset_id": suggested_id})),
                 )
             created = {"scenes": created_scenes, "shots": created_shots, "lines": created_lines}
             connection.execute(
@@ -407,9 +451,21 @@ class BreakdownApplyService:
                     actor,
                     "SCRIPT_BREAKDOWN_APPLIED" if fully_applied else "SCRIPT_BREAKDOWN_PARTIALLY_APPLIED",
                     draft_id,
-                    "人工确认后将剧本拆解草稿应用为生产实体" if fully_applied else "人工确认后应用所选剧本拆解场次",
+                    (
+                        "人工确认后将剧本拆解草稿应用为生产实体"
+                        if fully_applied
+                        else "人工确认后应用所选剧本拆解场次"
+                    )
+                    if application_authority == "HUMAN_CONFIRMED"
+                    else (
+                        "生产会话将完整拆解草稿登记为机器临时分镜输入"
+                        if fully_applied
+                        else "生产会话将所选拆解场次登记为机器临时分镜输入"
+                    ),
                     _json({
                         "episode_id": episode_id,
+                        "application_authority": application_authority,
+                        "human_approved": application_authority == "HUMAN_CONFIRMED",
                         "created": created,
                         "selected_scene_nos": requested_scene_nos,
                         "applied_scene_nos": applied_scene_nos,
@@ -472,6 +528,32 @@ class BreakdownApplyService:
                 for alias in evidence.get("aliases") or []:
                     add(kind, alias, asset_id)
         return aliases
+
+    @staticmethod
+    def _shot_character_names(shot: dict[str, Any], scene_characters: list[str]) -> list[str]:
+        """Resolve only characters evidenced in this shot.
+
+        Older breakdowns did not have a per-shot ``characters`` field.  The
+        former fallback bound every scene character to every shot, which made
+        single-person frames feed unrelated identity references to the image
+        model.  Prefer the explicit field; otherwise infer exact scene names
+        from the shot's visual/action/dialogue text.  A one-character scene is
+        unambiguous, while a multi-character scene with no evidence remains
+        unbound for human review instead of inventing an on-screen cast.
+        """
+
+        explicit = shot.get("characters")
+        if isinstance(explicit, list):
+            names = [str(name).strip() for name in explicit if str(name).strip()]
+            if names:
+                return list(dict.fromkeys(names))
+        evidence_parts = [shot.get("visual"), shot.get("action"), shot.get("dialogue")]
+        evidence = _json(evidence_parts)
+        candidates = [str(name).strip() for name in scene_characters if str(name).strip()]
+        matched = [name for name in candidates if name in evidence]
+        if matched:
+            return list(dict.fromkeys(matched))
+        return candidates if len(candidates) == 1 else []
 
     @staticmethod
     def _bind_assets(

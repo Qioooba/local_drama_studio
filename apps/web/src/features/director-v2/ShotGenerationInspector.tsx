@@ -61,7 +61,7 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export const DEFAULT_SHOT_NEGATIVE_PROMPT = "multi-panel, triptych, contact sheet, storyboard, split-screen, collage, multi-panel layout, text layout, captions, subtitles, watermark";
+export const DEFAULT_SHOT_NEGATIVE_PROMPT = "multi-panel, triptych, contact sheet, storyboard, split-screen, collage, multi-panel layout, text layout, captions, subtitles, watermark, extra people, bystanders, crowd, background figures, duplicate person, merged identities, scene change, hard cut, jump cut, transition, aerial view, unrelated location";
 type FrameReframeMode = "NONE" | "SINGLE_MOMENT";
 export const DEFAULT_FRAME_REFRAME_MODE: FrameReframeMode = "SINGLE_MOMENT";
 type ActionFeedback = { kind: "pending" | "success" | "error"; message: string };

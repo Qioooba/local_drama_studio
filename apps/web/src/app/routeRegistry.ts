@@ -27,9 +27,12 @@ export const routes = {
   adaptationPlans: (projectId: string) => "/projects/" + encode(projectId) + "/story/plans",
   adaptationPlan: (projectId: string, planId: string) => "/projects/" + encode(projectId) + "/story/plans/" + encode(planId),
   projectHome: (projectId: string) => `/projects/${encode(projectId)}`,
+  productionFactory: (projectId: string) => `/projects/${encode(projectId)}/factory`,
+  productionFactoryEpisode: (projectId: string, episodeId: string) => `/projects/${encode(projectId)}/factory?episode=${encode(episodeId)}`,
   story: (projectId: string) => `/projects/${encode(projectId)}/story`,
   storyWorkspace: (projectId: string) => `/projects/${encode(projectId)}/story`,
   assets: (projectId: string) => `/projects/${encode(projectId)}/assets`,
+  projectDelivery: (projectId: string, view?: "episodes" | "queue" | "versions") => `/projects/${encode(projectId)}/delivery${view && view !== "episodes" ? `?view=${view}` : ""}`,
   settings: (projectId: string, section = "production") => `/projects/${encode(projectId)}/settings/${encode(section)}`,
   visualLabs: (projectId: string) => `/projects/${encode(projectId)}/labs`,
   visualLab: (projectId: string, labId: string) => `/projects/${encode(projectId)}/labs/${encode(labId)}`,
@@ -53,8 +56,10 @@ export const ROUTE_REGISTRY: Record<string, RouteMetadata> = {
   adaptationPlans: { id: "adaptationPlans", scope: "PROJECT", title: "改编规划", pathPattern: "/projects/:projectId/story/plans", parentRouteId: "story" },
   adaptationPlan: { id: "adaptationPlan", scope: "PROJECT", title: "改编规划", pathPattern: "/projects/:projectId/story/plans/:planId", parentRouteId: "adaptationPlans" },
   projectHome: { id: "projectHome", scope: "PROJECT", title: "首页", pathPattern: "/projects/:projectId", parentRouteId: "projects" },
+  productionFactory: { id: "productionFactory", scope: "PROJECT", title: "一键生产", pathPattern: "/projects/:projectId/factory", parentRouteId: "projectHome" },
   story: { id: "story", scope: "PROJECT", title: "故事", pathPattern: "/projects/:projectId/story", parentRouteId: "projectHome" },
   assets: { id: "assets", scope: "PROJECT", title: "资产", pathPattern: "/projects/:projectId/assets", parentRouteId: "projectHome" },
+  projectDelivery: { id: "projectDelivery", scope: "PROJECT", title: "整剧交付", pathPattern: "/projects/:projectId/delivery", parentRouteId: "projectHome" },
   settings: { id: "settings", scope: "PROJECT", title: "项目设置", pathPattern: "/projects/:projectId/settings/:section", parentRouteId: "projectHome" },
   visualLabs: { id: "visualLabs", scope: "PROJECT", title: "Visual Lab", pathPattern: "/projects/:projectId/labs", parentRouteId: "projectHome" },
   visualLab: { id: "visualLab", scope: "PROJECT", title: "Visual Lab", pathPattern: "/projects/:projectId/labs/:labId", parentRouteId: "visualLabs" },
@@ -96,6 +101,18 @@ export function parseRouteContext(pathname: string): RouteContext {
     const projectId = decode(adaptationPlan[1]);
     if (!projectId) return empty();
     return { routeId: adaptationPlan[2] ? "adaptationPlan" : "adaptationPlans", scope: "PROJECT", projectId, episodeId: null, shotId: null };
+  }
+  const projectDelivery = clean.match(/^\/projects\/([^/]+)\/delivery$/);
+  if (projectDelivery) {
+    const projectId = decode(projectDelivery[1]);
+    if (!projectId) return empty();
+    return { routeId: "projectDelivery", scope: "PROJECT", projectId, episodeId: null, shotId: null };
+  }
+  const productionFactory = clean.match(/^\/projects\/([^/]+)\/factory$/);
+  if (productionFactory) {
+    const projectId = decode(productionFactory[1]);
+    if (!projectId) return empty();
+    return { routeId: "productionFactory", scope: "PROJECT", projectId, episodeId: null, shotId: null };
   }
   const project = clean.match(/^\/projects\/([^/]+)(?:\/(story|assets|settings)(?:\/([^/]+))?)?$/);
   if (project) { const projectId = decode(project[1]); if (!projectId) return empty(); return { routeId: project[2] === "story" ? "story" : project[2] === "assets" ? "assets" : project[2] === "settings" ? "settings" : "projectHome", scope: "PROJECT", projectId, episodeId: null, shotId: null }; }

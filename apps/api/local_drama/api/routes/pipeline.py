@@ -85,6 +85,7 @@ async def start_pipeline(
                 capability_profile_version_id=payload.capability_profile_version_id,
                 llm_config=payload.llm_config.model_dump() if payload.llm_config else None,
                 application_authorization=payload.application_authorization.model_dump(),
+                production_authorization=payload.production_authorization.model_dump(),
             )
         )
         return {"run": run}

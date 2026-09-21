@@ -170,6 +170,21 @@ describe("EpisodeReviewWorkspace v2", () => {
     expect(within(screen.getByRole("button", { name: /EP01 · revision 3/ })).getByText("待决定")).toBeTruthy();
   });
 
+  it("plays an episode render through app-owned controls instead of native browser controls", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    episodeRenderQueue = [{ ...makeEpisodeRenderTarget("render-approved", "EP01 · revision 2", "APPROVED"), duration_ms: 120_000 }];
+    mount("/?targetKind=EPISODE_RENDER_VERSION&targetId=render-approved");
+
+    const video = await screen.findByLabelText("EP01 · revision 2 整集视频预览");
+    expect(video.hasAttribute("controls")).toBe(false);
+    expect(video.hasAttribute("playsinline")).toBe(true);
+    expect(screen.getByLabelText("播放时间 0:00，总时长 2:00")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "播放整集" }));
+    expect(play).toHaveBeenCalledTimes(1);
+    play.mockRestore();
+  });
+
   it("restores an exact typed target deep link", async () => {
     mount("/?targetKind=MEDIA_VERSION&targetId=media-1");
     expect((await screen.findByRole("button", { name: /S001/ })).getAttribute("aria-pressed")).toBe("true");

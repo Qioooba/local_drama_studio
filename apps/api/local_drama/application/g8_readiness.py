@@ -88,6 +88,7 @@ class G8ReadinessService:
                 """SELECT erv.id, erv.integrity_status, erv.timeline_revision_id
                    FROM episode_render_versions erv
                   WHERE erv.episode_id=? AND erv.timeline_revision_id=?
+                    AND erv.render_kind='COMPOSE'
                   ORDER BY erv.created_at DESC LIMIT 1""",
                 (eid, timeline_id),
             ).fetchone() if timeline_id else None

@@ -54,10 +54,12 @@ class TimelineStatusService:
             render = connection.execute(
                 """SELECT erv.id, erv.timeline_revision_id, erv.revision, erv.integrity_status AS status, erv.duration_ms, erv.mime_type, erv.sha256,
                 erv.input_snapshot_json, erv.ffmpeg_command_json, erv.execution_log_text, erv.created_at
-                FROM episode_render_versions erv WHERE erv.episode_id=? ORDER BY erv.created_at DESC, erv.id DESC LIMIT 1""", (episode_id,)
+                FROM episode_render_versions erv WHERE erv.episode_id=? AND erv.render_kind='COMPOSE'
+                ORDER BY erv.created_at DESC, erv.id DESC LIMIT 1""", (episode_id,)
             ).fetchone()
-            render_count = int(connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=?", (episode_id,)).fetchone()[0])
-            render_verified_count = int(connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=? AND integrity_status='VERIFIED'", (episode_id,)).fetchone()[0])
+            render_count = int(connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=? AND render_kind='COMPOSE'", (episode_id,)).fetchone()[0])
+            render_verified_count = int(connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=? AND render_kind='COMPOSE' AND integrity_status='VERIFIED'", (episode_id,)).fetchone()[0])
+            derived_render_count = int(connection.execute("SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=? AND render_kind='SUPER_RESOLUTION'", (episode_id,)).fetchone()[0])
             delivery = connection.execute(
                 """SELECT dp.id, dp.episode_render_version_id, dp.target_version_id, dp.status, dp.rel_path, dp.manifest_sha256,
                 dp.human_review_status, dp.platform_review_status, dp.created_at,
@@ -112,7 +114,7 @@ class TimelineStatusService:
                     and json.loads(str(row["license_evidence_json"])).get("schema_version") == "localdrama.audio-license-evidence.v1"
                 ),
             },
-            "renders": {"count": render_count, "verified_count": render_verified_count, "latest": latest_render},
+            "renders": {"count": render_count, "verified_count": render_verified_count, "latest": latest_render, "derived_count": derived_render_count},
             "delivery": {"count": delivery_count, "verified_count": delivery_verified, "latest": dict(delivery) if delivery else None},
             "observed_at": _now(), "read_only": True, "runtime_contacted": False, "network_contacted": False, "mutated": False,
         }

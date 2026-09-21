@@ -354,6 +354,17 @@
   margin: 0 auto;
 }
 .post-review-preview audio { min-height: 72px; padding: 16px; width: 100%; }
+.episode-render-player { display: grid; width: 100%; min-width: 0; }
+.episode-render-player video { max-height: 56dvh; }
+.episode-render-player__controls { display: grid; grid-template-columns: auto auto auto minmax(120px,1fr) auto; align-items: center; gap: 8px; padding: 10px 12px; color: #f2f5f2; background: #111612; }
+.episode-render-player__controls .secondary { min-height: 36px; padding: 7px 11px; }
+.episode-render-player__controls span { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.episode-render-player__controls input[type="range"] { width: 100%; min-width: 100px; accent-color: var(--creative); }
+.episode-render-player__error { margin: 0; padding: 8px 12px; border-radius: 0; }
+@media (max-width: 760px) {
+  .episode-render-player__controls { grid-template-columns: auto auto 1fr auto; }
+  .episode-render-player__controls input[type="range"] { grid-column: 1 / -1; grid-row: 2; }
+}
 .post-review-blockers { padding: 10px 12px; border: 1px solid color-mix(in srgb,var(--warning) 50%,var(--border)); border-radius: 8px; background: color-mix(in srgb,var(--warning) 8%,transparent); flex: 0 0 auto; }
 .post-review-blockers ul { margin: 5px 0 0; padding-left: 20px; font-size: 12px; }
 .post-review-checks { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; flex: 0 0 auto; }

@@ -46,7 +46,12 @@ def normalize_prompt_modifiers(value: object) -> list[str]:
     return normalized
 
 
-def compose_shot_prompt(fields: dict[str, Any], *, shot_code: str | None = None) -> str:
+def compose_shot_prompt(
+    fields: dict[str, Any],
+    *,
+    shot_code: str | None = None,
+    include_dialogue: bool = True,
+) -> str:
     """Compile DirectorIntent facts into the canonical shot-generation prompt.
 
     The compiler is deliberately deterministic and contains no model calls. It
@@ -75,22 +80,26 @@ def compose_shot_prompt(fields: dict[str, Any], *, shot_code: str | None = None)
     movement = _text(camera.get("movement"))
     if movement and movement != "STATIC":
         parts.append(f"运镜 {movement}")
+    camera_prompt = _text(camera.get("prompt_text"))
+    if camera_prompt:
+        parts.append(f"运镜说明：{camera_prompt}")
     emotion = _text(performance.get("emotion"))
     if emotion:
         parts.append(f"情绪 {emotion}")
     environment = _text(fields.get("environment"))
     if environment:
         parts.append(f"环境：{environment}")
-    dialogue_value = fields.get("dialogue")
-    dialogue_parts: list[str] = []
-    if isinstance(dialogue_value, str):
-        dialogue_parts.append(_dialogue_line(dialogue_value))
-    elif isinstance(dialogue_value, list):
-        for line in dialogue_value:
-            dialogue_parts.append(_dialogue_line(line))
-    dialogue = "；".join(item for item in dialogue_parts if item)
-    if dialogue:
-        parts.append(f"对白：{dialogue}")
+    if include_dialogue:
+        dialogue_value = fields.get("dialogue")
+        dialogue_parts: list[str] = []
+        if isinstance(dialogue_value, str):
+            dialogue_parts.append(_dialogue_line(dialogue_value))
+        elif isinstance(dialogue_value, list):
+            for line in dialogue_value:
+                dialogue_parts.append(_dialogue_line(line))
+        dialogue = "；".join(item for item in dialogue_parts if item)
+        if dialogue:
+            parts.append(f"对白：{dialogue}")
     modifiers = normalize_prompt_modifiers(fields.get("prompt_modifiers"))
     if modifiers:
         parts.append(f"统一视觉修饰：{'，'.join(modifiers)}")

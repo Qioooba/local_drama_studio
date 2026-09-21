@@ -8,6 +8,7 @@ import { routes } from "./routeRegistry";
 import { PostShell, ProjectSettingsShell, SystemShell } from "../pages/WorkspaceShells";
 
 const ProjectHomePage = lazy(() => import("../pages/ProjectHomePage").then((module) => ({ default: module.ProjectHomePage })));
+const ProductionFactoryPage = lazy(() => import("../pages/ProductionFactoryPage").then((module) => ({ default: module.ProductionFactoryPage })));
 const AssetBiblePage = lazy(() => import("../pages/AssetBiblePage").then((module) => ({ default: module.AssetBiblePage })));
 const EpisodePlanPage = lazy(() => import("../pages/EpisodePlanPage").then((module) => ({ default: module.EpisodePlanPage })));
 const DirectorDeskPage = lazy(() => import("../pages/DirectorDeskPage").then((module) => ({ default: module.DirectorDeskPage })));
@@ -15,6 +16,7 @@ const EpisodeReviewPage = lazy(() => import("../pages/EpisodeReviewPage").then((
 const AudioPage = lazy(() => import("../pages/AudioPage").then((module) => ({ default: module.AudioPage })));
 const TimelinePage = lazy(() => import("../pages/TimelinePage").then((module) => ({ default: module.TimelinePage })));
 const DeliveryPage = lazy(() => import("../pages/DeliveryPage").then((module) => ({ default: module.DeliveryPage })));
+const ProjectDeliveryPage = lazy(() => import("../pages/ProjectDeliveryPage").then((module) => ({ default: module.ProjectDeliveryPage })));
 const ModelsPage = lazy(() => import("../pages/ModelsPage").then((module) => ({ default: module.ModelsPage })));
 const JobsPage = lazy(() => import("../pages/JobsPage").then((module) => ({ default: module.JobsPage })));
 const DiagnosticsPage = lazy(() => import("../pages/DiagnosticsPage").then((module) => ({ default: module.DiagnosticsPage })));
@@ -88,10 +90,12 @@ export const router = createBrowserRouter([
   {
     path: "/projects/:projectId", element: <AppShell />, errorElement: <RouteErrorBoundary />, children: [
       { index: true, element: page(<ProjectHomePage />) },
+      { path: "factory", element: page(<ProductionFactoryPage />) },
       { path: "story", element: page(<StoryWorkspacePage />) },
       { path: "story/plans", element: page(<AdaptationPlanningPage />) },
       { path: "story/plans/:planId", element: page(<AdaptationPlanWorkspacePage />) },
       { path: "assets", element: page(<FeatureFlagRoute flag="ASSET_BIBLE_V2" fallbackView="projects"><AssetBiblePage /></FeatureFlagRoute>) },
+      { path: "delivery", element: page(<ProjectDeliveryPage />) },
       { path: "settings", element: <ProjectSettingsShell />, children: [
         { index: true, element: <Navigate to="production" replace /> },
         { path: "production", element: page(<ProductionSettingsPage />) },

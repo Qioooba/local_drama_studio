@@ -133,6 +133,9 @@ class PipelineOrchestratorService:
         authorization = input_snapshot.get("application_authorization")
         if not isinstance(authorization, dict):
             authorization = {"endpoint": "DRAFT_ONLY", "sections": []}
+        production_authorization = input_snapshot.get("production_authorization")
+        if not isinstance(production_authorization, dict):
+            production_authorization = {"endpoint": "STRUCTURE_ONLY"}
         return {
             "run_id": str(row["id"]),
             "project_id": str(row["project_id"]),
@@ -170,6 +173,7 @@ class PipelineOrchestratorService:
             "error_message": str(row["error_message"]) if row["error_message"] else None,
             "auto_run_rendering": False,
             "application_authorization": authorization,
+            "production_authorization": production_authorization,
         }
 
     def _attach_apply_continuation(self, run: dict[str, Any]) -> dict[str, Any]:
@@ -188,6 +192,109 @@ class PipelineOrchestratorService:
             "last_error_detail": str(row["last_error_detail_redacted"]) if row and row["last_error_detail_redacted"] else None,
         }
         return run
+
+    @staticmethod
+    def _production_session_idempotency_key(run_id: str) -> str:
+        return f"pipeline:{run_id}:production-session"
+
+    def _attach_production_continuation(self, run: dict[str, Any]) -> dict[str, Any]:
+        authorization = run.get("production_authorization") or {}
+        if authorization.get("endpoint") != "WAITING_REVIEW":
+            run["production_continuation"] = {
+                "state": "NOT_AUTHORIZED",
+                "session_id": None,
+                "session_status": None,
+            }
+            return run
+        scope = f"production-session:create:{run['project_id']}"
+        key = self._production_session_idempotency_key(str(run["run_id"]))
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT response_json FROM command_idempotencies WHERE scope=? AND idempotency_key=?",
+                (scope, key),
+            ).fetchone()
+        if row is None:
+            run["production_continuation"] = {
+                "state": "PENDING" if run.get("apply_state") != "APPLIED" else "NOT_STARTED",
+                "session_id": None,
+                "session_status": None,
+            }
+            return run
+        response = _parse_json(row["response_json"], {})
+        session_id = str((response.get("session") or {}).get("id") or "")
+        if not session_id:
+            run["production_continuation"] = {
+                "state": "INVALID",
+                "session_id": None,
+                "session_status": None,
+            }
+            return run
+        from local_drama.application.production_sessions import ProductionSessionService
+
+        session = ProductionSessionService(self.database).get(session_id)
+        run["production_continuation"] = {
+            "state": "STARTED" if session["status"] != "READY" else "READY",
+            "session_id": session_id,
+            "session_status": session["status"],
+            "current_stage": session["current_stage"],
+        }
+        return run
+
+    def _continue_authorized_production(self, run_id: str) -> dict[str, Any] | None:
+        run = self.get_pipeline_by_id(run_id)
+        authorization = run.get("production_authorization") or {}
+        if authorization.get("endpoint") != "WAITING_REVIEW":
+            return None
+        if run["apply_state"] != "APPLIED":
+            raise DomainRuleError(
+                "PIPELINE_PRODUCTION_NOT_READY",
+                "故事结构尚未应用，不能创建整部生产会话",
+            )
+        from local_drama.application.production_session_runner import ProductionSessionRunner
+        from local_drama.application.production_sessions import ProductionSessionService
+
+        command = {
+            "scope_type": "WHOLE_DRAMA",
+            "episode_ids": [],
+            "production_mode": str(authorization.get("production_mode") or "BALANCED"),
+            "checkpoint_policy": str(authorization.get("checkpoint_policy") or "ON_EXCEPTION"),
+            "tts_enabled": bool(authorization.get("tts_enabled", True)),
+            "max_parallel_episodes": int(authorization.get("max_parallel_episodes") or 1),
+            "min_free_disk_bytes": int(authorization.get("min_free_disk_bytes") or 1),
+            "max_duration_seconds": int(authorization.get("max_duration_seconds") or 24 * 60 * 60),
+            "max_new_jobs": int(authorization.get("max_new_jobs") or 600),
+            "max_attempts_total": int(authorization.get("max_attempts_total") or 1_200),
+            "max_output_bytes": int(authorization.get("max_output_bytes") or 100 * 1024 * 1024 * 1024),
+            "max_queued_gpu_jobs": int(authorization.get("max_queued_gpu_jobs") or 8),
+            "dispatch_shots_per_tick": int(authorization.get("dispatch_shots_per_tick") or 4),
+            "actor": "pipeline-authorized-continuation",
+        }
+        sessions = ProductionSessionService(self.database)
+        plan = sessions.plan(str(run["project_id"]), command)
+        created = sessions.create(
+            str(run["project_id"]),
+            {**command, "expected_plan_hash": plan["plan_hash"]},
+            idempotency_key=self._production_session_idempotency_key(run_id),
+        )
+        session = created["session"]
+        started = ProductionSessionRunner(self.database, self.settings).start(
+            str(session["id"]),
+            {
+                "expected_revision": int(session["revision"]),
+                "actor": "pipeline-authorized-continuation",
+            },
+            idempotency_key=f"pipeline:{run_id}:production-session:start",
+        )
+        return started
+
+    def get_pipeline_by_id(self, run_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM pipeline_runs WHERE id=?", (run_id,)).fetchone()
+        if row is None:
+            raise DomainRuleError("PIPELINE_RUN_NOT_FOUND", "草案运行记录不存在")
+        return self._attach_production_continuation(
+            self._attach_apply_continuation(self._row_to_run(row))
+        )
 
     @staticmethod
     def _row_to_summary(row: Any) -> dict[str, Any]:
@@ -394,6 +501,7 @@ class PipelineOrchestratorService:
         voice_preset: str = "DEFAULT_VOX_CPM2",
         auto_run_rendering: bool = False,
         application_authorization: dict[str, Any] | None = None,
+        production_authorization: dict[str, Any] | None = None,
         capability_profile_version_id: str | None = None,
         llm_config: dict[str, Any] | None = None,
         actor: str = "local-user",
@@ -410,6 +518,45 @@ class PipelineOrchestratorService:
         elif not sections or set(sections) - PIPELINE_SECTIONS:
             raise DomainRuleError("PIPELINE_AUTHORIZATION_INVALID", "自动应用必须明确授权有效的文本 sections")
         authorization = {"schema_version": "pipeline-application-authorization/v1", "endpoint": endpoint, "sections": sections}
+        production = dict(production_authorization or {"endpoint": "STRUCTURE_ONLY"})
+        production_endpoint = str(production.get("endpoint") or "STRUCTURE_ONLY").upper()
+        production_mode = str(production.get("production_mode") or "BALANCED").upper()
+        checkpoint_policy = str(production.get("checkpoint_policy") or "ON_EXCEPTION").upper()
+        if production_endpoint not in {"STRUCTURE_ONLY", "WAITING_REVIEW"}:
+            raise DomainRuleError("PIPELINE_PRODUCTION_AUTHORIZATION_INVALID", "整部生产授权终点无效")
+        if production_mode not in {"DRAFT", "BALANCED", "QUALITY"}:
+            raise DomainRuleError("PIPELINE_PRODUCTION_AUTHORIZATION_INVALID", "整部生产质量档无效")
+        if checkpoint_policy not in {
+            "AUTO_CONTINUE",
+            "AFTER_ASSETS",
+            "AFTER_SHOT_PLAN",
+            "BEFORE_VIDEO",
+            "ON_EXCEPTION",
+        }:
+            raise DomainRuleError("PIPELINE_PRODUCTION_AUTHORIZATION_INVALID", "整部生产检查点策略无效")
+        if production_endpoint == "WAITING_REVIEW" and (
+            endpoint != "APPLY_SELECTED_SECTIONS"
+            or not {"STORY_PLAN", "ASSET_PROPOSALS"}.issubset(set(sections))
+        ):
+            raise DomainRuleError(
+                "PIPELINE_PRODUCTION_AUTHORIZATION_INVALID",
+                "继续整部生产必须先授权应用故事规划和资产建议",
+            )
+        production = {
+            "schema_version": "pipeline-production-authorization/v1",
+            "endpoint": production_endpoint,
+            "production_mode": production_mode,
+            "checkpoint_policy": checkpoint_policy,
+            "tts_enabled": bool(production.get("tts_enabled", True)),
+            "max_parallel_episodes": int(production.get("max_parallel_episodes") or 1),
+            "min_free_disk_bytes": int(production.get("min_free_disk_bytes") or 1),
+            "max_duration_seconds": int(production.get("max_duration_seconds") or 24 * 60 * 60),
+            "max_new_jobs": int(production.get("max_new_jobs") or 600),
+            "max_attempts_total": int(production.get("max_attempts_total") or 1_200),
+            "max_output_bytes": int(production.get("max_output_bytes") or 100 * 1024 * 1024 * 1024),
+            "max_queued_gpu_jobs": int(production.get("max_queued_gpu_jobs") or 8),
+            "dispatch_shots_per_tick": int(production.get("dispatch_shots_per_tick") or 4),
+        }
         self._project(project_id)
         source_id, text = self._validate_input(source_document_version_id, raw_text, target_episode_duration_seconds)
         if len(visual_style) > 200:
@@ -476,6 +623,7 @@ class PipelineOrchestratorService:
                 "capability_profile_version_id": capability_profile_version_id,
                 "llm_config": {key: value for key, value in (llm_config or {}).items() if key != "api_key"},
                 "application_authorization": authorization,
+                "production_authorization": production,
             }
             connection.execute(
                 """INSERT INTO pipeline_runs
@@ -542,7 +690,9 @@ class PipelineOrchestratorService:
             ).fetchone()
         if row is None:
             raise DomainRuleError("PIPELINE_RUN_NOT_FOUND", "草案运行记录不存在", {"run_id": run_id})
-        return self._attach_apply_continuation(self._row_to_run(row))
+        return self._attach_production_continuation(
+            self._attach_apply_continuation(self._row_to_run(row))
+        )
 
     def get_latest_pipeline(self, project_id: str) -> dict[str, Any] | None:
         self._project(project_id)
@@ -551,7 +701,13 @@ class PipelineOrchestratorService:
                 "SELECT * FROM pipeline_runs WHERE project_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1",
                 (project_id,),
             ).fetchone()
-        return self._attach_apply_continuation(self._row_to_run(row)) if row else None
+        return (
+            self._attach_production_continuation(
+                self._attach_apply_continuation(self._row_to_run(row))
+            )
+            if row
+            else None
+        )
 
     def list_pipelines(self, project_id: str, limit: int = 20) -> list[dict[str, Any]]:
         self._project(project_id)
@@ -613,7 +769,12 @@ class PipelineOrchestratorService:
         if authorization.get("endpoint") != "APPLY_SELECTED_SECTIONS" or authorization.get("revoked_at"):
             raise DomainRuleError("PIPELINE_APPLICATION_NOT_AUTHORIZED", "本次运行未授权自动应用")
         if run["apply_state"] == "APPLIED":
-            return {"run": self._attach_apply_continuation(run), "idempotent_replay": True}
+            production = self._continue_authorized_production(run_id)
+            return {
+                "run": self.get_pipeline_by_id(run_id),
+                "production": production,
+                "idempotent_replay": True,
+            }
         if run["state"] != "SUCCEEDED":
             raise DomainRuleError("PIPELINE_STATE_INVALID", "草案生成尚未成功，不能续接应用")
         authorized_draft_sha256 = str(authorization.get("authorized_draft_sha256") or "")
@@ -632,7 +793,7 @@ class PipelineOrchestratorService:
                 "授权续接已暂停：草案当前未通过应用门禁",
                 {"blockers": preview["quality_report"].get("blockers", [])},
             )
-        return self.apply_pipeline(
+        applied = self.apply_pipeline(
             run["project_id"],
             run_id,
             expected_revision=run["revision"],
@@ -640,6 +801,12 @@ class PipelineOrchestratorService:
             expected_impact_sha256=preview["impact"]["impact_sha256"],
             actor="pipeline-authorized-continuation",
         )
+        production = self._continue_authorized_production(run_id)
+        return {
+            **applied,
+            "run": self.get_pipeline_by_id(run_id),
+            "production": production,
+        }
 
     def retry_pipeline(self, project_id: str, run_id: str, expected_revision: int) -> dict[str, Any]:
         run = self.get_pipeline(project_id, run_id)

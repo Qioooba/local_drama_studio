@@ -19,6 +19,8 @@ class DeliveryPlanPort(Protocol):
         brand_kit_id: str | None = None,
         watermark_profile_id: str | None = None,
         compliance_policy_id: str | None = None,
+        *,
+        allow_inactive_target: bool = False,
     ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
         ...
 
@@ -35,6 +37,8 @@ class DeliveryBuildPort(Protocol):
         compliance_policy_id: str | None = None,
         *,
         actor: str = "local-user",
+        operation_id: str | None = None,
+        allow_inactive_target: bool = False,
     ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
         ...
 
@@ -68,6 +72,7 @@ def run_delivery_build_job(
         snapshot.get("brand_kit_id"),
         snapshot.get("watermark_profile_id"),
         snapshot.get("compliance_policy_id"),
+        allow_inactive_target=bool(snapshot.get("allow_inactive_target", False)),
     )
     if str(current["fingerprint"]) != expected:
         raise DomainRuleError("DELIVERY_INPUT_STALE", "交付入队后渲染、目标或批准状态已变化，请重新提交")
@@ -78,6 +83,8 @@ def run_delivery_build_job(
         snapshot.get("watermark_profile_id"),
         snapshot.get("compliance_policy_id"),
         actor="delivery-worker",
+        operation_id=str(job["id"]),
+        allow_inactive_target=bool(snapshot.get("allow_inactive_target", False)),
     )
     report = {
         "schema_version": "localdrama.delivery-build-job-report.v1",

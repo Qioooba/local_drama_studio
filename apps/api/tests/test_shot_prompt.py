@@ -27,6 +27,20 @@ def test_prompt_modifiers_are_normalized_and_compiled_as_a_final_layer() -> None
     )
 
 
+def test_prompt_includes_camera_fallback_instruction() -> None:
+    prompt = compose_shot_prompt(
+        {
+            "subject_action": "人物沿河行走",
+            "camera_plan": {
+                "movement": "TRACKING",
+                "prompt_text": "平稳跟随人物背影，不要定格",
+            },
+        }
+    )
+
+    assert prompt == "人物沿河行走，运镜 TRACKING，运镜说明：平稳跟随人物背影，不要定格"
+
+
 def test_structured_dialogue_preserves_speaker_and_verbatim_text() -> None:
     dialogue = [
         {"speaker": "A", "text": "别走。"},

@@ -4,6 +4,7 @@ import { ErrorState, Skeleton } from "../../components/ui";
 import { listWorkflowVersions, type WorkflowVersionSummary } from "../../generated/api";
 import {
   bindModelPlatformComfyWorkflow,
+  configureAndPublishModelPlatformNcnnVideoUpscale,
   createModelPlatformOfflineInstallationPlan,
   createModelPlatformTrustedDownloadPlan,
   getModelPlatformOverview,
@@ -43,6 +44,7 @@ import {
   type ModelPlatformOfflineInstallationPlanInput,
   type ModelPlatformInstallationTarget,
   type ModelPlatformTrustedDownloadPlanInput,
+  type ModelPlatformNcnnUpscaleProvisionInput,
 } from "./api";
 
 const FAMILY_TITLES: Record<string, string> = {
@@ -189,6 +191,73 @@ function TrustedDownloadPlanPanel({ enabled, targets, plans, targetsError, plans
       </form>}
       <ul className="model-platform-offline-import__plans">{trustedPlans.length ? trustedPlans.map((plan) => <li key={plan.id}><div><strong>{plan.release_code}</strong><small>{plan.target_library_label} · {plan.expected_artifact_count} 个组件 · {formatBytes(plan.expected_total_bytes)}</small></div><span className="status-pill">{plan.status === "AWAITING_TRUSTED_DOWNLOAD" ? "等待 Host 下载" : plan.status === "AWAITING_OFFLINE_IMPORT" ? "等待 Host 导入" : plan.status}</span></li>) : <li className="muted">尚无可信在线下载计划。</li>}</ul>
     </>}
+  </section>;
+}
+
+function NcnnUpscaleProvisionPanel({ saving, error, publication, onPublish }: {
+  saving: boolean;
+  error?: Error | null;
+  publication?: { status: "PUBLISHED"; model_name: string; verified_native_scales: number[]; runtime_sha256: string; model_bundle_sha256: string; reused_profile: boolean } | null;
+  onPublish: (input: ModelPlatformNcnnUpscaleProvisionInput) => void;
+}) {
+  const [executablePath, setExecutablePath] = useState("");
+  const [modelDirectory, setModelDirectory] = useState("");
+  const [modelName, setModelName] = useState<ModelPlatformNcnnUpscaleProvisionInput["model_name"]>("realesr-animevideov3");
+  const [gpuDevice, setGpuDevice] = useState(0);
+  const [tileSize, setTileSize] = useState<ModelPlatformNcnnUpscaleProvisionInput["tile_size"]>(0);
+  const [confirmed, setConfirmed] = useState(false);
+  const canSubmit = executablePath.trim().length > 0 && modelDirectory.trim().length > 0 && confirmed;
+  return <section className="model-platform-ncnn" aria-labelledby="model-platform-ncnn-title">
+    <div>
+      <p className="eyebrow">视频超分引擎</p>
+      <h4 id="model-platform-ncnn-title">Real-ESRGAN NCNN/Vulkan 一键验证并发布</h4>
+      <p>使用本机已有程序和权重，对模型支持的每个倍率真实处理两帧；全部通过后才登记运行时、模型、能力证据并发布可选 Profile。不会下载文件或联网。</p>
+    </div>
+    <form onSubmit={(event) => {
+      event.preventDefault();
+      if (!canSubmit) return;
+      onPublish({
+        executable_path: executablePath.trim(), model_directory: modelDirectory.trim(), model_name: modelName,
+        gpu_device: gpuDevice, tile_size: tileSize, load_threads: 1, proc_threads: 1, save_threads: 2,
+        actor: "local-user", confirm_publish: true,
+      });
+    }}>
+      <label className="model-platform-ncnn__wide">NCNN 可执行程序
+        <input value={executablePath} disabled={saving} onChange={(event) => setExecutablePath(event.target.value)} placeholder="例如 D:\\AI\\realesrgan-ncnn-vulkan.exe" autoComplete="off" />
+        <small>仅接受名称为 realesrgan-ncnn-vulkan(.exe) 的本机真实文件；路径不会在响应或日志中回显。</small>
+      </label>
+      <label className="model-platform-ncnn__wide">模型目录
+        <input value={modelDirectory} disabled={saving} onChange={(event) => setModelDirectory(event.target.value)} placeholder="包含同名 .param 与 .bin 文件的目录" autoComplete="off" />
+      </label>
+      <label>模型
+        <select value={modelName} disabled={saving} onChange={(event) => setModelName(event.target.value as ModelPlatformNcnnUpscaleProvisionInput["model_name"])}>
+          <option value="realesr-animevideov3">动漫视频 · animevideov3（2×/3×/4×）</option>
+          <option value="realesrgan-x4plus-anime">动漫通用 · x4plus-anime（4×）</option>
+          <option value="realesrgan-x4plus">写实通用 · x4plus（4×）</option>
+        </select>
+      </label>
+      <label>Vulkan GPU 序号
+        <input type="number" min="0" max="31" value={gpuDevice} disabled={saving} onChange={(event) => setGpuDevice(Number(event.target.value))} />
+      </label>
+      <label>Tile 大小
+        <select value={tileSize} disabled={saving} onChange={(event) => setTileSize(Number(event.target.value) as ModelPlatformNcnnUpscaleProvisionInput["tile_size"])}>
+          <option value={0}>自动</option><option value={64}>64</option><option value={128}>128</option><option value={256}>256</option><option value={512}>512</option><option value={1024}>1024</option>
+        </select>
+      </label>
+      <label className="model-platform-ncnn__confirm"><input type="checkbox" checked={confirmed} disabled={saving} onChange={(event) => setConfirmed(event.target.checked)} />
+        <span>我确认立即占用本机 GPU 运行真实冒烟；全部通过后发布这个不可变 Profile。</span>
+      </label>
+      <div className="model-platform-ncnn__actions">
+        <button type="submit" className="primary" disabled={saving || !canSubmit}>{saving ? "正在逐倍率验证，请勿关闭…" : "验证并发布超分 Profile"}</button>
+        <small aria-live="polite">动漫视频模型会依次验证 2×、3×、4×，通常需要几分钟。</small>
+      </div>
+    </form>
+    {publication ? <div className="model-platform-ncnn__receipt" role="status">
+      <strong>{publication.reused_profile ? "验证通过，已复用现有 Profile" : "验证通过，Profile 已发布"}</strong>
+      <span>{publication.model_name} · {publication.verified_native_scales.map((scale) => `${scale}×`).join(" / ")}</span>
+      <small>运行时 {publication.runtime_sha256.slice(0, 12)}… · 模型 {publication.model_bundle_sha256.slice(0, 12)}…</small>
+    </div> : null}
+    {error ? <p className="inline-error" role="alert">NCNN Profile 未发布：{String(error)}</p> : null}
   </section>;
 }
 
@@ -541,6 +610,18 @@ export function ModelPlatformCenter({ onOpenConnections }: { onOpenConnections: 
       await queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "installation-plans"] });
     },
   });
+  const ncnnUpscaleProvision = useMutation({
+    mutationFn: configureAndPublishModelPlatformNcnnVideoUpscale,
+    onSuccess: async ({ profile }) => {
+      setScanMessage(`${profile.model_name} 已完成 ${profile.verified_native_scales.map((scale) => `${scale}×`).join("、")} 真实冒烟并发布；整剧超分页面现在可以选择该 Profile。`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "overview"] }),
+        queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "registered-candidates"] }),
+        queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "profile-versions"] }),
+        queryClient.invalidateQueries({ queryKey: ["model-platform-v2", "system-capability-assignments"] }),
+      ]);
+    },
+  });
   const candidateRegistration = useMutation({
     mutationFn: registerModelPlatformDiscoveryObservation,
     onSuccess: async ({ candidate }) => {
@@ -702,6 +783,8 @@ export function ModelPlatformCenter({ onOpenConnections }: { onOpenConnections: 
 
     <TrustedDownloadPlanPanel enabled={storagePolicy.data?.storage_policy.online_download_default_enabled === true} targets={offlineImportTargets.data?.items} plans={offlineImportPlans.data?.items} targetsError={offlineImportTargets.error} plansError={offlineImportPlans.error} saving={trustedDownloadPlan.isPending} onCreate={(input) => trustedDownloadPlan.mutate(input)} />
 
+    <NcnnUpscaleProvisionPanel saving={ncnnUpscaleProvision.isPending} error={ncnnUpscaleProvision.error} publication={ncnnUpscaleProvision.data?.profile} onPublish={(input) => ncnnUpscaleProvision.mutate(input)} />
+
     <BusinessMigrationPanel rollouts={businessRollouts.data?.items} error={businessRollouts.error} />
 
     <SystemCapabilityAssignmentsPanel items={systemAssignments.data?.items} error={systemAssignments.error} saving={systemAssignmentSave.isPending} onSave={(payload) => systemAssignmentSave.mutate(payload)} />
@@ -713,7 +796,7 @@ export function ModelPlatformCenter({ onOpenConnections }: { onOpenConnections: 
         <button type="button" className="secondary" disabled={llamaCppScan.isPending || modelLockScan.isPending} onClick={() => modelLockScan.mutate()}>扫描 ComfyUI / PyTorch</button>
       </div>
       {scanMessage ? <p role="status">{scanMessage}</p> : null}
-      {llamaCppScan.error || modelLockScan.error || offlineImportPlan.error || trustedDownloadPlan.error || candidateSmoke.error || installationIntegrity.error || comfyWorkflowBinding.error || comfySmokeSubmission.error || profileProvision.error || profileSmoke.error || profilePublish.error || systemAssignmentSave.error ? <p className="model-platform-discovery-actions__error" role="alert">操作失败：{String(llamaCppScan.error ?? modelLockScan.error ?? offlineImportPlan.error ?? trustedDownloadPlan.error ?? candidateSmoke.error ?? installationIntegrity.error ?? comfyWorkflowBinding.error ?? comfySmokeSubmission.error ?? profileProvision.error ?? profileSmoke.error ?? profilePublish.error ?? systemAssignmentSave.error)}。请检查运行时接入、模型库、参数合同或所需 Adapter。</p> : null}
+      {llamaCppScan.error || modelLockScan.error || offlineImportPlan.error || trustedDownloadPlan.error || ncnnUpscaleProvision.error || candidateSmoke.error || installationIntegrity.error || comfyWorkflowBinding.error || comfySmokeSubmission.error || profileProvision.error || profileSmoke.error || profilePublish.error || systemAssignmentSave.error ? <p className="model-platform-discovery-actions__error" role="alert">操作失败：{String(llamaCppScan.error ?? modelLockScan.error ?? offlineImportPlan.error ?? trustedDownloadPlan.error ?? ncnnUpscaleProvision.error ?? candidateSmoke.error ?? installationIntegrity.error ?? comfyWorkflowBinding.error ?? comfySmokeSubmission.error ?? profileProvision.error ?? profileSmoke.error ?? profilePublish.error ?? systemAssignmentSave.error)}。请检查运行时接入、模型库、参数合同或所需 Adapter。</p> : null}
     </section>
 
     <DiscoveryObservationList items={discoveries.data?.items ?? []} onRegister={(observationId) => candidateRegistration.mutate(observationId)} registeringId={candidateRegistration.isPending ? candidateRegistration.variables ?? null : null} />

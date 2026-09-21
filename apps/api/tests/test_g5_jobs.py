@@ -172,6 +172,54 @@ def test_failed_dependency_moves_downstream_job_out_of_permanent_queue(workspace
     assert any(event["type"] == "JOB_DEPENDENCY_BLOCKED" for event in service.events(project_id=project_id))
 
 
+def test_recovered_dependency_requeues_only_dependency_blocked_job(workspace, database) -> None:
+    project = _project(workspace, database, "g5_dependency_recovery")
+    project_id = str(project["id"])
+    service = JobService(database, workspace)
+    upstream = _create(service, project_id, "recovery-upstream", max_attempts=1)
+    downstream = _create(
+        service,
+        project_id,
+        "recovery-downstream",
+        depends_on_job_ids=[str(upstream["id"])],
+    )
+    claim = service.claim("recovery-worker", ["CPU"])
+    assert claim is not None and claim["job"]["id"] == upstream["id"]
+    service.complete(
+        str(claim["attempt"]["id"]),
+        str(claim["attempt"]["lease_token"]),
+        "recovery-worker",
+        success=False,
+        error_code="TRANSIENT_PROVIDER_STATE",
+        error_detail_redacted="provider result not inspected yet",
+    )
+    assert service.claim("recovery-worker", ["CPU"]) is None
+    assert service.get_job(str(downstream["id"]))["last_error_code"] == "JOB_DEPENDENCY_FAILED"
+
+    service.retry(str(upstream["id"]))
+    recovered_claim = service.claim("recovery-worker", ["CPU"])
+    assert recovered_claim is not None and recovered_claim["job"]["id"] == upstream["id"]
+    service.complete(
+        str(recovered_claim["attempt"]["id"]),
+        str(recovered_claim["attempt"]["lease_token"]),
+        "recovery-worker",
+        success=True,
+    )
+
+    result = service.requeue_recovered_dependencies(actor="test-recovery")
+    assert result["requeued"] == 1
+    assert result["items"] == [{"job_id": downstream["id"], "job_state": "QUEUED"}]
+    persisted = service.get_job(str(downstream["id"]))
+    assert persisted["state"] == "QUEUED"
+    assert persisted["last_error_code"] is None
+    next_claim = service.claim("recovery-worker", ["CPU"])
+    assert next_claim is not None and next_claim["job"]["id"] == downstream["id"]
+    assert any(
+        event["type"] == "JOB_DEPENDENCY_RECOVERED"
+        for event in service.events(project_id=project_id)
+    )
+
+
 def test_twenty_cpu_jobs_sse_and_artifact_idempotency(workspace, database) -> None:
     project = _project(workspace, database, "g5_scale")
     project_id = str(project["id"])
@@ -442,9 +490,12 @@ def test_local_worker_disk_full_fails_closed_and_releases_lease(workspace, datab
     assert outcome is not None
     assert outcome["job"]["id"] == job["id"]
     assert outcome["error"] == "DISK_FULL"
-    assert outcome["result"]["job_state"] == "FAILED"
+    assert outcome["result"]["job_state"] == "NEEDS_ATTENTION"
     assert not (workspace.work_root / "jobs" / str(job["id"]) / ".partial-result.txt").exists()
-    assert jobs.get_job(str(job["id"]))["attempts"][0]["error_code"] == "DISK_FULL"
+    persisted = jobs.get_job(str(job["id"]))
+    assert persisted["state"] == "NEEDS_ATTENTION"
+    assert persisted["attempts"][0]["state"] == "NEEDS_ATTENTION"
+    assert persisted["attempts"][0]["error_code"] == "DISK_FULL"
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM artifacts WHERE job_attempt_id=?", (outcome["attempt"]["id"],)).fetchone()[0] == 0
         released = connection.execute("SELECT released_at FROM job_resource_leases WHERE attempt_id=?", (outcome["attempt"]["id"],)).fetchone()

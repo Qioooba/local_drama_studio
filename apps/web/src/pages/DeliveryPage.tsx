@@ -141,7 +141,7 @@ export function DeliveryPage() {
     onChanged: refreshDeliveryFacts,
   };
   return <div className="v2-page creative-task-page delivery-workspace-v2">
-    <div className="panel-heading"><div><p className="eyebrow">合成与交付</p><h2>从冻结时间线创建可验证成片</h2></div><Link className="secondary v2-inline-link" to={routes.postEdit(projectId, episodeId)}>返回编辑</Link></div>
+    <div className="panel-heading"><div><p className="eyebrow">合成与交付</p><h2>从冻结时间线创建可验证成片</h2></div><div className="delivery-heading-actions"><Link className="secondary v2-inline-link" to={`${routes.projectDelivery(projectId, "versions")}&episodeId=${encodeURIComponent(episodeId)}`}>整剧版本与超分</Link><Link className="secondary v2-inline-link" to={routes.postEdit(projectId, episodeId)}>返回编辑</Link></div></div>
     <p className="muted">合成成片、核对交付文件与人工批准是分开的步骤；机器检查通过不等于人工批准。</p>
     <ConceptGuide title="交付流程名词说明" items={[{ term: "冻结时间线", description: "已经确认内容且不会被直接改写的编排版本，是合成成片的稳定输入。" }, { term: "交付候选", description: "准备提交的平台文件及其检查记录；创建后仍需验证和人工批准。" }, { term: "文件校验", description: "核对交付清单和文件指纹，确认文件齐全且未被替换。" }]} />
     {activeError && <p className="inline-error" role="alert">当前交付步骤读取失败：{String(activeError)}</p>}

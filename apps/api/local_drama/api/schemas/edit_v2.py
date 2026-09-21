@@ -98,6 +98,7 @@ class TimelineDraftCreateCommand(StrictModel):
     clips: list[EditVideoClipCommand] = Field(min_length=1, max_length=500)
     include_dialogue: bool = True
     include_music_and_sfx: bool = True
+    include_source_audio: bool = False
     include_subtitles: bool = True
     expected_latest_revision_id: str | None = Field(default=None, max_length=200)
     expected_upstream_fingerprint: str = Field(min_length=64, max_length=64)

@@ -43,6 +43,13 @@ describe("EpisodeEditWorkspace", () => {
     await screen.findByRole("heading", { name: "EP01 时间线" });
     fireEvent.change(screen.getByLabelText("成片时长（秒）"), { target: { value: "1.5" } });
     fireEvent.click(screen.getByRole("button", { name: "保存新草稿" }));
-    await waitFor(() => expect(createEpisodeTimelineDraftV2).toHaveBeenCalledWith("e1", expect.objectContaining({ expected_latest_revision_id: "tl-1", clips: expect.arrayContaining([expect.objectContaining({ shot_id: "s1", duration_us: 1_500_000 })]) })));
+    await waitFor(() => expect(createEpisodeTimelineDraftV2).toHaveBeenCalledWith("e1", expect.objectContaining({ expected_latest_revision_id: "tl-1", include_source_audio: false, clips: expect.arrayContaining([expect.objectContaining({ shot_id: "s1", duration_us: 1_500_000 })]) })));
+  });
+
+  it("warns before mixing model source sound with scripted dialogue", async () => {
+    mount();
+    await screen.findByRole("heading", { name: "EP01 时间线" });
+    fireEvent.click(screen.getByRole("checkbox", { name: "模型原声" }));
+    expect(screen.getByRole("note").textContent).toContain("模型原声会与后期对白同时混入");
   });
 });

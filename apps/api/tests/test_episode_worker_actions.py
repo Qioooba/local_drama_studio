@@ -10,6 +10,7 @@ import pytest
 from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
 from local_drama.application.generation import GenerationService
 from local_drama.application.jobs import JobService
+from local_drama.application.production_choices import ProductionChoiceService
 from local_drama.application.projects import ProjectService
 from local_drama.domain.errors import DomainRuleError
 from tests.test_director_fields import _published_camera_profile
@@ -18,8 +19,14 @@ from tests.test_director_fields import _published_camera_profile
 def _project_and_shot(workspace, database, code: str) -> tuple[dict, dict, dict]:
     projects = ProjectService(database, workspace.projects_root)
     project = projects.create_project(
-        code=code, title=code, episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
-        target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+        code=code,
+        title=code,
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True,
     )
     season = projects.list_seasons(str(project["id"]))[0]
     episode = projects.list_episodes(str(season["id"]))[0]
@@ -37,17 +44,18 @@ def test_keyframe_action_dispatches_shared_batch_and_preserves_job_dependencies(
     service.keyframe_batches = Mock()
     service.keyframe_batches.plan.return_value = {"valid": True, "issues": [], "summary": {"blocked": 0}, "plan_hash": "hash"}
     service.keyframe_batches.submit.return_value = {"id": "batch", "items": [{"shot_id": shot["id"], "status": "QUEUED", "job_id": "image-job"}]}
-    report, size = service.keyframe_generation(str(episode["id"]), "run", "task")
+    report, size = service.keyframe_generation(str(episode["id"]), "run", "task", dispatch_job_limit=2)
     assert report["status"] == "PASS"
     args = service.keyframe_batches.submit.call_args.kwargs
     assert args["idempotency_key"] == "episode-keyframes:run:task"
     assert args["targets"] == [{"shot_id": shot["id"], "expected_revision": shot["revision"]}]
     assert args["candidate_count"] == 1
+    assert args["max_jobs"] == 2
     stepper = Mock()
     advance_automation_run({"id": "task-job", "input_snapshot": {"automation_run_id": "run"}}, report, size, workflow_steps=stepper)
     assert stepper.step_run.call_args.kwargs["additional_dependency_job_ids"] == ["image-job"]
     # Retrying the same task must use the batch service's stable replay key.
-    service.keyframe_generation(str(episode["id"]), "run", "task")
+    service.keyframe_generation(str(episode["id"]), "run", "task", dispatch_job_limit=2)
     assert service.keyframe_batches.submit.call_args.kwargs["idempotency_key"] == args["idempotency_key"]
 
 
@@ -70,10 +78,62 @@ def test_keyframe_action_reuses_approval_and_blocks_partial_plan(workspace, data
     service.keyframe_batches.submit.assert_not_called()
 
 
+def test_keyframe_action_reuses_same_session_temporary_choice(workspace, database, monkeypatch):
+    from unittest.mock import Mock
+
+    import local_drama.application.episode_worker_actions as module
+
+    _, episode, shot = _project_and_shot(workspace, database, "keyframe_session_reuse")
+    service = EpisodeWorkerActionService(database, workspace)
+    service.keyframe_batches = Mock()
+    monkeypatch.setattr(module, "approved_keyframes_for_shots", lambda *args, **kwargs: {})
+    monkeypatch.setattr(
+        module,
+        "session_keyframes_for_shots",
+        lambda _connection, session_id, _shot_ids: {
+            str(shot["id"]): {
+                "media_version_id": "session-keyframe",
+                "production_choice_id": "choice-1",
+                "selection_authority": "MACHINE_TEMPORARY",
+                "human_approved": False,
+            }
+        }
+        if session_id == "session-1"
+        else {},
+    )
+
+    report, produced_bytes = service.keyframe_generation(
+        str(episode["id"]),
+        "run",
+        "task",
+        production_session_id="session-1",
+    )
+
+    assert produced_bytes == 0
+    assert report["status"] == "PASS"
+    assert report["machine_check"]["code"] == "KEYFRAME_INPUTS_REUSED"
+    assert report["produced"]["items"] == [
+        {
+            "shot_id": str(shot["id"]),
+            "status": "SESSION_TEMPORARY_REUSED",
+            "media_version_id": "session-keyframe",
+            "production_choice_id": "choice-1",
+            "selection_authority": "MACHINE_TEMPORARY",
+            "human_approved": False,
+        }
+    ]
+    service.keyframe_batches.plan.assert_not_called()
+    service.keyframe_batches.submit.assert_not_called()
+
+
 def test_video_action_retries_only_the_failed_shot_job(workspace, database) -> None:
     project, episode, shot = _project_and_shot(workspace, database, "episode_video_retry")
     intent = GenerationService(database, workspace).create_intent(
-        str(project["id"]), "SHOT", str(shot["id"]), "I2V_FORMAL", "retry failed shot",
+        str(project["id"]),
+        "SHOT",
+        str(shot["id"]),
+        "I2V_FORMAL",
+        "retry failed shot",
     )
     profile_id = str(uuid.uuid4())
     variant_id = str(uuid.uuid4())
@@ -97,14 +157,23 @@ def test_video_action_retries_only_the_failed_shot_job(workspace, database) -> N
         )
     jobs = JobService(database, workspace)
     failed = jobs.create_job(
-        str(project["id"]), "GENERATION_VARIANT", "GENERATION_VARIANT", variant_id, "GPU_H3", {}, "failed-shot-job", max_attempts=1,
+        str(project["id"]),
+        "GENERATION_VARIANT",
+        "GENERATION_VARIANT",
+        variant_id,
+        "GPU_H3",
+        {},
+        "failed-shot-job",
+        max_attempts=1,
     )
     claim = jobs.claim("gpu-test", ["GPU_H3"])
     assert claim is not None
     jobs.complete(str(claim["attempt"]["id"]), str(claim["attempt"]["lease_token"]), "gpu-test", success=False, error_code="RUNTIME_FAILED")
 
     report, produced_bytes = EpisodeWorkerActionService(database, workspace).video_generation(
-        str(episode["id"]), "run-1", "task-1",
+        str(episode["id"]),
+        "run-1",
+        "task-1",
     )
 
     assert produced_bytes == 0
@@ -117,7 +186,9 @@ def test_video_action_retries_only_the_failed_shot_job(workspace, database) -> N
 
 
 def test_video_action_refreshes_stale_working_media_instead_of_reusing_verified_history(
-    workspace, database, monkeypatch,
+    workspace,
+    database,
+    monkeypatch,
 ) -> None:
     service = EpisodeWorkerActionService(database, workspace)
     shot = {"id": "shot-stale", "code": "SHOT-STALE"}
@@ -153,8 +224,105 @@ def test_video_action_refreshes_stale_working_media_instead_of_reusing_verified_
     assert item["refresh_reason"] == "WORKING_MEDIA_DEPENDENCY_CHANGED"
 
 
+def test_video_action_dispatches_only_one_bounded_wave(workspace, database, monkeypatch) -> None:
+    service = EpisodeWorkerActionService(database, workspace)
+    shots = [{"id": f"shot-{index}", "code": f"SH-{index:03d}"} for index in range(1, 4)]
+    submitted: list[str] = []
+    monkeypatch.setattr(service, "_episode", lambda _episode_id: ("project-wave", shots))
+    monkeypatch.setattr(service, "_stale_working_media_shots", lambda *_args: set())
+    monkeypatch.setattr(service, "_variant_jobs", lambda _shot_id: [])
+    monkeypatch.setattr(service, "_promote_completed_outputs", lambda _jobs: [])
+    monkeypatch.setattr(service, "_shot_video", lambda _shot_id: None)
+    monkeypatch.setattr(service, "_shot_video_count", lambda _shot_id: 0)
+
+    def submit(_project_id, shot, _run_id, _task_id, **kwargs):
+        job_id = f"job-{len(submitted) + 1}"
+        submitted.append(job_id)
+        return {
+            "shot_id": shot["id"],
+            "shot_code": shot["code"],
+            "status": "SUBMITTED",
+            "variant_id": f"variant-{len(submitted)}",
+            "job_id": job_id,
+            "take_index": kwargs["take_index"],
+        }
+
+    monkeypatch.setattr(service, "_submit_shot", submit)
+    report, _ = service.video_generation(
+        "episode-wave",
+        "run-wave",
+        "task-wave",
+        target_take_count=2,
+        dispatch_job_limit=3,
+    )
+
+    assert report["status"] == "PASS"
+    assert submitted == ["job-1", "job-2", "job-3"]
+    assert report["machine_check"]["dispatch_job_limit"] == 3
+    assert report["machine_check"]["deferred_shots"] == 1
+
+
+def test_session_video_submission_freezes_session_authority_in_variant_plan(
+    workspace,
+    database,
+    monkeypatch,
+) -> None:
+    project, _episode, shot = _project_and_shot(workspace, database, "session_video_authority")
+    service = EpisodeWorkerActionService(database, workspace)
+    captured_plans = []
+    monkeypatch.setattr(
+        service,
+        "_keyframe",
+        lambda _shot_id, *, production_session_id=None: {
+            "media_version_id": "session-keyframe",
+            "selection_authority": "MACHINE_TEMPORARY",
+            "production_choice_id": "choice-1",
+        }
+        if production_session_id == "session-1"
+        else None,
+    )
+    monkeypatch.setattr(
+        service,
+        "_video_profile",
+        lambda _project_id, _shot_id: {
+            "id": "video-profile",
+            "input_contract_json": json.dumps({"input_slots": {"FIRST_FRAME": {"max": 1}}}),
+        },
+    )
+    monkeypatch.setattr(service, "_fields", lambda _shot: {"target_duration_ms": 4_000})
+    monkeypatch.setattr(service, "_end_frame_chain", lambda *_args: {"status": "SKIPPED"})
+    monkeypatch.setattr(service.generation, "_retarget_camera_plan", lambda *_args: None)
+
+    def preflight(_intent_id, plan):
+        captured_plans.append(plan)
+        return {"plan_hash": "plan-hash"}
+
+    def submit(_intent_id, plan, _plan_hash, _idempotency_key):
+        captured_plans.append(plan)
+        return {"variant": {"id": "variant-1"}, "job": {"id": "job-1"}}
+
+    monkeypatch.setattr(service.generation, "preflight_variant", preflight)
+    monkeypatch.setattr(service.generation, "submit_confirmed_variant", submit)
+
+    result = service._submit_shot(
+        str(project["id"]),
+        {**shot, "code": "SH-001"},
+        "run-1",
+        "task-1",
+        production_session_id="session-1",
+    )
+
+    assert result["status"] == "SUBMITTED"
+    assert len(captured_plans) == 2
+    assert all(plan.production_session_id == "session-1" for plan in captured_plans)
+    assert result["keyframe_selection_authority"] == "MACHINE_TEMPORARY"
+    assert result["production_choice_id"] == "choice-1"
+
+
 def test_operation_impact_distinguishes_retry_new_take_and_recompose_without_writes(
-    workspace, database, monkeypatch,
+    workspace,
+    database,
+    monkeypatch,
 ) -> None:
     project, episode, persisted_shot = _project_and_shot(workspace, database, "operation_impact")
     service = EpisodeWorkerActionService(database, workspace)
@@ -165,45 +333,47 @@ def test_operation_impact_distinguishes_retry_new_take_and_recompose_without_wri
         "video_generation_preflight",
         lambda *_args, **_kwargs: {
             "input_fingerprint": "e" * 64,
-            "items": [{
-                "shot_id": shot["id"],
-                "status": "READY",
-                "blockers": [],
-                "profile_version_id": "profile-operation",
-            }],
+            "items": [
+                {
+                    "shot_id": shot["id"],
+                    "status": "READY",
+                    "blockers": [],
+                    "profile_version_id": "profile-operation",
+                }
+            ],
         },
     )
     monkeypatch.setattr(service, "_stale_working_media_shots", lambda *_args: set())
     monkeypatch.setattr(
         service,
         "_variant_jobs",
-        lambda _shot_id: [{
-            "id": "failed-job",
-            "state": "FAILED",
-            "variant_id": "variant-1",
-            "explicit_seed": 77,
-        }],
+        lambda _shot_id: [
+            {
+                "id": "failed-job",
+                "state": "FAILED",
+                "variant_id": "variant-1",
+                "explicit_seed": 77,
+            }
+        ],
     )
     monkeypatch.setattr(service, "_shot_video_count", lambda _shot_id: 0)
 
-    retry = service.operation_impact(
-        str(episode["id"]), operation="RETRY_ORIGINAL", target_shot_ids=(shot["id"],)
-    )
-    assert retry["sets"]["retry_original"] == [{
-        "shot_id": shot["id"],
-        "shot_code": "SH-001",
-        "shot_revision": 3,
-        "reason": "FAILED_JOB_SAME_FROZEN_INPUTS",
-        "job_id": "failed-job",
-        "variant_id": "variant-1",
-        "seed": 77,
-    }]
+    retry = service.operation_impact(str(episode["id"]), operation="RETRY_ORIGINAL", target_shot_ids=(shot["id"],))
+    assert retry["sets"]["retry_original"] == [
+        {
+            "shot_id": shot["id"],
+            "shot_code": "SH-001",
+            "shot_revision": 3,
+            "reason": "FAILED_JOB_SAME_FROZEN_INPUTS",
+            "job_id": "failed-job",
+            "variant_id": "variant-1",
+            "seed": 77,
+        }
+    ]
     assert retry["mutated"] is False
     assert retry["expected_input_fingerprints"] == {}
 
-    new_take = service.operation_impact(
-        str(episode["id"]), operation="NEW_TAKE", target_shot_ids=(shot["id"],)
-    )
+    new_take = service.operation_impact(str(episode["id"]), operation="NEW_TAKE", target_shot_ids=(shot["id"],))
     assert new_take["sets"]["needs_generation"][0]["reason"] == "EXPLICIT_NEW_CANDIDATE"
     assert new_take["gpu_video_job_count"] == 1
     assert new_take["plan_hash"] != retry["plan_hash"]
@@ -214,7 +384,9 @@ def test_operation_impact_distinguishes_retry_new_take_and_recompose_without_wri
 
 
 def test_video_generation_rejects_inputs_changed_after_operation_preview(
-    workspace, database, monkeypatch,
+    workspace,
+    database,
+    monkeypatch,
 ) -> None:
     service = EpisodeWorkerActionService(database, workspace)
     shot = {"id": "shot-frozen", "code": "SH-001"}
@@ -239,7 +411,9 @@ def test_video_generation_rejects_inputs_changed_after_operation_preview(
 
 
 def test_retry_original_requeues_the_failed_job_without_resolving_current_generation_inputs(
-    workspace, database, monkeypatch,
+    workspace,
+    database,
+    monkeypatch,
 ) -> None:
     service = EpisodeWorkerActionService(database, workspace)
     shot = {"id": "shot-frozen-retry", "code": "SH-001", "revision": 2}
@@ -259,8 +433,11 @@ def test_retry_original_requeues_the_failed_job_without_resolving_current_genera
     )
 
     report, _ = service.video_generation(
-        "episode-1", "run-1", "task-1",
-        target_shot_ids=(shot["id"],), retry_original_only=True,
+        "episode-1",
+        "run-1",
+        "task-1",
+        target_shot_ids=(shot["id"],),
+        retry_original_only=True,
     )
 
     assert retried == ["job-failed"]
@@ -295,6 +472,60 @@ def test_qc_pass_with_adoption_blocker_pauses_production(workspace, database, mo
     assert item["status"] == "PASS"
     assert item["production_status"] == "BLOCKED"
     assert item["auto_selection"] == {"status": "BLOCKED", "code": "SELECTION_CONFLICT"}
+
+
+def test_session_qc_records_temporary_choice_without_global_auto_selection(
+    workspace, database, monkeypatch
+) -> None:
+    service = EpisodeWorkerActionService(database, workspace)
+    shot = {"id": "shot-session-choice", "code": "S001"}
+    monkeypatch.setattr(service, "_episode", lambda _episode_id: ("project-1", [shot]))
+    monkeypatch.setattr(service, "_variant_jobs", lambda _shot_id: [])
+    monkeypatch.setattr(
+        service,
+        "_shot_video",
+        lambda _shot_id: {
+            "media_version_id": "video-pass",
+            "media_asset_id": "asset-pass",
+            "stage": "FORMAL",
+            "selected_version_id": None,
+            "approved_version_id": None,
+            "variant_id": None,
+        },
+    )
+    monkeypatch.setattr(
+        service.reviews,
+        "machine_check",
+        lambda *_args, **_kwargs: {"id": "qc-session", "status": "PASS"},
+    )
+    monkeypatch.setattr(
+        service,
+        "_auto_select_video",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("session QC must not write global selection")),
+    )
+    recorded: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        ProductionChoiceService,
+        "record_video_choice",
+        lambda _self, session_id, _episode_id, _shot_id, media_version_id, _check_id, **_kwargs: (
+            recorded.append((session_id, media_version_id))
+            or {"selection_authority": "MACHINE_TEMPORARY", "human_approved": False}
+        ),
+    )
+
+    report, _ = service.qc(
+        "episode-1",
+        "run-1",
+        "task-1",
+        auto_select=True,
+        production_session_id="session-1",
+    )
+
+    assert report["status"] == "PASS"
+    assert recorded == [("session-1", "video-pass")]
+    item = report["produced"]["items"][0]
+    assert "auto_selection" not in item
+    assert item["production_choice"]["selection_authority"] == "MACHINE_TEMPORARY"
 
 
 def test_older_qc_pass_candidate_beats_newer_failed_candidate(workspace, database) -> None:
@@ -337,12 +568,24 @@ def test_older_qc_pass_candidate_beats_newer_failed_candidate(workspace, databas
 def test_shot_video_queries_ignore_stale_variants_without_cross_project_candidate_leakage(workspace, database) -> None:
     projects = ProjectService(database, workspace.projects_root)
     project_a = projects.create_project(
-        code="stale_query_a", title="stale-query-a", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
-        target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+        code="stale_query_a",
+        title="stale-query-a",
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True,
     )
     project_b = projects.create_project(
-        code="stale_query_b", title="stale-query-b", episode_count=1, aspect_ratio="16:9", fps_num=24, fps_den=1,
-        target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+        code="stale_query_b",
+        title="stale-query-b",
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True,
     )
     episode_a = projects.list_episodes(str(projects.list_seasons(str(project_a["id"]))[0]["id"]))[0]
     episode_b = projects.list_episodes(str(projects.list_seasons(str(project_b["id"]))[0]["id"]))[0]

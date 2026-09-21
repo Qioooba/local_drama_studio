@@ -417,7 +417,7 @@ class SqliteEpisodeEditRepository:
             items.sort(key=lambda item: (int(item["start_us"]), str(item["track_type"]), str(item["media_version_id"])))
             assert_dialogue_timing(items)
             subtitle = upstream["subtitle"] if command["include_subtitles"] else None
-            snapshot = {"schema_version": "localdrama.timeline-editor.v3", "upstream_fingerprint": upstream["fingerprint"], "audio_mix_revision": upstream["audio_mix_revision"], "subtitle_revision_id": subtitle["revision_id"] if subtitle else None, "subtitle_content_hash": subtitle["content_hash"] if subtitle else None, "include_dialogue": bool(command["include_dialogue"]), "include_music_and_sfx": bool(command["include_music_and_sfx"]), "include_subtitles": bool(command["include_subtitles"]), "requires_human_confirmation": True}
+            snapshot = {"schema_version": "localdrama.timeline-editor.v3", "upstream_fingerprint": upstream["fingerprint"], "audio_mix_revision": upstream["audio_mix_revision"], "subtitle_revision_id": subtitle["revision_id"] if subtitle else None, "subtitle_content_hash": subtitle["content_hash"] if subtitle else None, "include_dialogue": bool(command["include_dialogue"]), "include_music_and_sfx": bool(command["include_music_and_sfx"]), "include_source_audio": bool(command.get("include_source_audio", False)), "include_subtitles": bool(command["include_subtitles"]), "requires_human_confirmation": True}
             created = self._insert_revision(connection, episode_id, items, snapshot, "DRAFT", actor, now)
             result = {**created, "outcome": "DRAFT_CREATED", "idempotent_replay": False}
             self._audit_and_event(connection, actor, str(episode["project_id"]), created["id"], episode_id, "TIMELINE_DRAFT_CREATED_V2", result)

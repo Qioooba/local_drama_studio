@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from local_drama.api.schemas.common import StrictModel
 
@@ -88,6 +88,21 @@ class AudioTrackCreateCommand(StrictModel):
     fade_out_us: int = Field(default=0, ge=0)
     expected_mix_revision: int = Field(ge=0)
     idempotency_key: str = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="before")
+    @classmethod
+    def dialogue_safe_default_gain(cls, value: Any) -> Any:
+        """Keep omitted music/SFX gains from entering the mix at full scale.
+
+        An explicit gain remains authoritative for imports that were already
+        loudness-normalized by the operator.
+        """
+
+        if not isinstance(value, dict) or "gain_db" in value:
+            return value
+        normalized = dict(value)
+        normalized["gain_db"] = -18 if normalized.get("track_kind") == "BGM" else -8
+        return normalized
 
 
 class AudioTrackUpdateCommand(StrictModel):

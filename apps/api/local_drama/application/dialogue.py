@@ -589,6 +589,7 @@ class DialogueService:
         emotion: str,
         speech_rate: float,
         idempotency_key: str,
+        production_session_id: str | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         emotion = emotion.strip()
@@ -648,6 +649,8 @@ class DialogueService:
             "synthesis_scope": "LOCAL_TEST_ONLY",
             "commercial_authorization": False,
         }
+        if production_session_id:
+            snapshot["production_session_id"] = production_session_id
         if self.jobs is None:
             raise DomainRuleError("DIALOGUE_JOB_PORT_REQUIRED", "对白生成任务端口未配置")
         return self.jobs.create_job(
@@ -752,7 +755,14 @@ class DialogueService:
                 )
         return {"id": selection_id, "tts_candidate_id": candidate_id, "status": "SELECTED", "source_text_revision_id": candidate["dialogue_text_revision_id"], "authority": authority}
 
-    def finalize_episode_tts_jobs(self, episode_id: str, *, auto_select: bool, actor: str = "episode-run-auto") -> dict[str, Any]:
+    def finalize_episode_tts_jobs(
+        self,
+        episode_id: str,
+        *,
+        auto_select: bool,
+        job_ids: list[str] | tuple[str, ...] | None = None,
+        actor: str = "episode-run-auto",
+    ) -> dict[str, Any]:
         """Register every succeeded TTS Job of an episode, then fill empty selections.
 
         finalize_tts_job is idempotent (artifact reuse + candidate dedup), so
@@ -761,10 +771,24 @@ class DialogueService:
         (authority AUTOMATION_RUN); human selections are never overridden.
         """
         with self.database.connect() as connection:
-            jobs = connection.execute(
-                "SELECT id FROM jobs WHERE type='TTS_GENERATION' AND scope_episode_id=? AND state='SUCCEEDED' ORDER BY created_at,id",
-                (episode_id,),
-            ).fetchall()
+            if job_ids is None:
+                jobs = connection.execute(
+                    "SELECT id FROM jobs WHERE type='TTS_GENERATION' AND scope_episode_id=? AND state='SUCCEEDED' ORDER BY created_at,id",
+                    (episode_id,),
+                ).fetchall()
+            else:
+                normalized_job_ids = list(dict.fromkeys(str(value) for value in job_ids if str(value).strip()))
+                if normalized_job_ids:
+                    marks = ",".join("?" for _ in normalized_job_ids)
+                    jobs = connection.execute(
+                        f"""SELECT id FROM jobs
+                            WHERE id IN ({marks}) AND type='TTS_GENERATION'
+                              AND scope_episode_id=? AND state='SUCCEEDED'
+                            ORDER BY created_at,id""",
+                        (*normalized_job_ids, episode_id),
+                    ).fetchall()
+                else:
+                    jobs = []
         finalized: list[dict[str, Any]] = []
         failures: list[dict[str, Any]] = []
         for row in jobs:
@@ -1216,6 +1240,7 @@ class DialogueService:
         idempotency_key_prefix: str,
         emotion: str = "NEUTRAL",
         speech_rate: float = 1.0,
+        production_session_id: str | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         """Resolve every dialogue line to its bound voice and submit one TTS job per line.
@@ -1241,6 +1266,52 @@ class DialogueService:
         lines = self.list_lines(episode_id)
         with self.database.connect() as connection:
             requirements = canonical_tts_requirements(connection, episode_id)
+            session_audio = (
+                {
+                    str(row["dialogue_line_id"]): dict(row)
+                    for row in connection.execute(
+                        """SELECT pc.target_id AS dialogue_line_id,tc.dialogue_text_revision_id,
+                                  tc.voice_profile_version_id,tc.media_version_id
+                           FROM production_choices pc
+                           JOIN production_sessions ps ON ps.id=pc.session_id
+                           JOIN production_session_items psi
+                             ON psi.session_id=ps.id AND psi.episode_id=pc.episode_id
+                           JOIN dialogue_lines dl
+                             ON dl.id=pc.target_id AND dl.episode_id=psi.episode_id
+                           JOIN tts_candidates tc ON tc.media_version_id=pc.candidate_id
+                           JOIN media_versions mv
+                             ON mv.id=tc.media_version_id AND mv.integrity_status='VERIFIED'
+                           JOIN media_assets ma
+                             ON ma.id=mv.media_asset_id
+                            AND ma.project_id=ps.project_id AND ma.media_kind='AUDIO'
+                           WHERE pc.session_id=? AND pc.episode_id=?
+                             AND pc.target_kind='DIALOGUE_LINE' AND pc.slot_role='TTS_AUDIO'
+                             AND pc.selection_state IN ('TEMPORARY','CONFIRMED')""",
+                        (production_session_id, episode_id),
+                    ).fetchall()
+                }
+                if production_session_id
+                else {}
+            )
+        for requirement in requirements["items"]:
+            session_choice = session_audio.get(str(requirement["line_id"]))
+            if session_choice is None:
+                continue
+            voice_profile_version_id = requirement.get("voice_profile_version_id")
+            voice_matches = (
+                voice_profile_version_id is None
+                or str(session_choice["voice_profile_version_id"]) == str(voice_profile_version_id)
+            )
+            if (
+                str(session_choice["dialogue_text_revision_id"])
+                == str(requirement["text_revision_id"])
+                and voice_matches
+            ):
+                requirement["reusable_media_version_id"] = str(session_choice["media_version_id"])
+                requirement["generation_required"] = False
+                requirement["eligible"] = True
+                requirement["blocked_reason"] = None
+                requirement["selection_authority"] = "MACHINE_TEMPORARY"
         resolution_by_line = {
             str(item["line_id"]): item for item in requirements["items"]
         }
@@ -1287,6 +1358,7 @@ class DialogueService:
                     emotion=emotion,
                     speech_rate=speech_rate,
                     idempotency_key=f"{prefix}:{line_id}",
+                    production_session_id=production_session_id,
                     actor=actor,
                 )
             except Exception as error:  # noqa: BLE001 - batch isolates per-line failures
@@ -1305,6 +1377,7 @@ class DialogueService:
             )
         result: dict[str, Any] = {
             "episode_id": episode_id,
+            "production_session_id": production_session_id,
             "submitted": submitted,
             "skipped": skipped,
             "failed": failed,
@@ -1325,6 +1398,7 @@ class DialogueService:
                             "idempotency_key_prefix": prefix,
                             "emotion": emotion,
                             "speech_rate": speech_rate,
+                            "production_session_id": production_session_id,
                         }
                     ),
                 ),

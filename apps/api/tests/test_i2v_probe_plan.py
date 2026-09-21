@@ -7,7 +7,6 @@ from local_drama.application.i2v_probe import I2VProbePlanService
 from local_drama.application.media import MediaService
 from local_drama.application.profiles import ProfileService
 from local_drama.application.projects import ProjectService
-from local_drama.application.reviews import ReviewService
 
 PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415408d763f8cfc0f01f00050001ff89993d1d0000000049454e44ae426082")
 
@@ -46,15 +45,22 @@ def test_prepare_i2v_probe_keyframe_copies_reviews_selects_and_reuses(workspace,
     assert prepared["media_version_id"] != source["media_version_id"]
 
     keyframe = MediaService(database, workspace).get_version(str(prepared["media_version_id"]))
-    assert keyframe["owner_type"] == "SHOT"
-    assert keyframe["owner_id"] == prepared["shot_id"]
-    assert keyframe["purpose"] == "KEYFRAME"
+    assert keyframe["owner_type"] == "PROJECT"
+    assert keyframe["owner_id"] == project["id"]
+    assert prepared["owner_id"] == project["id"]
+    assert keyframe["purpose"] == "PROFILE_EVIDENCE_KEYFRAME"
     assert keyframe["stage"] == "KEYFRAME"
     assert keyframe["approved_version_id"] == prepared["media_version_id"]
     assert keyframe["selected_version_id"] == prepared["media_version_id"]
     assert keyframe["sha256"] == MediaService(database, workspace).get_version(
         str(source["media_version_id"])
     )["sha256"]
+    with database.connect() as connection:
+        assert ProfileService._approved_i2v_first_frame(
+            connection,
+            str(prepared["media_version_id"]),
+            str(project["id"]),
+        ) is not None
 
     reused = service.prepare_keyframe(
         str(project["id"]),
@@ -73,14 +79,10 @@ def test_i2v_probe_plan_is_read_only_and_freezes_approved_evidence(workspace, da
         code="i2v_probe_plan", title="I2V probe plan", episode_count=1, aspect_ratio="9:16",
         fps_num=24, fps_den=1, target_duration_ms=60_000, allow_unconfigured_capabilities=True,
     )
-    projects = ProjectService(database, workspace.projects_root)
-    season = projects.list_seasons(str(project["id"]))[0]
-    episode = projects.list_episodes(str(season["id"]))[0]
-    shot = projects.create_shot(str(episode["id"]), "S001", 4_000)
     source = workspace.work_root / "probe.png"
     source.write_bytes(PNG)
     media = MediaService(database, workspace).import_file(
-        str(project["id"]), source, purpose="KEYFRAME", owner_type="SHOT", owner_id=str(shot["id"]),
+        str(project["id"]), source, purpose="SOURCE_IMAGE", owner_type="PROJECT", owner_id=str(project["id"]),
         media_kind="IMAGE", stage="KEYFRAME",
     )
     profile_sync = ProfileService(database, workspace.manifest_path).sync_manifest()
@@ -102,16 +104,12 @@ def test_i2v_probe_plan_is_read_only_and_freezes_approved_evidence(workspace, da
     blocked = I2VProbePlanService(database).plan(str(project["id"]))
     assert blocked["status"] == "BLOCKED"
     assert blocked["would_create_job"] is False
-    reviews = ReviewService(database, workspace)
-    reviews.ensure_templates()
-    template = next(item for item in reviews.templates() if item["code"] == "image_asset")
-    approval = reviews.submit_review(
-        str(media["media_version_id"]), str(template["id"]), "APPROVED", 1,
-        [{"item_id": str(item["id"]), "result": "PASS"} for item in template["items"]],
-    )
+    prepared = I2VProbePlanService(database, workspace).prepare_keyframe(
+        str(project["id"]), str(media["media_version_id"]), True,
+    )["approved_keyframe"]
     ready = I2VProbePlanService(database).plan(str(project["id"]))
     assert ready["status"] == "READY"
-    assert ready["snapshot"]["approved_keyframe"]["approval_id"] == approval["id"]
+    assert ready["snapshot"]["approved_keyframe"]["approval_id"] == prepared["approval_id"]
     assert ready["snapshot"]["workflow"]["id"] == workflow_id
     assert ready["would_create_job"] is False
     with database.connect() as connection:
@@ -136,8 +134,18 @@ def test_i2v_probe_plan_is_read_only_and_freezes_approved_evidence(workspace, da
                 explicit_workflow_id,
                 explicit_parent,
                 "b" * 64,
-                json.dumps({"capability": "H3_FL2VA_I2V_CANDIDATE", "production_tier": "FAST"}),
-                json.dumps({role: {} for role in ("PROMPT", "SEED", "FIRST_FRAME", "OUTPUT_PREFIX")}),
+                json.dumps({
+                    "capability": "H3_FL2VA_I2V_CANDIDATE",
+                    "production_tier": "FAST",
+                    "authoring_parameters": {
+                        "aspect_ratio": "16:9",
+                        "acceleration": "OFF",
+                        "native_audio": False,
+                    },
+                }),
+                json.dumps({role: {} for role in (
+                    "PROMPT", "SEED", "FIRST_FRAME", "ASPECT_RATIO", "NATIVE_AUDIO", "OUTPUT_PREFIX",
+                )}),
                 now,
                 now,
                 now,
@@ -152,4 +160,6 @@ def test_i2v_probe_plan_is_read_only_and_freezes_approved_evidence(workspace, da
     )
     assert explicit["snapshot"]["workflow"]["id"] == explicit_workflow_id
     assert explicit["snapshot"]["workflow_selection"] == "EXPLICIT"
+    assert explicit["snapshot"]["semantic_inputs"]["ASPECT_RATIO"] == "16:9"
+    assert explicit["snapshot"]["semantic_inputs"]["NATIVE_AUDIO"] is False
     assert explicit["plan_hash"] != ready["plan_hash"]

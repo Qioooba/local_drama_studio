@@ -1089,12 +1089,11 @@ class ProfileService:
                         "PROFILE_EVIDENCE_APPROVED_FIRST_FRAME_REQUIRED",
                         "I2V Profile 发布证据必须绑定且仅绑定一个 FIRST_FRAME",
                     )
-                approved = connection.execute(
-                    """SELECT mv.id FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id
-                    WHERE mv.id=? AND ma.project_id=? AND ma.media_kind='IMAGE' AND ma.purpose='KEYFRAME'
-                    AND ma.approved_version_id=mv.id AND mv.stage='KEYFRAME' AND mv.integrity_status='VERIFIED'""",
-                    (first_frames[0], evidence["project_id"]),
-                ).fetchone()
+                approved = self._approved_i2v_first_frame(
+                    connection,
+                    first_frames[0],
+                    str(evidence["project_id"]),
+                )
                 if approved is None:
                     raise DomainRuleError(
                         "PROFILE_EVIDENCE_APPROVED_FIRST_FRAME_REQUIRED",
@@ -1215,4 +1214,29 @@ class ProfileService:
             )
         with self.database.connect() as connection:
             published = connection.execute("SELECT * FROM execution_profile_versions WHERE id=?", (version_id,)).fetchone()
-        return dict(published)
+            return dict(published)
+
+    @staticmethod
+    def _approved_i2v_first_frame(
+        connection: Any,
+        media_version_id: str,
+        project_id: str,
+    ) -> Any:
+        """Resolve a reviewed shot keyframe or the dedicated probe copy.
+
+        I2V probe preparation deliberately creates a project-owned immutable
+        ``PROFILE_EVIDENCE_KEYFRAME`` copy so validation never mutates a shot
+        asset.  Publication must recognize that purpose while still requiring
+        the same selected-version, integrity and non-stale review guarantees.
+        """
+        return connection.execute(
+            """SELECT mv.id FROM media_versions mv
+            JOIN media_assets ma ON ma.id=mv.media_asset_id
+            JOIN review_decisions rd ON rd.subject_type='MEDIA_VERSION' AND rd.subject_id=mv.id
+            WHERE mv.id=? AND ma.project_id=? AND ma.media_kind='IMAGE'
+            AND ma.purpose IN ('KEYFRAME','PROFILE_EVIDENCE_KEYFRAME')
+            AND ma.approved_version_id=mv.id AND mv.stage='KEYFRAME' AND mv.integrity_status='VERIFIED'
+            AND rd.decision='APPROVED' AND rd.is_stale=0
+            ORDER BY rd.created_at DESC LIMIT 1""",
+            (media_version_id, project_id),
+        ).fetchone()

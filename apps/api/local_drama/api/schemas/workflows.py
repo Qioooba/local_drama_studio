@@ -45,7 +45,10 @@ class H3CandidateWorkflowRequest(BaseModel):
     sigma_points: int = Field(default=50, ge=2, le=1000)
     acceleration: str = "OFF"
     lora_strength: float = Field(default=1.0, ge=0.0, le=2.0)
-    native_audio: bool = True
+    # Generated dialogue is authored and mixed separately.  Keep H3's
+    # unscripted native soundtrack opt-in so an omitted API field cannot
+    # silently create a second voice track in the final programme.
+    native_audio: bool = False
     tier: str | None = Field(default=None, description="P1-7 生产档位（FAST/DRAFT/SCREEN/PRODUCTION/MASTER）；提供时覆盖分辨率与帧数")
 
     @field_validator("acceleration")

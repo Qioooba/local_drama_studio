@@ -308,6 +308,7 @@ export function AppShell() {
             <StudioNavLink icon="clapperboard" to={routes.projectHome(projectId)} end>项目首页</StudioNavLink>
             <StudioNavLink icon="book" to={routes.story(projectId)}>AI 制作</StudioNavLink>
             <StudioNavLink icon="assets" to={routes.assets(projectId)}>核心资产</StudioNavLink>
+            <StudioNavLink icon="export" to={routes.projectDelivery(projectId)}>整剧交付</StudioNavLink>
           </> : <p className="sidebar-context-hint">选择项目后显示 AI 制作、核心资产与本集制作流程。</p>}
           {projectId && !episodePrefix && <p className="sidebar-context-hint">从上方“分集”进入某一集，生成、修镜、后期和交付会始终显示在内容区顶部。</p>}
           <details className="sidebar-system" open={advancedNavigationActive || undefined}>

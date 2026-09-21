@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { routes } from "../../app/routeRegistry";
@@ -73,6 +73,102 @@ function machineResultValue(item: MachineCheck["results"][number]): string {
   if (item.item_id === "file_integrity") return details.exists === false ? "文件缺失" : `文件 ${details.byte_size ?? "—"} bytes`;
   if (item.item_id === "decode") return String(details.probe_status ?? "—");
   return Object.entries(details).map(([key, value]) => `${key}=${String(value)}`).join(" · ") || "—";
+}
+
+function formatPlaybackTime(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+}
+
+function EpisodeRenderPreview({ renderId, label, durationMs, videoRef }: { renderId: string; label: string; durationMs: number | null; videoRef: RefObject<HTMLVideoElement | null> }) {
+  const [playing, setPlaying] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState((durationMs ?? 0) / 1000);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPlaying(false);
+    setLoading(false);
+    setCurrentTime(0);
+    setDuration((durationMs ?? 0) / 1000);
+    setError(null);
+  }, [durationMs, renderId]);
+
+  const play = async (restart = false) => {
+    const video = videoRef.current;
+    if (!video || error) return;
+    if (restart) {
+      video.currentTime = 0;
+      setCurrentTime(0);
+    }
+    setLoading(true);
+    try {
+      await video.play();
+    } catch (playError) {
+      setLoading(false);
+      setError(playError instanceof Error ? playError.message : "成片无法播放");
+    }
+  };
+
+  const togglePlayback = () => {
+    const video = videoRef.current;
+    if (!video || error) return;
+    if (!video.paused) {
+      video.pause();
+      return;
+    }
+    void play();
+  };
+
+  return <div className="episode-render-player">
+    <video
+      ref={videoRef}
+      preload="none"
+      playsInline
+      muted={muted}
+      aria-label={`${label} 整集视频预览`}
+      poster={`/api/v1/episode-renders/${encodeURIComponent(renderId)}/thumbnail?size=medium&frame=poster`}
+      src={`/api/v1/episode-renders/${encodeURIComponent(renderId)}/content`}
+      onWaiting={() => setLoading(true)}
+      onCanPlay={() => setLoading(false)}
+      onPlaying={() => { setPlaying(true); setLoading(false); }}
+      onPause={() => setPlaying(false)}
+      onEnded={() => setPlaying(false)}
+      onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+      onLoadedMetadata={(event) => {
+        if (Number.isFinite(event.currentTarget.duration)) setDuration(event.currentTarget.duration);
+      }}
+      onError={() => {
+        setLoading(false);
+        setPlaying(false);
+        setError("成片读取失败；请检查渲染文件完整性。");
+      }}
+    />
+    <div className="episode-render-player__controls" aria-label="整集播放控制">
+      <button className="secondary" type="button" aria-label={playing ? "暂停整集" : "播放整集"} onClick={togglePlayback} disabled={Boolean(error)}>{playing ? "暂停" : loading ? "读取中…" : "播放"}</button>
+      <button className="secondary" type="button" aria-label="从头播放整集" onClick={() => void play(true)} disabled={Boolean(error)}>从头播放</button>
+      <span aria-label={`播放时间 ${formatPlaybackTime(currentTime)}，总时长 ${formatPlaybackTime(duration)}`}>{formatPlaybackTime(currentTime)} / {formatPlaybackTime(duration)}</span>
+      <input
+        type="range"
+        aria-label="整集播放进度"
+        min="0"
+        max={Math.max(duration, 0.01)}
+        step="0.05"
+        value={Math.min(currentTime, duration || 0)}
+        disabled={!duration || Boolean(error)}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          if (videoRef.current) videoRef.current.currentTime = next;
+          setCurrentTime(next);
+        }}
+      />
+      <button className="secondary" type="button" aria-label={muted ? "打开整集声音" : "静音整集"} aria-pressed={muted} onClick={() => setMuted((value) => !value)}>{muted ? "打开声音" : "静音"}</button>
+    </div>
+    {error ? <p className="inline-error episode-render-player__error" role="alert">{error}</p> : null}
+  </div>;
 }
 
 export function EpisodeReviewWorkspace({ projectId, episodeId }: { projectId: string; episodeId: string }) {
@@ -266,7 +362,7 @@ export function EpisodeReviewWorkspace({ projectId, episodeId }: { projectId: st
           <header><div><p className="eyebrow">人工决定</p><h3>{selected.label}</h3></div><span className="status-pill neutral">revision {selected.subject_revision}</span></header>
           <div className="post-review-preview">
             {selected.target_kind === "EPISODE_RENDER_VERSION"
-              ? <video key={selected.target_id} ref={videoRef} controls preload="none" poster={`/api/v1/episode-renders/${encodeURIComponent(selected.target_id)}/thumbnail?size=medium&frame=poster`} src={`/api/v1/episode-renders/${encodeURIComponent(selected.target_id)}/content`} />
+              ? <EpisodeRenderPreview key={selected.target_id} renderId={selected.target_id} label={selected.label} durationMs={selected.duration_ms} videoRef={videoRef} />
               : selected.media_kind === "VIDEO"
               ? <video key={selected.target_id} ref={videoRef} controls preload="none" poster={`/api/v1/media-versions/${encodeURIComponent(selected.target_id)}/thumbnail?size=medium&frame=poster`} src={`/api/v1/media-versions/${encodeURIComponent(selected.target_id)}/proxy`} />
               : selected.media_kind === "AUDIO"

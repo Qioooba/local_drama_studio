@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import subprocess
@@ -23,6 +24,11 @@ class LocalAiSubprocessRuntime:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+
+    @staticmethod
+    def _encode_text(value: str) -> str:
+        """Encode user text for a Windows command line without code-page loss."""
+        return base64.b64encode(value.encode("utf-8")).decode("ascii")
 
     @staticmethod
     def _offline_environment(extra: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -83,9 +89,9 @@ class LocalAiSubprocessRuntime:
             raise ValueError("at least one text is required")
         arguments: list[str] = ["--include-vectors"]
         if instruction:
-            arguments.extend(("--instruction", instruction))
+            arguments.extend(("--instruction-b64", self._encode_text(instruction)))
         for value in texts:
-            arguments.extend(("--text", value))
+            arguments.extend(("--text-b64", self._encode_text(value)))
         return self.run_task("embedding", arguments)
 
     def synthesize(
@@ -98,11 +104,11 @@ class LocalAiSubprocessRuntime:
     ) -> LocalAiExecution:
         if not text.strip():
             raise ValueError("speech text must not be empty")
-        arguments = ["--text", text, "--audio-output", str(output_path)]
+        arguments = ["--text-b64", self._encode_text(text), "--audio-output", str(output_path)]
         if prompt_audio is not None:
             arguments += ("--prompt-audio", str(prompt_audio))
         if prompt_text:
-            arguments += ("--prompt-text", prompt_text)
+            arguments += ("--prompt-text-b64", self._encode_text(prompt_text))
         return self.run_task("voxcpm2", arguments)
 
     def transcribe(self, audio_path: Path) -> LocalAiExecution:
@@ -111,7 +117,14 @@ class LocalAiSubprocessRuntime:
     def align(self, audio_path: Path, transcript: str, *, language: str = "Chinese") -> LocalAiExecution:
         return self.run_task(
             "alignment",
-            ("--audio-input", str(audio_path), "--transcript", transcript, "--language", language),
+            (
+                "--audio-input",
+                str(audio_path),
+                "--transcript-b64",
+                self._encode_text(transcript),
+                "--language-b64",
+                self._encode_text(language),
+            ),
         )
 
     def run_lipsync(

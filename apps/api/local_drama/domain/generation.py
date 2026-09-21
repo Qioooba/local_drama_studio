@@ -40,6 +40,9 @@ class VariantPlan:
     provider_random_nonce: str | None = None
     expected_effective_configuration_fingerprint: str | None = None
     expected_identity_pack_snapshot_hash: str | None = None
+    # Internal unattended-production authority.  Generic callers leave this
+    # unset and continue to require globally approved identity packs.
+    production_session_id: str | None = None
     # Canonical shot prompt audit bundle.  Kept optional for legacy/generic
     # generation commands; shot UI commands provide it and freeze the fully
     # compiled value into the job input snapshot.

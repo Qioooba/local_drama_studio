@@ -80,6 +80,43 @@ class PipelineApplicationAuthorization(BaseModel):
         return self
 
 
+class PipelineProductionAuthorization(BaseModel):
+    endpoint: str = Field(
+        default="STRUCTURE_ONLY",
+        description="STRUCTURE_ONLY 或 WAITING_REVIEW",
+    )
+    production_mode: str = "BALANCED"
+    checkpoint_policy: str = "ON_EXCEPTION"
+    tts_enabled: bool = True
+    max_parallel_episodes: int = Field(default=1, ge=1, le=8)
+    min_free_disk_bytes: int = Field(default=5 * 1024 * 1024 * 1024, ge=1, le=1 << 50)
+    max_duration_seconds: int = Field(default=24 * 60 * 60, ge=60, le=365 * 24 * 60 * 60)
+    max_new_jobs: int = Field(default=600, ge=1, le=1_000_000)
+    max_attempts_total: int = Field(default=1_200, ge=1, le=2_000_000)
+    max_output_bytes: int = Field(default=100 * 1024 * 1024 * 1024, ge=1, le=1 << 50)
+    max_queued_gpu_jobs: int = Field(default=8, ge=1, le=128)
+    dispatch_shots_per_tick: int = Field(default=4, ge=1, le=100)
+
+    @model_validator(mode="after")
+    def validate_production_authorization(self) -> "PipelineProductionAuthorization":
+        self.endpoint = self.endpoint.strip().upper()
+        self.production_mode = self.production_mode.strip().upper()
+        self.checkpoint_policy = self.checkpoint_policy.strip().upper()
+        if self.endpoint not in {"STRUCTURE_ONLY", "WAITING_REVIEW"}:
+            raise ValueError("endpoint 必须是 STRUCTURE_ONLY 或 WAITING_REVIEW")
+        if self.production_mode not in {"DRAFT", "BALANCED", "QUALITY"}:
+            raise ValueError("production_mode 必须是 DRAFT、BALANCED 或 QUALITY")
+        if self.checkpoint_policy not in {
+            "AUTO_CONTINUE",
+            "AFTER_ASSETS",
+            "AFTER_SHOT_PLAN",
+            "BEFORE_VIDEO",
+            "ON_EXCEPTION",
+        }:
+            raise ValueError("checkpoint_policy 不受支持")
+        return self
+
+
 class StartPipelineRequest(BaseModel):
     source_document_version_id: str | None = Field(default=None, description="已导入原稿版本ID")
     raw_text: str | None = Field(default=None, description="直接提交的原始文本内容")
@@ -93,6 +130,20 @@ class StartPipelineRequest(BaseModel):
         default_factory=lambda: PipelineApplicationAuthorization(endpoint="DRAFT_ONLY"),
         description="本次运行的具体应用终点；旧客户端默认只生成草案",
     )
+    production_authorization: PipelineProductionAuthorization = Field(
+        default_factory=PipelineProductionAuthorization,
+        description="结构应用完成后是否继续创建整部待审预览；旧客户端默认只处理结构",
+    )
+
+    @model_validator(mode="after")
+    def check_production_authorization(self) -> "StartPipelineRequest":
+        if self.production_authorization.endpoint == "WAITING_REVIEW":
+            if self.application_authorization.endpoint != "APPLY_SELECTED_SECTIONS":
+                raise ValueError("继续整部生产前必须授权自动应用故事结构")
+            required = {"STORY_PLAN", "ASSET_PROPOSALS"}
+            if not required.issubset(set(self.application_authorization.sections)):
+                raise ValueError("继续整部生产必须授权 STORY_PLAN 和 ASSET_PROPOSALS")
+        return self
 
     @field_validator("visual_style")
     @classmethod

@@ -35,6 +35,8 @@ def _episode(workspace, database):
         fps_num=24,
         fps_den=1,
         target_duration_ms=1000,
+        subtitle_mode="BURN_IN",
+        subtitle_language="zh-CN",
         allow_unconfigured_capabilities=True,
     )
     project_service = ProjectService(database, workspace.projects_root)
@@ -289,12 +291,23 @@ def test_v4_overlap_subtitle_upscale_pipeline_cleans_temp_files_and_pins_span(wo
 
     render = service.render_episode(str(timeline["id"]))
 
-    assert render["input_snapshot"]["renderer_contract"] == "TIMELINE_SOURCE_COVERAGE_V5"
+    assert render["input_snapshot"]["renderer_contract"] == "TIMELINE_CURATED_AUDIO_AND_SUBTITLE_V6"
     assert render["input_snapshot"]["timeline_duration_us"] == 1_000_000
     assert abs(int(render["probe"]["duration_ms"]) - 1_000) <= 20
     stream = next(item for item in render["probe"]["streams"] if item.get("codec_type") == "video")
     assert (stream["width"], stream["height"]) == (2560, 1440)
     stages = [step["stage"] for step in json.loads(render["execution_log"])["steps"]]
-    assert stages == ["timeline-duration", "timeline-duration", "concat", "subtitle", "COMPOSE_QC_UPSCALE"]
+    assert stages == [
+        "timeline-duration",
+        "timeline-duration",
+        "concat",
+        "subtitle",
+        "COMPOSE_QC_UPSCALE",
+        "mix",
+        "mux",
+    ]
+    assert render["input_snapshot"]["subtitle_burned_in"] is True
+    assert render["input_snapshot"]["source_audio_policy"] == "MUTE"
+    assert any(item.get("codec_type") == "audio" for item in render["probe"]["streams"])
     render_dir = workspace.projects_root / str(project["root_rel"]) / "05_timelines" / "renders"
     assert not list(render_dir.glob(".partial-*"))

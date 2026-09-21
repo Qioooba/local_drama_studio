@@ -29,3 +29,9 @@ Product workflow lifecycle:
 5. Compatibility validation and explicit publish produce the runtime-eligible Workflow Version.
 
 Generated scripts and hardcoded verification fixtures must not be imported by `apps/api/local_drama` or `apps/web/src`.
+
+`production_session_soak.py` is the resumable wall-clock evidence recorder for a real durable production session. Its operating procedure and evidence meanings are documented in `docs/operations/production-session-soak.md`. A run shorter than 24 hours is always labelled as a rehearsal. A real pass also requires 24 hours of sampled coverage, observed production activity, at least one linked Job, and at least one VERIFIED artifact whose file hash still matches; recorder downtime and an idle session cannot produce a pass.
+
+`prepare_production_session_whole_drama_uat.py` creates a new isolated instance from an online database backup and one copied project tree. It uses application services to append a second production-ready episode, inherit an explicitly verified shot-level I2V profile, bind a real canonical story asset, and create a READY `WHOLE_DRAMA` session. It does not start generation, fabricate media, or write human approval. The instance root must be a new directory below the repository.
+
+`capture_production_session_uat_evidence.py` is a read-only evidence collector for a completed real session. It cross-checks the review projection, jobs, attempts, selected media, local files, SHA256 values, and ComfyUI prompt history. It reports a pass only when every episode is waiting for human review, no session-created job is failed or stranded, selected files are verified, and no human decision was written by automation.

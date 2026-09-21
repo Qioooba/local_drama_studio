@@ -194,7 +194,11 @@ def test_h3_factory_reads_manifest_and_compiles_real_candidate_workflow(workspac
             json={"code": "g6_api_h3_candidate", "title": "H3 API candidate", "prompt": "A local test shot", "seed": 42},
         )
         assert response.status_code == 201
-        assert response.json()["workflow_version"]["status"] == "DRAFT"
+        t2v = response.json()["workflow_version"]
+        assert t2v["status"] == "DRAFT"
+        assert "4" not in t2v["workflow"]
+        assert "12" not in t2v["workflow"]
+        assert "audio" not in t2v["workflow"]["13"]["inputs"]
 
         i2v_response = client.post(
             "/api/v1/workflow-packages:h3-i2v-candidate",
@@ -205,9 +209,13 @@ def test_h3_factory_reads_manifest_and_compiles_real_candidate_workflow(workspac
         assert i2v["workflow"]["5"]["class_type"] == "LoadImage"
         assert i2v["workflow"]["7"]["class_type"] == "MiniMaxH3ImageToVideo"
         assert i2v["node_bindings"]["FIRST_FRAME"] == {"node_id": "5", "input": "image"}
+        assert "4" not in i2v["workflow"]
+        assert "14" not in i2v["workflow"]
+        assert "audio" not in i2v["workflow"]["15"]["inputs"]
 
     fl2va = factory.build_fl2va("approved keyframe motion", first_frame="keyframe.png", seed=9, duration_seconds=4.0, sigma_points=2)
     assert fl2va["6"]["inputs"]["image"] == ["5", 0]
+    assert fl2va["6"]["inputs"]["crop"] == "center"
     assert fl2va["7"]["inputs"]["vae"] == ["3", 0]
     assert fl2va["16"]["inputs"]["format"] == "mp4"
 

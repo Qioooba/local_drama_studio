@@ -37,6 +37,7 @@ pythonpath = ["."]
 addopts = "-q"
 markers = [
   "comfyui: reads from or writes to the live loopback ComfyUI service; exclude while the operator owns ComfyUI",
+  "video_upscale_gpu: requires an explicitly configured real NCNN/Vulkan runtime, model files, and GPU",
 ]
 
 [tool.ruff]

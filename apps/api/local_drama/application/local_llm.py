@@ -81,6 +81,7 @@ _BREAKDOWN_RESPONSE_SCHEMA: dict[str, Any] = {
                             "type": "object",
                             "properties": {
                                 "shot_no": {"type": "integer", "minimum": 1},
+                                "characters": {"type": "array", "items": {"type": "string"}},
                                 "visual": {"type": "string"},
                                 "action": {"type": "string"},
                                 "dialogue": {"type": "string"},
@@ -2182,7 +2183,12 @@ class LocalLLMService:
         """Apply a validated draft requested by the episode Agent path."""
         from local_drama.application.breakdown_apply import BreakdownApplyService
 
-        return BreakdownApplyService(self.database, self.settings).apply_draft(draft_id, episode_id)
+        return BreakdownApplyService(self.database, self.settings).apply_draft(
+            draft_id,
+            episode_id,
+            actor="production-session-worker",
+            application_authority="MACHINE_TEMPORARY",
+        )
 
     def _assert_job_can_persist(self, job_id: str, session_id: str) -> None:
         with self.database.connect() as connection:
@@ -2461,7 +2467,7 @@ class LocalLLMService:
             api_key=api_key,
             allow_private_network=self.settings.allows_private_network,
         ).chat_json(
-            "你是本地剧本拆解器。最终答案只输出 JSON 对象，顶层必须包含 scenes、confidence、questions。输入已排除章节标题，每个 P 段都是本集必须覆盖的叙事正文；必须按原文顺序拆场，并让全部 P 段至少被一个 scene 引用。每个 scene 必须包含 scene_no、title、summary、characters、source_paragraph_nos、shots；source_paragraph_nos 必须至少列出一个实际描述该场内容的原文 P 编号，只能填写输入中真实存在的编号，不得把 P 编号当作场次序号盲填，不要返回顶层 source_passages，不要返回 quote。每个 shot 必须包含 shot_no、visual、action、dialogue、duration_seconds。confidence 必须是 {overall:0到1,notes:字符串数组}；questions 是待人工确认的字符串数组。P 编号只用于引用，不得写进场景正文、镜头或对白。每条非空 dialogue 只能逐字摘录自该 scene 的 source_paragraph_nos 所指原文；可以添加说话人前缀，但不得转述、改写或补写。原文没有明确对白时必须返回空字符串。不得臆造原文不存在的关键事实。"
+            "你是本地剧本拆解器。最终答案只输出 JSON 对象，顶层必须包含 scenes、confidence、questions。输入已排除章节标题，每个 P 段都是本集必须覆盖的叙事正文；必须按原文顺序拆场，并让全部 P 段至少被一个 scene 引用。每个 scene 必须包含 scene_no、title、summary、characters、source_paragraph_nos、shots；source_paragraph_nos 必须至少列出一个实际描述该场内容的原文 P 编号，只能填写输入中真实存在的编号，不得把 P 编号当作场次序号盲填，不要返回顶层 source_passages，不要返回 quote。每个 shot 必须包含 shot_no、characters、visual、action、dialogue、duration_seconds；shot.characters 只列该镜头画面实际出现的人物，画外音说话人不得仅因说话而列入。confidence 必须是 {overall:0到1,notes:字符串数组}；questions 是待人工确认的字符串数组。P 编号只用于引用，不得写进场景正文、镜头或对白。每条非空 dialogue 只能逐字摘录自该 scene 的 source_paragraph_nos 所指原文；可以添加说话人前缀，但不得转述、改写或补写。原文没有明确对白时必须返回空字符串。不得臆造原文不存在的关键事实。"
             + required_paragraph_instruction
             + duration_contract
             + analysis_instruction,
@@ -2610,7 +2616,7 @@ class LocalLLMService:
                     "你是本地剧本拆解器。最终答案只输出 JSON 对象，顶层必须包含 scenes、confidence、questions。"
                     "这是同一集确认原文的一个有界子范围；只拆当前输入，不补写前后文。每个 scene 必须包含 "
                     "scene_no、title、summary、characters、source_paragraph_nos、shots；每个 shot 必须包含 "
-                    "shot_no、visual、action、dialogue、duration_seconds。非空 dialogue 只能逐字摘录当前 P 编号原文。"
+                    "shot_no、characters、visual、action、dialogue、duration_seconds；shot.characters 只列画面实际出现人物。非空 dialogue 只能逐字摘录当前 P 编号原文。"
                     f" 必须覆盖的 P 编号全集是 {required}，不得缺号或越界。"
                 )
                 analysis_context = analysis_contexts.get(index)

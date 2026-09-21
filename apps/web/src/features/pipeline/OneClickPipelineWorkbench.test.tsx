@@ -149,6 +149,45 @@ describe("OneClickPipelineWorkbench", () => {
     ));
   });
 
+  it("persists an explicit source-to-whole-drama authorization", async () => {
+    vi.mocked(pipelineClient.getLatestPipeline).mockResolvedValue({ run: null });
+    vi.mocked(apiGenerated.uploadScriptDocument).mockResolvedValue({
+      import: { source_document_version_id: "ver-1", preview: { character_count: 5000, paragraph_count: 50 } },
+    } as never);
+    vi.mocked(pipelineClient.preflightStoryPipeline).mockResolvedValue({
+      safe_mode: true,
+      ai: { required: true, ready: true, provider: "OLLAMA_LOOPBACK", model: "qwen-test" },
+      source: { label: "test.txt", character_count: 5000, paragraph_count: 50, chapter_count: 4, sha256: "hash" },
+      existing: { episodes: 0, bibles: 0, assets: 0, shots: 0 },
+      estimated_episode_count: 4, warnings: [], effects: { generation: "轻量规划", apply: "自动写入" },
+    });
+    vi.mocked(pipelineClient.startOneClickPipeline).mockResolvedValue({
+      run: { ...completedRun(), state: "RUNNING", stage: "QUEUED", progress_pct: 2 },
+    });
+    renderWorkbench(queryClient);
+    const file = new File(["小说正文内容测试"], "test.txt", { type: "text/plain" });
+    const input = (await screen.findByText("选择小说或剧本文档")).closest("label")?.querySelector('input[type="file"]');
+    fireEvent.change(input as HTMLInputElement, { target: { files: [file] } });
+    await screen.findByText("test.txt");
+    fireEvent.change(screen.getByRole("combobox", { name: /草案完成后的处理/ }), {
+      target: { value: "WAITING_REVIEW" },
+    });
+    expect(screen.getByText(/机器只能临时选择/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "开始 AI 制作" }));
+    await waitFor(() => expect(pipelineClient.startOneClickPipeline).toHaveBeenCalledWith(
+      "proj-1",
+      expect.objectContaining({
+        production_authorization: {
+          endpoint: "WAITING_REVIEW",
+          production_mode: "BALANCED",
+          checkpoint_policy: "ON_EXCEPTION",
+          tts_enabled: true,
+          max_parallel_episodes: 1,
+        },
+      }),
+    ));
+  });
+
   it("uses the project default instead of an episode override", async () => {
     vi.mocked(pipelineClient.getLatestPipeline).mockResolvedValue({ run: null });
     vi.mocked(apiGenerated.getProjectOverviewV2).mockResolvedValue({

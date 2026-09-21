@@ -501,6 +501,35 @@ def test_automation_worker_delivery_skips_without_target(workspace, database) ->
     assert advanced["tasks"][1]["job_state"] == "QUEUED"
 
 
+def test_legacy_session_delivery_task_defers_until_human_render_review(workspace, database) -> None:
+    project = _project(workspace, database, code="session_delivery_deferred")
+    episode = _episodes(database, workspace, project)[0]
+    ConfigurationService(database).create_delivery_target(
+        str(project["id"]), "out", "输出目录", "LOCAL_FILESYSTEM", {"path_rel": "06_delivery"}
+    )
+    service = AutomationWorkflowService(database)
+    workflow = _action_workflow(
+        service,
+        str(project["id"]),
+        "DELIVERY",
+        str(episode["id"]),
+        "legacy-session-delivery",
+        extra_actions=(),
+        payload_overrides={"production_session_id": "legacy-session-id"},
+    )
+    run = _start_and_first_step(service, str(workflow["id"]))
+
+    outcome = LocalMediaWorker(database, workspace).run_once("worker-session-delivery")
+    report = _read_report(workspace, outcome)
+
+    assert report["status"] == "SKIPPED"
+    assert report["machine_check"]["code"] == "DELIVERY_DEFERRED_TO_HUMAN_REVIEW"
+    assert report["machine_check"]["production_session_id"] == "legacy-session-id"
+    assert service.get_run(str(run["id"]))["status"] == "SUCCEEDED"
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM delivery_packages").fetchone()[0] == 0
+
+
 def test_automation_worker_delivery_fails_without_render(workspace, database) -> None:
     project = _project(workspace, database, code="auto_delivery2")
     episode = _episodes(database, workspace, project)[0]

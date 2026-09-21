@@ -112,6 +112,31 @@ export type ModelPlatformTrustedDownloadPlanInput = {
   artifacts: Array<{ relative_path: string; sha256: string; size_bytes: number; source_url: string }>;
 };
 
+export type ModelPlatformNcnnUpscaleProvisionInput = {
+  executable_path: string;
+  model_directory: string;
+  model_name: "realesr-animevideov3" | "realesrgan-x4plus-anime" | "realesrgan-x4plus";
+  gpu_device: number;
+  tile_size: 0 | 64 | 128 | 256 | 512 | 1024;
+  load_threads: number;
+  proc_threads: number;
+  save_threads: number;
+  actor: string;
+  confirm_publish: true;
+};
+
+export type ModelPlatformNcnnUpscalePublication = {
+  profile_version_id: string;
+  runtime_model_installation_id: string;
+  validation_run_id: string;
+  status: "PUBLISHED";
+  model_name: string;
+  verified_native_scales: number[];
+  runtime_sha256: string;
+  model_bundle_sha256: string;
+  reused_profile: boolean;
+};
+
 export type ModelPlatformQuickCreateV2Readiness = { mode: string; capability_code: string; execution_profile_version_id: string | null; ready: boolean; blocker: string | null };
 
 export function listModelPlatformQuickCreateV2Readiness() {
@@ -457,6 +482,13 @@ export function createModelPlatformOfflineInstallationPlan(input: ModelPlatformO
 export function createModelPlatformTrustedDownloadPlan(input: ModelPlatformTrustedDownloadPlanInput) {
   return requestJson<{ plan: ModelPlatformInstallationPlan; network_operations_started: false; host_download_available: false }>(
     "/api/v2/model-platform/installation-plans/trusted-download",
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+export function configureAndPublishModelPlatformNcnnVideoUpscale(input: ModelPlatformNcnnUpscaleProvisionInput) {
+  return requestJson<{ profile: ModelPlatformNcnnUpscalePublication; network_used: false; real_smoke_required: true }>(
+    "/api/v2/model-platform/ncnn-video-upscale:configure-and-publish",
     { method: "POST", body: JSON.stringify(input) },
   );
 }

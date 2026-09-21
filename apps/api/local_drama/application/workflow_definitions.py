@@ -15,8 +15,8 @@ from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.image_input_roles import COMFY_IMAGE_INPUT_ROLES, IDENTITY_REFERENCE_ROLES
 from local_drama.infrastructure.comfy import ComfyClient
 
-from .h3_workflows import H3WorkflowFactory, production_tiers_payload
 from .comfy_smoke_contract import parse_comfy_smoke_contract
+from .h3_workflows import H3WorkflowFactory, production_tiers_payload
 from .qwen_identity_workflows import build_qwen_identity_workflow, build_qwen_text_workflow
 
 WorkflowCompiler = Callable[[Settings, dict[str, Any]], dict[str, Any]]
@@ -104,7 +104,13 @@ def _h3_fields(*, media_field: str | None = None) -> dict[str, dict[str, Any]]:
         "filename_prefix": _field("string", "输出前缀", "local_drama/h3_candidate", effect="SEMANTIC_DEFAULT"),
         "acceleration": _field("enum", "加速模式", "OFF", options=[_option("OFF", "关闭"), _option("TURBO_LORA", "Turbo LoRA")], advanced=True),
         "lora_strength": _field("number", "LoRA 强度", 1.0, minimum=0, maximum=2, step=0.05, advanced=True),
-        "native_audio": _field("boolean", "生成原生音轨", True, advanced=True),
+        "native_audio": _field(
+            "boolean",
+            "生成原生音轨",
+            False,
+            advanced=True,
+            help_text="默认关闭，避免模型生成的未经脚本授权人声与后期 TTS 重叠；仅在明确审核并计划保留同期声时开启。",
+        ),
     }
     if media_field:
         fields[media_field] = _field(

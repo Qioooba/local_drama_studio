@@ -61,7 +61,7 @@ class SqliteProductContextReadRepository:
                     SELECT erv.id,erv.episode_id,
                     ROW_NUMBER() OVER (PARTITION BY erv.episode_id ORDER BY erv.created_at DESC,erv.id DESC) AS render_rank
                     FROM episode_render_versions erv
-                    WHERE erv.integrity_status='VERIFIED'
+                    WHERE erv.integrity_status='VERIFIED' AND erv.render_kind='COMPOSE'
                 ), latest_render_reviews AS (
                     SELECT rd.subject_id,rd.decision,rd.is_stale,
                     ROW_NUMBER() OVER (PARTITION BY rd.subject_id ORDER BY rd.created_at DESC,rd.id DESC) AS review_rank
@@ -233,7 +233,7 @@ class SqliteProductContextReadRepository:
                     (episode_id,),
                 ).fetchone()
                 latest_render = connection.execute(
-                    "SELECT id,timeline_revision_id,integrity_status FROM episode_render_versions WHERE episode_id=? ORDER BY created_at DESC,id DESC LIMIT 1",
+                    "SELECT id,timeline_revision_id,integrity_status FROM episode_render_versions WHERE episode_id=? AND render_kind='COMPOSE' ORDER BY created_at DESC,id DESC LIMIT 1",
                     (episode_id,),
                 ).fetchone()
                 latest_delivery = connection.execute(

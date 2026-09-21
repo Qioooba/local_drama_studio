@@ -32,6 +32,11 @@ export function ProjectHomePage() {
   return <div className="v2-page project-overview-page">
     <div className="panel-heading"><div><p className="eyebrow">项目首页</p><h2>{overview.data?.project.title ?? "项目加载中…"}</h2></div><span className="status-pill">{overview.data?.project.code ?? ""}</span></div>
 
+    <section className="panel project-next-step" aria-labelledby="project-factory-title">
+      <div><p className="eyebrow">自动生产</p><h3 id="project-factory-title">一键生成单集或整部</h3><p className="muted">创建可恢复的持续生产会话，让机器完成候选生成、临时选择、时间线和预览成片，最后集中人工审核。</p></div>
+      <Link className="primary-action v2-inline-link" to={routes.productionFactory(projectId)}>进入一键漫剧工厂</Link>
+    </section>
+
     {overview.isPending ? <section className="panel project-next-step" role="status">正在计算项目下一步…</section> : overview.error ? <section className="panel"><p className="inline-error" role="alert">项目首页读取失败：{String(overview.error)}</p><button type="button" className="secondary" onClick={() => void overview.refetch()}>重新读取</button></section> : nextAction ? <section className="panel project-next-step" aria-labelledby="project-next-title">
       <div><p className="eyebrow">建议下一步</p><h3 id="project-next-title">{nextAction.title}</h3><p className="muted">{nextAction.description}</p></div>
       <Link className="primary-action v2-inline-link" to={targetTo(nextAction.target)}>{nextAction.label}</Link>

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from array import array
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,21 @@ def _video(workspace, name: str, seconds: float = 1.0) -> Path:
     output = workspace.work_root / name
     subprocess.run(
         [workspace.ffmpeg_path, "-f", "lavfi", "-i", f"color=c=navy:s=160x90:d={seconds}", "-pix_fmt", "yuv420p", "-an", "-y", str(output)],
+        check=True,
+        capture_output=True,
+    )
+    return output
+
+
+def _video_with_audio(workspace, name: str, seconds: float = 1.0, frequency: int = 220) -> Path:
+    output = workspace.work_root / name
+    subprocess.run(
+        [
+            workspace.ffmpeg_path,
+            "-f", "lavfi", "-i", f"color=c=navy:s=160x90:d={seconds}",
+            "-f", "lavfi", "-i", f"sine=frequency={frequency}:duration={seconds}",
+            "-shortest", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-c:a", "aac", "-y", str(output),
+        ],
         check=True,
         capture_output=True,
     )
@@ -109,7 +125,8 @@ def test_render_mixes_bgm_audio_stream_with_real_ffmpeg(workspace, database) -> 
     )
     render = TimelineService(database, workspace).render_episode(str(timeline["id"]))
     assert render["status"] == "VERIFIED"
-    assert render["input_snapshot"]["render_mode"] == "MIXED_AUDIO"
+    assert render["input_snapshot"]["render_mode"] == "CURATED_AUDIO"
+    assert render["input_snapshot"]["source_audio_policy"] == "MUTE"
     bindings = render["input_snapshot"]["audio_bindings"]
     assert len(bindings) == 1
     assert bindings[0]["track_type"] == "BGM"
@@ -131,7 +148,7 @@ def test_render_mixes_bgm_audio_stream_with_real_ffmpeg(workspace, database) -> 
 def test_render_without_bindings_honors_timeline_duration_contract(workspace, database) -> None:
     project, episode = _project_and_episode(workspace, database)
     project_root = workspace.projects_root / str(project["root_rel"])
-    video = MediaService(database, workspace).import_file(str(project["id"]), _video(workspace, "plain-video.mp4"), purpose="SHOT_VIDEO", media_kind="VIDEO")
+    video = MediaService(database, workspace).import_file(str(project["id"]), _video_with_audio(workspace, "plain-video.mp4"), purpose="SHOT_VIDEO", media_kind="VIDEO")
     timeline = TimelineService(database, workspace).create_timeline_revision(
         str(episode["id"]),
         [{"track_type": "VIDEO", "media_version_id": str(video["media_version_id"]), "start_us": 0, "end_us": 1_000_000, "parameters": {}}],
@@ -140,13 +157,21 @@ def test_render_without_bindings_honors_timeline_duration_contract(workspace, da
     service = TimelineService(database, workspace)
     render = service.render_episode(str(timeline["id"]))
     assert render["status"] == "VERIFIED"
-    assert "render_mode" not in render["input_snapshot"]
+    assert render["input_snapshot"]["render_mode"] == "SILENT_AUDIO"
+    assert render["input_snapshot"]["source_audio_policy"] == "MUTE"
     # Timeline items are normalized before concat even when no extra audio is bound.
     log = json.loads(render["execution_log"])
-    assert [step["stage"] for step in log["steps"]] == ["timeline-duration", "concat"]
-    assert render["ffmpeg_command"]["args"][:2] == ["-f", "concat"]
+    assert [step["stage"] for step in log["steps"]] == ["timeline-duration", "concat", "mix", "mux"]
     assert "-c:a" in render["ffmpeg_command"]["args"] and "aac" in render["ffmpeg_command"]["args"]
     assert (project_root / render["rel_path"]).is_file()
+    silent_check = subprocess.run(
+        [workspace.ffmpeg_path, "-i", str(project_root / render["rel_path"]), "-map", "0:a:0", "-f", "s16le", "-"],
+        check=True,
+        capture_output=True,
+    )
+    samples = array("h")
+    samples.frombytes(silent_check.stdout)
+    assert samples and max(abs(sample) for sample in samples) <= 1
 
     replay = service.render_episode(str(timeline["id"]))
     assert replay["id"] == render["id"]
@@ -169,7 +194,7 @@ def test_render_without_bindings_honors_timeline_duration_contract(workspace, da
         )
     upgraded = service.render_episode(str(timeline["id"]))
     assert upgraded["id"] != render["id"]
-    assert upgraded["input_snapshot"]["renderer_contract"] == "TIMELINE_SOURCE_COVERAGE_V5"
+    assert upgraded["input_snapshot"]["renderer_contract"] == "TIMELINE_CURATED_AUDIO_AND_SUBTITLE_V6"
 
     forced = service.render_episode(str(timeline["id"]), force_rerender=True)
     assert forced["id"] != render["id"]
@@ -181,8 +206,80 @@ def test_render_without_bindings_honors_timeline_duration_contract(workspace, da
     assert stale.value.code == "TIMELINE_STALE"
 
 
+def test_dialogue_is_loudness_normalized_before_gain_and_mix(workspace, database, monkeypatch) -> None:
+    project, _episode = _project_and_episode(workspace, database)
+    media = MediaService(database, workspace).import_file(
+        str(project["id"]),
+        _audio(workspace, "quiet-dialogue.wav"),
+        purpose="DIALOGUE_TTS",
+        media_kind="AUDIO",
+    )
+    service = TimelineService(database, workspace)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(service, "_probe", lambda _path: {"streams": []})
+
+    def fake_run(args, *, timeout):
+        captured["args"] = args
+        captured["timeout"] = timeout
+        return {"executable": "ffmpeg", "args": args, "returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr(service, "_run_ffmpeg", fake_run)
+    service._mix_audio(
+        workspace.work_root / "video-without-source-audio.mp4",
+        [{
+            "media_version_id": str(media["media_version_id"]),
+            "track_type": "DIALOGUE",
+            "start_us": 0,
+            "end_us": 1_000_000,
+            "gain_db": 0.0,
+            "loop_enabled": False,
+            "fade_in_us": 0,
+            "fade_out_us": 0,
+        }],
+        workspace.work_root / "dialogue-mix.wav",
+        1.0,
+    )
+
+    args = captured["args"]
+    assert isinstance(args, list)
+    filter_complex = args[args.index("-filter_complex") + 1]
+    assert "[0:a]loudnorm=I=-18:TP=-3:LRA=7,volume=1.000000" in filter_complex
+
+
+def test_render_includes_source_audio_only_after_explicit_opt_in(workspace, database) -> None:
+    project, episode = _project_and_episode(workspace, database)
+    project_root = workspace.projects_root / str(project["root_rel"])
+    video = MediaService(database, workspace).import_file(
+        str(project["id"]),
+        _video_with_audio(workspace, "opt-in-source-audio.mp4", frequency=330),
+        purpose="SHOT_VIDEO",
+        media_kind="VIDEO",
+    )
+    service = TimelineService(database, workspace)
+    timeline = service.create_timeline_revision(
+        str(episode["id"]),
+        [{"track_type": "VIDEO", "media_version_id": str(video["media_version_id"]), "start_us": 0, "end_us": 1_000_000, "parameters": {}}],
+        {"source": "source-audio-opt-in-test", "include_source_audio": True},
+    )
+
+    render = service.render_episode(str(timeline["id"]))
+
+    assert render["input_snapshot"]["render_mode"] == "SOURCE_AUDIO"
+    assert render["input_snapshot"]["source_audio_policy"] == "INCLUDE"
+    decoded = subprocess.run(
+        [workspace.ffmpeg_path, "-i", str(project_root / render["rel_path"]), "-map", "0:a:0", "-f", "s16le", "-"],
+        check=True,
+        capture_output=True,
+    )
+    samples = array("h")
+    samples.frombytes(decoded.stdout)
+    assert samples and max(abs(sample) for sample in samples) > 100
+
+
 def test_render_burns_selected_subtitle_when_source_covers_timeline(workspace, database) -> None:
     project, episode = _project_and_episode(workspace, database)
+    with database.transaction() as connection:
+        connection.execute("UPDATE projects SET subtitle_mode='BURN_IN', subtitle_language='zh-CN' WHERE id=?", (project["id"],))
     media = MediaService(database, workspace).import_file(
         str(project["id"]),
         _video(workspace, "subtitle-source.mp4", seconds=1.25),
@@ -219,7 +316,8 @@ def test_render_burns_selected_subtitle_when_source_covers_timeline(workspace, d
     render = service.render_episode(str(timeline["id"]))
 
     assert 1_150 <= render["probe"]["duration_ms"] <= 1_300
-    assert render["input_snapshot"]["renderer_contract"] == "TIMELINE_SOURCE_COVERAGE_V5"
+    assert render["input_snapshot"]["renderer_contract"] == "TIMELINE_CURATED_AUDIO_AND_SUBTITLE_V6"
+    assert render["input_snapshot"]["subtitle_burned_in"] is True
     assert render["input_snapshot"]["subtitle_revision"] == {
         "id": subtitle["id"],
         "revision_no": subtitle["revision_no"],
@@ -228,8 +326,7 @@ def test_render_burns_selected_subtitle_when_source_covers_timeline(workspace, d
         "status": "DRAFT",
     }
     stages = [step["stage"] for step in json.loads(render["execution_log"])["steps"]]
-    assert stages == ["timeline-duration", "concat", "subtitle"]
-    assert any("subtitles=filename=" in arg for arg in render["ffmpeg_command"]["args"])
+    assert stages == ["timeline-duration", "concat", "subtitle", "mix", "mux"]
 
 
 def test_compose_uses_durable_job_and_reuses_running_and_completed_fingerprint(workspace, database) -> None:
@@ -330,7 +427,7 @@ def test_compose_contract_change_invalidates_legacy_render_and_job_identity(work
     compose = ComposeService(database, workspace)
     plan = compose.preflight(str(timeline["id"]))
     assert plan["existing_render"] is None
-    assert plan["input_snapshot"]["renderer_contract"] == "TIMELINE_SOURCE_COVERAGE_V5"
+    assert plan["input_snapshot"]["renderer_contract"] == "TIMELINE_CURATED_AUDIO_AND_SUBTITLE_V6"
     assert plan["compose_fingerprint"] != old_fingerprint
     submitted = compose.submit(str(timeline["id"]))
     assert submitted["job"]["id"] != legacy_job["id"]

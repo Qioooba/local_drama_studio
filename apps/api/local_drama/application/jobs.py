@@ -746,6 +746,7 @@ class JobService:
         error_detail_redacted: str | None = None,
         provider_job_id: str | None = None,
         retryable: bool = True,
+        needs_attention: bool = False,
     ) -> dict[str, Any]:
         now = _iso(_utc_now())
         with self.database.transaction() as connection:
@@ -761,11 +762,18 @@ class JobService:
                 next_run_at = None
             elif job["state"] == PAUSED:
                 attempt_state = CANCELLED
-                job_state = PAUSED
-                next_run_at = None
+                # ``resume`` may be requested while the old process is still
+                # settling.  Keep PAUSED visible until this attempt releases
+                # its lease, then atomically make the same Job claimable.
+                job_state = QUEUED if job["next_run_at"] is not None else PAUSED
+                next_run_at = str(job["next_run_at"]) if job["next_run_at"] is not None else None
             elif success:
                 attempt_state = SUCCEEDED
                 job_state = SUCCEEDED
+                next_run_at = None
+            elif needs_attention:
+                attempt_state = NEEDS_ATTENTION
+                job_state = NEEDS_ATTENTION
                 next_run_at = None
             elif retryable and int(row["attempt_no"]) < int(job["max_attempts"]):
                 attempt_state = FAILED
@@ -860,7 +868,11 @@ class JobService:
                 raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在")
             if row["state"] in {SUCCEEDED, FAILED, CANCELLED}:
                 return self._job_response(row)
-            target = CANCELLED if row["state"] in {QUEUED, PAUSED} else CANCEL_REQUESTED
+            unsettled_attempt = connection.execute(
+                "SELECT 1 FROM job_attempts WHERE job_id=? AND state IN ('CLAIMED','RUNNING') LIMIT 1",
+                (job_id,),
+            ).fetchone()
+            target = CANCEL_REQUESTED if unsettled_attempt is not None else CANCELLED
             connection.execute("UPDATE jobs SET state=?, cancel_requested_at=?, updated_at=?, revision=revision+1 WHERE id=?", (target, now, now, job_id))
             self._sync_experiment_cell_status(connection, job_id, target, now)
             self._emit(connection, "JOB_CANCEL_REQUESTED", row["project_id"], "JOB", job_id, {"state": target})
@@ -902,7 +914,24 @@ class JobService:
             row = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
             if row is None:
                 raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在")
-            if row["state"] in {SUCCEEDED, FAILED, CANCELLED, PAUSED}:
+            if row["state"] in {SUCCEEDED, FAILED, CANCELLED}:
+                return self._job_response(row)
+            if row["state"] == PAUSED:
+                if row["next_run_at"] is not None:
+                    connection.execute(
+                        "UPDATE jobs SET next_run_at=NULL,updated_at=?,revision=revision+1 WHERE id=?",
+                        (now, job_id),
+                    )
+                    self._emit(
+                        connection,
+                        "JOB_PAUSED",
+                        row["project_id"],
+                        "JOB",
+                        job_id,
+                        {"state": PAUSED, "actor": actor, "resume_request_cancelled": True},
+                    )
+                    updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+                    return self._job_response(updated)
                 return self._job_response(row)
             unsettled_attempt = connection.execute(
                 "SELECT 1 FROM job_attempts WHERE job_id=? AND state NOT IN ('SUCCEEDED','FAILED','CANCELLED') LIMIT 1",
@@ -925,6 +954,29 @@ class JobService:
             if row is None:
                 raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在")
             if row["state"] == PAUSED:
+                unsettled_attempt = connection.execute(
+                    "SELECT 1 FROM job_attempts WHERE job_id=? AND state IN ('CLAIMED','RUNNING') LIMIT 1",
+                    (job_id,),
+                ).fetchone()
+                if unsettled_attempt is not None:
+                    # ``next_run_at`` is a durable resume intent.  The old
+                    # attempt still observes PAUSED and must exit first;
+                    # ``complete`` or ``reconcile`` promotes it to QUEUED only
+                    # after the lease/resource lock is released.
+                    connection.execute(
+                        "UPDATE jobs SET next_run_at=?,updated_at=?,revision=revision+1 WHERE id=?",
+                        (now, now, job_id),
+                    )
+                    self._emit(
+                        connection,
+                        "JOB_RESUME_PENDING",
+                        row["project_id"],
+                        "JOB",
+                        job_id,
+                        {"reason": "waiting_for_previous_attempt", "actor": actor},
+                    )
+                    updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+                    return self._job_response(updated)
                 connection.execute(
                     "UPDATE jobs SET state='QUEUED', next_run_at=?, cancel_requested_at=NULL, updated_at=?, revision=revision+1 WHERE id=?",
                     (now, now, job_id),
@@ -1105,20 +1157,30 @@ class JobService:
         recovered: list[dict[str, Any]] = []
         with self.database.transaction() as connection:
             rows = connection.execute(
-                "SELECT a.*, j.project_id, j.max_attempts, j.state AS job_state FROM job_attempts a JOIN jobs j ON j.id=a.job_id WHERE a.state IN ('CLAIMED','RUNNING') AND a.lease_expires_at IS NOT NULL AND a.lease_expires_at<?",
+                "SELECT a.*, j.project_id, j.max_attempts, j.state AS job_state, j.next_run_at AS job_next_run_at FROM job_attempts a JOIN jobs j ON j.id=a.job_id WHERE a.state IN ('CLAIMED','RUNNING') AND a.lease_expires_at IS NOT NULL AND a.lease_expires_at<?",
                 (current_iso,),
             ).fetchall()
             for row in rows:
                 progress = _parse_json(str(row["progress_json"] or "{}"))
                 uncertain = bool(row["provider_job_id"]) or progress.get("phase") == "SUBMITTING_TO_PROVIDER"
-                next_job_state = NEEDS_ATTENTION if uncertain else (QUEUED if int(row["attempt_no"]) < int(row["max_attempts"]) else NEEDS_ATTENTION)
+                if uncertain:
+                    next_job_state = NEEDS_ATTENTION
+                elif str(row["job_state"]) == PAUSED:
+                    next_job_state = QUEUED if row["job_next_run_at"] is not None else PAUSED
+                else:
+                    next_job_state = QUEUED if int(row["attempt_no"]) < int(row["max_attempts"]) else NEEDS_ATTENTION
+                next_run_at = (
+                    current_iso
+                    if next_job_state == QUEUED
+                    else None
+                )
                 connection.execute(
                     "UPDATE job_attempts SET state='ORPHANED', error_code='WORKER_LEASE_EXPIRED', error_detail_redacted='lease expired; reconciled locally', lease_token=NULL, updated_at=?, revision=revision+1 WHERE id=?",
                     (current_iso, row["id"]),
                 )
                 connection.execute(
                     "UPDATE jobs SET state=?, next_run_at=?, last_error_code='WORKER_LEASE_EXPIRED', updated_at=?, revision=revision+1 WHERE id=?",
-                    (next_job_state, current_iso if next_job_state == QUEUED else None, current_iso, row["job_id"]),
+                    (next_job_state, next_run_at, current_iso, row["job_id"]),
                 )
                 connection.execute("UPDATE job_resource_leases SET released_at=? WHERE attempt_id=? AND released_at IS NULL", (current_iso, row["id"]))
                 self._emit(
@@ -1170,6 +1232,65 @@ class JobService:
                     }
                 )
         return {"reconciled": len(recovered), "items": recovered, "at": current_iso}
+
+    def requeue_recovered_dependencies(
+        self,
+        *,
+        now: datetime | None = None,
+        actor: str = "dependency-reconciler",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """Re-arm downstream jobs after every durable dependency recovered.
+
+        Startup reconciliation can temporarily move a provider-backed job to
+        ``NEEDS_ATTENTION`` while its remote result is inspected.  Dependency
+        propagation must stop downstream work at that point.  If provider
+        recovery later proves the upstream job succeeded, however, leaving the
+        downstream job in ``NEEDS_ATTENTION`` strands an otherwise valid
+        workflow.  Only jobs blocked by dependency propagation are eligible,
+        and every dependency must now be durably ``SUCCEEDED``.
+        """
+
+        current_iso = _iso(now or _utc_now())
+        bounded_limit = max(1, min(int(limit), 1000))
+        recovered: list[dict[str, Any]] = []
+        with self.database.transaction() as connection:
+            rows = connection.execute(
+                """SELECT j.id,j.project_id
+                   FROM jobs j
+                   WHERE j.state='NEEDS_ATTENTION'
+                     AND j.last_error_code='JOB_DEPENDENCY_FAILED'
+                     AND EXISTS (
+                       SELECT 1 FROM job_dependencies d WHERE d.job_id=j.id
+                     )
+                     AND NOT EXISTS (
+                       SELECT 1 FROM job_dependencies d
+                       JOIN jobs dependency ON dependency.id=d.depends_on_job_id
+                       WHERE d.job_id=j.id AND dependency.state!='SUCCEEDED'
+                     )
+                   ORDER BY j.created_at,j.id LIMIT ?""",
+                (bounded_limit,),
+            ).fetchall()
+            for row in rows:
+                job_id = str(row["id"])
+                connection.execute(
+                    """UPDATE jobs SET state='QUEUED',next_run_at=?,last_error_code=NULL,
+                       last_error_detail_redacted=NULL,updated_at=?,revision=revision+1
+                       WHERE id=? AND state='NEEDS_ATTENTION'
+                         AND last_error_code='JOB_DEPENDENCY_FAILED'""",
+                    (current_iso, current_iso, job_id),
+                )
+                self._sync_experiment_cell_status(connection, job_id, QUEUED, current_iso)
+                self._emit(
+                    connection,
+                    "JOB_DEPENDENCY_RECOVERED",
+                    row["project_id"],
+                    "JOB",
+                    job_id,
+                    {"job_id": job_id, "job_state": QUEUED, "actor": actor},
+                )
+                recovered.append({"job_id": job_id, "job_state": QUEUED})
+        return {"requeued": len(recovered), "items": recovered, "at": current_iso}
 
     def events(self, *, after_event_id: int = 0, project_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         where = ["event_id>?"]

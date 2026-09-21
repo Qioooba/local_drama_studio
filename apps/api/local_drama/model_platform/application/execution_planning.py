@@ -47,6 +47,7 @@ class ExecutionPreviewRequest:
     semantic_inputs: Mapping[str, Any]
     run_overrides: Mapping[str, Any]
     expected_resolution_hash: str | None = None
+    execution_profile_version_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,10 +86,18 @@ class ExecutionPlanningService:
         capability_code = request.capability_code.strip().upper()
         _validate_semantic_inputs(request.semantic_inputs)
         resolution = self.assignments.resolve(capability_code, request.scope)
-        if resolution.execution_profile_version_id is None:
+        explicit_profile_id = (request.execution_profile_version_id or "").strip() or None
+        if explicit_profile_id is None and resolution.execution_profile_version_id is None:
             return self._blocked_preview(capability_code, resolution)
 
-        profile = self._load_published_profile(resolution.execution_profile_version_id, capability_code)
+        selected_profile_id = explicit_profile_id or str(resolution.execution_profile_version_id)
+        profile = self._load_published_profile(selected_profile_id, capability_code)
+        resolution_reason = "EXPLICIT_RUN_PROFILE" if explicit_profile_id else resolution.resolution_reason
+        assignment_chain: tuple[Mapping[str, object], ...] = (
+            ({"scope": "RUN", "execution_profile_version_id": explicit_profile_id, "explicit": True},)
+            if explicit_profile_id
+            else resolution.assignment_chain
+        )
         contract = ParameterContract(
             capability=capability_code,
             schema=_object_json(profile["schema_json"], "MP_PARAMETER_CONTRACT_INVALID"),
@@ -105,7 +114,7 @@ class ExecutionPlanningService:
             allowed_override_fields=allowed_override_fields,
         )
         overrides: list[ParameterOverride] = []
-        if resolution.assignment_overrides:
+        if explicit_profile_id is None and resolution.assignment_overrides:
             if resolution.assignment_override_scope is None:
                 raise DomainRuleError("MP_ASSIGNMENT_OVERRIDE_SCOPE_INVALID", "解析到的范围参数缺少所属作用域。")
             overrides.append(ParameterOverride(
@@ -130,8 +139,8 @@ class ExecutionPlanningService:
                 "runtime_fingerprint": str(profile["runtime_fingerprint"]),
                 "adapter_binding_hash": str(profile["adapter_binding_hash"]),
                 "parameter_contract_hash": str(profile["parameter_contract_hash"]),
-                "assignment_chain": list(resolution.assignment_chain),
-                "assignment_overrides": dict(resolution.assignment_overrides),
+                "assignment_chain": list(assignment_chain),
+                "assignment_overrides": dict(resolution.assignment_overrides) if explicit_profile_id is None else {},
                 "semantic_inputs": dict(request.semantic_inputs),
                 "run_overrides": dict(request.run_overrides),
             }
@@ -141,8 +150,8 @@ class ExecutionPlanningService:
             execution_profile_version_id=str(profile["profile_id"]),
             adapter_code=str(profile["adapter_code"]),
             adapter_version=str(profile["adapter_version"]),
-            resolution_reason=resolution.resolution_reason,
-            assignment_chain=resolution.assignment_chain,
+            resolution_reason=resolution_reason,
+            assignment_chain=assignment_chain,
             resolved_parameters=resolved_parameters,
             network_policy=network_policy,
             runtime_ready=runtime_ready,

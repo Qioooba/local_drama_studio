@@ -32,6 +32,18 @@
 .settings-scope-note h4 { margin: 0; font-size: 14px; }
 .settings-scope-note p:not(.eyebrow) { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
 
+.upscale-defaults-panel { display: grid; gap: 14px; padding: 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-raised); }
+.upscale-defaults-panel fieldset { display: grid; gap: 14px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.upscale-defaults-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.upscale-defaults-grid label { display: grid; gap: 6px; color: var(--text-muted); font-size: 12px; }
+.upscale-defaults-grid select,
+.upscale-defaults-grid input { min-height: 42px; width: 100%; }
+.upscale-defaults-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.upscale-preset-save { padding-top: 12px; border-top: 1px solid var(--border); }
+.upscale-preset-save summary { cursor: pointer; font-weight: 650; }
+.upscale-preset-save[open] { display: grid; gap: 12px; }
+@media (max-width: 720px) { .upscale-defaults-grid { grid-template-columns: minmax(0, 1fr); } .upscale-defaults-actions { align-items: stretch; flex-direction: column; } }
+
 .diagnostics-overview { display: grid; gap: 18px; }
 .diagnostics-summary {
   display: grid;

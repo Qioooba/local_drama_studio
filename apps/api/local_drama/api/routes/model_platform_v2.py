@@ -14,6 +14,8 @@ from local_drama.api.schemas.model_platform import (
     ModelPlatformComfySmokeSubmissionRequest,
     ModelPlatformComfyWorkflowBindingRequest,
     ModelPlatformExecutionPreviewRequest,
+    ModelPlatformNcnnUpscaleProvisionRequest,
+    ModelPlatformNcnnUpscaleProvisionResponse,
     ModelPlatformOfflineImportPlanRequest,
     ModelPlatformProfileCrosswalkApprovalRequest,
     ModelPlatformProfileCrosswalkRevocationRequest,
@@ -66,6 +68,7 @@ from local_drama.model_platform.application.model_lock_discovery import (
     ModelLockDiscoveryOrchestrator,
     configured_model_lock_runtime_ids,
 )
+from local_drama.model_platform.application.ncnn_video_upscale_profiles import NcnnVideoUpscaleProfileService
 from local_drama.model_platform.application.ollama_discovery import OllamaDiscoveryOrchestrator
 from local_drama.model_platform.application.production_execution_registry import production_execution_handlers
 from local_drama.model_platform.application.profile_catalog import ProfileCatalogService
@@ -91,6 +94,49 @@ from local_drama.model_platform.application.quick_create_v2_runs import QuickCre
 from local_drama.model_platform.application.validation_history import ValidationHistoryService
 
 router = APIRouter(prefix="/model-platform", tags=["model-platform-v2"])
+
+
+@router.post(
+    "/ncnn-video-upscale:configure-and-publish",
+    operation_id="configureAndPublishModelPlatformNcnnVideoUpscale",
+    response_model=ModelPlatformNcnnUpscaleProvisionResponse,
+)
+async def configure_and_publish_ncnn_video_upscale(
+    payload: ModelPlatformNcnnUpscaleProvisionRequest,
+    request: Request,
+) -> dict[str, object]:
+    """Run real local inference, then publish the exact runtime/model Profile."""
+    try:
+        result = await run_in_threadpool(
+            lambda: NcnnVideoUpscaleProfileService(request.app.state.database, request.app.state.settings).configure_and_publish(
+                executable_path=payload.executable_path,
+                model_directory=payload.model_directory,
+                model_name=payload.model_name,
+                gpu_device=payload.gpu_device,
+                tile_size=payload.tile_size,
+                load_threads=payload.load_threads,
+                proc_threads=payload.proc_threads,
+                save_threads=payload.save_threads,
+                actor=payload.actor,
+            )
+        )
+        return {
+            "profile": {
+                "profile_version_id": result.profile_version_id,
+                "runtime_model_installation_id": result.runtime_model_installation_id,
+                "validation_run_id": result.validation_run_id,
+                "status": result.profile_status,
+                "model_name": result.model_name,
+                "verified_native_scales": list(result.verified_native_scales),
+                "runtime_sha256": result.runtime_sha256,
+                "model_bundle_sha256": result.model_bundle_sha256,
+                "reused_profile": result.reused_profile,
+            },
+            "network_used": False,
+            "real_smoke_required": True,
+        }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
 
 
 @router.get("/overview", operation_id="getModelPlatformOverview")

@@ -1,0 +1,26 @@
+.production-factory { display: grid; gap: 18px; }
+.factory-hero { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
+.factory-hero__copy { max-width: 760px; }
+.factory-hero__copy h2 { margin: 4px 0 8px; }
+.factory-hero__copy p { margin: 0; }
+.factory-config { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.factory-config label { display: grid; gap: 6px; font-weight: 650; }
+.factory-config select, .factory-config input { width: 100%; }
+.factory-config__wide { grid-column: 1 / -1; }
+.factory-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
+.factory-plan-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.factory-plan-summary div { border: 1px solid var(--border-subtle, #d6d8dc); border-radius: 10px; padding: 12px; }
+.factory-plan-summary strong { display: block; font-size: 1.35rem; }
+.factory-session-list { display: grid; gap: 8px; }
+.factory-session-row { width: 100%; text-align: left; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 12px; border: 1px solid var(--border-subtle, #d6d8dc); border-radius: 10px; background: transparent; }
+.factory-session-row.is-active { border-color: var(--accent, #635bff); box-shadow: 0 0 0 1px var(--accent, #635bff); }
+.factory-progress { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-top: 12px; }
+.factory-progress div { background: var(--surface-subtle, #f6f7f9); border-radius: 8px; padding: 10px; }
+.factory-review-list { display: grid; gap: 14px; }
+.factory-review-card { border: 1px solid var(--border-subtle, #d6d8dc); border-radius: 12px; padding: 14px; }
+.factory-review-card header { display: flex; justify-content: space-between; gap: 12px; }
+.factory-review-card video { width: min(100%, 720px); max-height: 405px; background: #111; border-radius: 8px; margin-top: 12px; }
+.factory-choice-list { display: grid; gap: 8px; margin: 12px 0; }
+.factory-choice { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 10px; background: var(--surface-subtle, #f6f7f9); border-radius: 8px; }
+.factory-blockers { color: var(--danger, #b42318); }
+@media (max-width: 760px) { .factory-hero { display: grid; } .factory-config, .factory-plan-summary, .factory-progress { grid-template-columns: 1fr; } .factory-config__wide { grid-column: auto; } }

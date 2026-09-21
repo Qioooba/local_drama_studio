@@ -33,6 +33,7 @@ from local_drama.infrastructure.database.sqlite import (  # type: ignore[import-
 )
 
 DB_PATH = ROOT / "data" / "local_drama.sqlite3"
+MIGRATION_CONTRACT_PATH = ROOT / "docs" / "release" / "migration-contract.json"
 
 
 def _integrity(path: Path) -> str:
@@ -52,6 +53,15 @@ def _is_final(path: Path) -> bool:
     return "release_status: FINAL" in text
 
 
+def _expected_migration_heads() -> list[str]:
+    try:
+        contract = json.loads(MIGRATION_CONTRACT_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    heads = contract.get("expected_heads")
+    return sorted(str(value) for value in heads) if isinstance(heads, list) else []
+
+
 def _rehearsal_passed(path: Path) -> bool:
     """Return true only for a captured, isolated upgrade/restore rehearsal."""
     if not path.is_file():
@@ -61,17 +71,37 @@ def _rehearsal_passed(path: Path) -> bool:
     except json.JSONDecodeError:
         return False
     source = evidence.get("source_backup", {})
+    upgrade = evidence.get("upgrade_copy", {})
     restore = evidence.get("restore_copy", {})
     safety = evidence.get("safety", {})
+    expected_heads = _expected_migration_heads()
     return (
-        evidence.get("status") == "PASS"
+        bool(expected_heads)
+        and evidence.get("status") == "PASS"
         and source.get("integrity") == "ok"
+        and bool(source.get("migration_heads"))
+        and upgrade.get("migration_heads") == expected_heads
+        and upgrade.get("expected_heads") == expected_heads
+        and upgrade.get("integrity") == "ok"
         and restore.get("integrity") == "ok"
         and restore.get("matches_source_sha256") is True
-        and source.get("migration") == "0031_project_asset_grants"
-        and evidence.get("upgrade_copy", {}).get("to_migration") == "0039_automation_task_jobs"
         and safety.get("production_database_mutated") is False
+        and safety.get("comfyui_contacted") is False
         and safety.get("network_contacted") is False
+        and safety.get("jobs_created") is False
+    )
+
+
+def _current_rehearsal_path() -> Path:
+    evidence_root = ROOT / "docs" / "evidence" / "g10"
+    candidates = sorted(
+        evidence_root.glob("upgrade-rollback-rehearsal-*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return next(
+        (path for path in candidates if _rehearsal_passed(path)),
+        evidence_root / "upgrade-rollback-rehearsal-current-head-missing.json",
     )
 
 
@@ -386,15 +416,33 @@ def _master_requirements_closure(path: Path) -> dict[str, Any]:
 
 def audit() -> dict[str, Any]:
     database = Database(DB_PATH)
+    expected_migration_heads = _expected_migration_heads()
     with database.connect() as connection:
         project = connection.execute("SELECT id FROM projects ORDER BY created_at DESC LIMIT 1").fetchone()
-        migration = connection.execute("SELECT version_num FROM alembic_version").fetchone()
-    if project is None:
-        raise RuntimeError("no project exists in the production database")
-    project_id = str(project["id"])
-    g7 = G7ReadinessService(database).inspect(project_id)
-    g8 = G8ReadinessService(database).inspect(project_id)
-    g9 = G9ReadinessService(database).inspect(project_id)
+        migration_heads = sorted(
+            str(row["version_num"])
+            for row in connection.execute("SELECT version_num FROM alembic_version").fetchall()
+        )
+    project_id = str(project["id"]) if project is not None else None
+    schema_current = bool(expected_migration_heads) and migration_heads == expected_migration_heads
+    readiness_error: str | None = None
+    if project_id is not None and schema_current:
+        try:
+            g7 = G7ReadinessService(database).inspect(project_id)
+            g8 = G8ReadinessService(database).inspect(project_id)
+            g9 = G9ReadinessService(database).inspect(project_id)
+        except sqlite3.DatabaseError as error:
+            readiness_error = f"{type(error).__name__}: {error}"
+            g7 = g8 = g9 = {
+                "status": "NOT_EVALUATED",
+                "next_required_action": "REPAIR_DATABASE_SCHEMA",
+            }
+    else:
+        next_action = "UPGRADE_DATABASE" if not schema_current else "CREATE_PROJECT"
+        g7 = g8 = g9 = {
+            "status": "NOT_EVALUATED",
+            "next_required_action": next_action,
+        }
     g7_pass = g7["status"] == "PASS"
     g8_evidence_pass = g8["status"] == "PASS"
     g9_evidence_pass = g9["status"] == "PASS"
@@ -411,7 +459,7 @@ def audit() -> dict[str, Any]:
         "sbom": (ROOT / "docs" / "release" / "sbom.json", True),
         "go_no_go": (ROOT / "docs" / "release" / "go-no-go.md", True),
     }
-    rehearsal_path = ROOT / "docs" / "evidence" / "g10" / "upgrade-rollback-rehearsal-0039-2026-08-16.json"
+    rehearsal_path = _current_rehearsal_path()
     sbom_path = ROOT / "docs" / "release" / "sbom.json"
     sbom_inventory = _sbom_inventory(sbom_path)
     local_uat_path = ROOT / "docs" / "evidence" / "g10" / "local-uat-readonly-2026-08-14.json"
@@ -428,7 +476,14 @@ def audit() -> dict[str, Any]:
     release_artifacts_ready = all(item["final"] for item in artifact_state.values())
     checks = [
         {"code": "DATABASE_INTEGRITY", "passed": _integrity(DB_PATH) == "ok", "observed": _integrity(DB_PATH)},
-        {"code": "MIGRATION_HEAD", "passed": bool(migration and str(migration["version_num"]) == "0041_character_voice_bindings"), "observed": str(migration["version_num"]) if migration else None},
+        {
+            "code": "MIGRATION_HEAD",
+            "passed": bool(expected_migration_heads) and migration_heads == expected_migration_heads,
+            "observed": migration_heads,
+            "expected": expected_migration_heads,
+            "contract": MIGRATION_CONTRACT_PATH.relative_to(ROOT).as_posix(),
+            "readiness_error": readiness_error,
+        },
         {"code": "BACKUP_INTEGRITY", "passed": bool(backup_paths) and all(_integrity(path) == "ok" for path in backup_paths[:5]), "observed_count": min(len(backup_paths), 5)},
         {"code": "ORDERED_G7", "passed": g7_pass, "observed": g7["status"], "next_required_action": g7["next_required_action"]},
         {
@@ -479,7 +534,12 @@ def audit() -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=ROOT / "docs" / "evidence" / "g10" / "release-readiness-2026-08-14.json")
+    date_label = datetime.now(UTC).strftime("%Y-%m-%d")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=ROOT / "docs" / "evidence" / "g10" / f"release-readiness-{date_label}.json",
+    )
     args = parser.parse_args()
     result = audit()
     output = args.output if args.output.is_absolute() else ROOT / args.output

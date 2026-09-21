@@ -65,8 +65,8 @@ describe("DirectorTakeAdoption", () => {
       onActivate={vi.fn()}
       onAdopt={vi.fn()}
     />);
-    expect(screen.getByRole("button", { name: "查看 Take 1 · PROXY，当前采用" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "查看 Take 2 · FORMAL，待比较" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "查看 Take 1 · 视频候选，当前采用" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "查看 Take 2 · 正式版本，待比较" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "当前采用" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByText("正式版本只能前往正式审核，不能作为 Shot Studio 工作版本")).toBeTruthy();
   });

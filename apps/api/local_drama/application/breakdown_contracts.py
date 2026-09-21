@@ -65,6 +65,25 @@ def canonical_camera_movement(value: object) -> str:
     return "STATIC"
 
 
+def explicit_camera_movement(value: object) -> str | None:
+    """Extract motion only from prose that explicitly names the camera."""
+    text = unicodedata.normalize("NFKC", str(value or "")).strip().casefold()
+    if not text:
+        return None
+    camera_phrases = (
+        (r"(?:镜头|摄影机|camera)[^，。；;]{0,16}(?:推向|推进|推近|推镜|push\s*in)", "PUSH_IN"),
+        (r"(?:镜头|摄影机|camera)[^，。；;]{0,16}(?:拉远|拉开|拉镜|pull\s*out)", "PULL_OUT"),
+        (r"(?:镜头|摄影机|camera)[^，。；;]{0,16}(?:跟随|跟拍|追随|tracking)", "TRACKING"),
+        (r"(?:镜头|摄影机|camera)[^，。；;]{0,16}(?:横移|侧移|truck)", "TRUCK"),
+        (r"(?:镜头|摄影机|camera)[^，。；;]{0,16}(?:摇摄|横摇|pan)", "PAN"),
+        (r"(?:镜头|摄影机|camera)[^，。；;]{0,16}(?:升起|上升|升降|pedestal)", "PEDESTAL"),
+    )
+    for pattern, movement in camera_phrases:
+        if re.search(pattern, text):
+            return movement
+    return None
+
+
 def director_intent_fields(
     shot: dict[str, Any], scene: dict[str, Any], *, duration_ms: int, source_revision_id: str | None,
 ) -> dict[str, Any]:
@@ -74,6 +93,9 @@ def director_intent_fields(
     shot_type = canonical_shot_type(shot.get("shot_type"), visual)
     camera_text = str(shot.get("camera") or "固定").strip()
     movement = canonical_camera_movement(camera_text)
+    prose_movement = explicit_camera_movement(f"{action} {visual}")
+    if movement == "STATIC" and prose_movement is not None:
+        movement = prose_movement
     lighting = str(shot.get("lighting") or scene.get("lighting") or "").strip()
     atmosphere = str(scene.get("atmosphere") or "").strip()
     location = str(scene.get("location") or scene.get("title") or "").strip()

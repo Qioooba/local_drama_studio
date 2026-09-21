@@ -69,8 +69,8 @@ def test_render_segmented_episode_concats_two_real_videos(workspace, database) -
     assert render["status"] == "VERIFIED"
     assert render["revision"] == 1
     assert render["input_snapshot"]["schema_version"] == "localdrama.episode-render-input.v1"
-    assert render["input_snapshot"]["render_mode"] == "SEGMENTED_CONCAT"
-    assert render["input_snapshot"]["renderer_contract"] == "TIMELINE_SOURCE_COVERAGE_V5"
+    assert render["input_snapshot"]["render_mode"] == "SEGMENTED_SILENT_AUDIO"
+    assert render["input_snapshot"]["renderer_contract"] == "TIMELINE_CURATED_AUDIO_AND_SUBTITLE_V6"
     assert len(render["input_snapshot"]["segments"]) == 2
     assert render["ffmpeg_command"]["executor"] == "builtin:ffmpeg"
     assert render["ffmpeg_command"]["returncode"] == 0

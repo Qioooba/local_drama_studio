@@ -2,7 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getEpisodeAudioWorkspaceV2, removeEpisodeAudioTrackV2, updateEpisodeAudioTrackV2 } from "../../generated/api";
+import { createEpisodeAudioTrackV2, getEpisodeAudioWorkspaceV2, removeEpisodeAudioTrackV2, updateEpisodeAudioTrackV2 } from "../../generated/api";
+import { uploadProjectMediaFile } from "../media-picker/mediaPickerClient";
 import { EpisodeAudioWorkspace } from "./EpisodeAudioWorkspace";
 
 vi.mock("../../generated/api", () => ({
@@ -12,7 +13,7 @@ vi.mock("../../generated/api", () => ({
   updateEpisodeAudioTrackV2: vi.fn(),
 }));
 vi.mock("../media-picker/mediaPickerClient", () => ({ uploadProjectMediaFile: vi.fn() }));
-vi.mock("../shared/ProjectLocalResourceSelect", () => ({ ProjectLocalResourceSelect: () => <div>授权证据选择</div> }));
+vi.mock("../shared/ProjectLocalResourceSelect", () => ({ ProjectLocalResourceSelect: ({ onChange }: { onChange: (value: string) => void }) => <button type="button" onClick={() => onChange("evidence/bgm-license.json")}>授权证据选择</button> }));
 
 const workspace = {
   episode_id: "episode-1", project_id: "project-1", episode_code: "EP01", episode_title: "第一集",
@@ -32,6 +33,8 @@ describe("EpisodeAudioWorkspace v2", () => {
     vi.mocked(getEpisodeAudioWorkspaceV2).mockResolvedValue({ workspace, read_only: true, request_shape: "episode_audio_workspace_v2" });
     vi.mocked(updateEpisodeAudioTrackV2).mockResolvedValue({ track: { id: "track-1", episode_id: "episode-1", media_version_id: "audio-bgm", track_kind: "BGM", revision: 3, mix_revision: 5, outcome: "UPDATED", idempotent_replay: false } });
     vi.mocked(removeEpisodeAudioTrackV2).mockResolvedValue({ track: { id: "track-1", episode_id: "episode-1", media_version_id: "audio-bgm", track_kind: "BGM", revision: 2, mix_revision: 5, outcome: "REMOVED", idempotent_replay: false } });
+    vi.mocked(uploadProjectMediaFile).mockResolvedValue("audio-upload");
+    vi.mocked(createEpisodeAudioTrackV2).mockResolvedValue({ track: { id: "track-new", episode_id: "episode-1", media_version_id: "audio-upload", track_kind: "BGM", revision: 1, mix_revision: 5, outcome: "CREATED", idempotent_replay: false } });
   });
 
   it("uses one aggregate for dialogue references and restores focus", async () => {
@@ -50,5 +53,19 @@ describe("EpisodeAudioWorkspace v2", () => {
     await waitFor(() => expect((screen.getByLabelText("音量（dB）") as HTMLInputElement).value).toBe("-5"));
     fireEvent.click(screen.getByRole("button", { name: "保存混音调整" }));
     await waitFor(() => expect(updateEpisodeAudioTrackV2).toHaveBeenCalledWith("track-1", expect.objectContaining({ gain_db: -5, expected_revision: 2, expected_mix_revision: 4, idempotency_key: expect.stringMatching(/^audio-update:/) })));
+  });
+
+  it("adds BGM at a dialogue-safe default level with gentle fades", async () => {
+    mount("/?focus=music-sfx");
+    await screen.findByRole("button", { name: "添加本地音乐或音效" });
+    fireEvent.click(screen.getByRole("button", { name: "添加本地音乐或音效" }));
+    fireEvent.change(screen.getByLabelText("本地音频"), { target: { files: [new File(["audio"], "theme.wav", { type: "audio/wav" })] } });
+    fireEvent.click(screen.getByRole("button", { name: "授权证据选择" }));
+    fireEvent.click(screen.getByRole("button", { name: "校验并添加" }));
+    await waitFor(() => expect(createEpisodeAudioTrackV2).toHaveBeenCalledWith("episode-1", expect.objectContaining({
+      media_version_id: "audio-upload", track_kind: "BGM", gain_db: -18,
+      fade_in_us: 2_000_000, fade_out_us: 3_000_000,
+      license_evidence_path_rel: "evidence/bgm-license.json", expected_mix_revision: 4,
+    })));
   });
 });

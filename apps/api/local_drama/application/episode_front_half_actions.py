@@ -22,6 +22,12 @@ from local_drama.infrastructure.filesystem.path_policy import controlled_path
 
 from .episode_source_binding import resolve_episode_source_binding
 from .keyframe_references import approved_keyframes_for_shots
+from .production_asset_inputs import ProductionAssetInputService
+from .production_identity_inputs import (
+    ProductionIdentityHeroPreparationService,
+    ProductionIdentityInputService,
+    ProductionIdentityPreparationService,
+)
 
 
 def _decode(value: object, fallback: Any) -> Any:
@@ -39,6 +45,7 @@ class EpisodeFrontHalfActionService:
             "STORY_PARSE",
             "SCRIPT_BREAKDOWN",
             "ASSET_IDENTITY",
+            "ASSET_HERO_COMPLETION",
             "ASSET_COMPLETION",
             "EPISODE_PLAN",
             "KEYFRAME_CHECK",
@@ -547,6 +554,201 @@ class EpisodeFrontHalfActionService:
             },
         )
 
+    def session_asset_completion(
+        self, production_session_id: str, episode_id: str
+    ) -> tuple[dict[str, Any], int]:
+        """Prepare verified draft identities without creating approval facts."""
+
+        ProductionIdentityHeroPreparationService(
+            self.database, self.settings
+        ).reconcile_completed(production_session_id, episode_id)
+        formal_report, produced = self.asset_completion(episode_id)
+        if str(formal_report["machine_check"]["status"]) in {"PASS", "SKIPPED"}:
+            return formal_report, produced
+        result = ProductionIdentityInputService(self.database).ensure_episode_inputs(
+            production_session_id,
+            episode_id,
+            actor="production-session-worker",
+        )
+        if not result["ready"]:
+            preparation = ProductionIdentityPreparationService(
+                self.database, self.settings
+            ).dispatch_episode(
+                production_session_id,
+                episode_id,
+                actor="production-session-worker",
+            )
+            refreshed = ProductionIdentityInputService(
+                self.database
+            ).ensure_episode_inputs(
+                production_session_id,
+                episode_id,
+                actor="production-session-worker",
+            )
+            if refreshed["ready"]:
+                return self._report(
+                    "PASS",
+                    "PRODUCTION_SESSION_IDENTITY_INPUTS_READY",
+                    "当前会话人物三视图已登记并冻结为机器临时输入",
+                    {
+                        "production_session_id": production_session_id,
+                        "selection_authority": "MACHINE_TEMPORARY",
+                        "human_approval_created": False,
+                        "fact_refs": [
+                            str(item["id"]) for item in refreshed["registered"]
+                        ],
+                    },
+                )
+            if preparation["ready"] and preparation["dependency_job_ids"]:
+                dependency_items = [
+                    {"job_id": job_id}
+                    for job_id in preparation["dependency_job_ids"]
+                ]
+                return (
+                    {
+                        "status": "PASS",
+                        "machine_check": {
+                            "status": "PASS",
+                            "ok": True,
+                            "code": "PRODUCTION_SESSION_IDENTITY_GENERATION_DISPATCHED",
+                            "detail": "已提交当前会话缺失的真实人物三视图生成任务",
+                            "human_approval_created": False,
+                            "submitted_count": len(preparation["submitted"]),
+                        },
+                        "produced": {
+                            "items": dependency_items,
+                            "submissions": preparation["submitted"],
+                            "writes": ["production_session_job_links"],
+                        },
+                        "summary": "人物三视图已投放；下游任务等待真实产物登记完成",
+                    },
+                    0,
+                )
+            return self._report(
+                "NEEDS_HITL",
+                "PRODUCTION_SESSION_IDENTITY_INPUT_REQUIRED",
+                "当前会话仍有角色缺少完整、已验证且已授权的三视图草稿",
+                {
+                    "production_session_id": production_session_id,
+                    "missing": result["missing"],
+                    "candidate_failures": result["candidate_failures"],
+                    "preparation_blockers": preparation["blockers"],
+                    "human_approval_created": False,
+                    "fact_refs": [str(item["id"]) for item in result["registered"]],
+                },
+            )
+        return self._report(
+            "PASS",
+            "PRODUCTION_SESSION_IDENTITY_INPUTS_READY",
+            "当前会话所需人物身份输入已冻结；草稿仍未被标记为人工批准",
+            {
+                "production_session_id": production_session_id,
+                "selection_authority": "MACHINE_TEMPORARY",
+                "human_approval_created": False,
+                "registered_count": len(result["registered"]),
+                "fact_refs": [str(item["id"]) for item in result["registered"]],
+            },
+        )
+
+    def session_asset_identity(
+        self, production_session_id: str, episode_id: str
+    ) -> tuple[dict[str, Any], int]:
+        result = ProductionAssetInputService(self.database).ensure_episode_inputs(
+            production_session_id,
+            episode_id,
+            actor="production-session-worker",
+        )
+        if not result["ready"]:
+            return self._report(
+                "NEEDS_HITL",
+                "PRODUCTION_SESSION_ASSET_IDENTITY_REVIEW_REQUIRED",
+                "资产身份存在歧义或无效输入，需要人工核对",
+                {
+                    "production_session_id": production_session_id,
+                    "blockers": result["blockers"],
+                    "human_approval_created": False,
+                    "fact_refs": [],
+                },
+            )
+        temporary = [
+            item
+            for item in result["items"]
+            if item["status"] == "SESSION_READY"
+        ]
+        return self._report(
+            "PASS",
+            "PRODUCTION_SESSION_ASSET_IDENTITIES_READY",
+            "资产身份已按精确匹配登记为本次会话机器临时输入；原建议仍等待人工决定",
+            {
+                "production_session_id": production_session_id,
+                "selection_authority": "MACHINE_TEMPORARY" if temporary else "HUMAN_RESOLVED",
+                "human_approval_created": False,
+                "temporary_count": len(temporary),
+                "fact_refs": [str(item["input_id"]) for item in temporary],
+            },
+        )
+
+    def session_asset_hero_completion(
+        self, production_session_id: str, episode_id: str
+    ) -> tuple[dict[str, Any], int]:
+        """Generate missing bound-asset HERO inputs before multi-view preparation."""
+
+        preparation = ProductionIdentityHeroPreparationService(
+            self.database, self.settings
+        ).dispatch_episode(
+            production_session_id,
+            episode_id,
+            actor="production-session-worker",
+        )
+        if not preparation["ready"]:
+            return self._report(
+                "NEEDS_HITL",
+                "PRODUCTION_SESSION_HERO_INPUT_REQUIRED",
+                "当前会话仍有关键资产缺少可自动生成的主图",
+                {
+                    "production_session_id": production_session_id,
+                    "preparation_blockers": preparation["blockers"],
+                    "human_approval_created": False,
+                    "fact_refs": [],
+                },
+            )
+        dependency_job_ids = list(preparation["dependency_job_ids"])
+        if dependency_job_ids:
+            return (
+                {
+                    "status": "PASS",
+                    "machine_check": {
+                        "status": "PASS",
+                        "ok": True,
+                        "code": "PRODUCTION_SESSION_HERO_GENERATION_DISPATCHED",
+                        "detail": "已按资产类型提交当前会话缺失的主图生成任务",
+                        "human_approval_created": False,
+                        "submitted_count": len(preparation["submitted"]),
+                    },
+                    "produced": {
+                        "items": [
+                            {"job_id": job_id} for job_id in dependency_job_ids
+                        ],
+                        "submissions": preparation["submitted"],
+                        "writes": ["production_session_job_links"],
+                    },
+                    "summary": "关键资产主图已投放；后续阶段等待真实 HERO 登记完成",
+                },
+                0,
+            )
+        return self._report(
+            "PASS",
+            "PRODUCTION_SESSION_HERO_INPUTS_READY",
+            "当前会话所需关键资产主图已具备，可继续准备人物三视图",
+            {
+                "production_session_id": production_session_id,
+                "human_approval_created": False,
+                "fact_refs": [
+                    str(item["asset_id"]) for item in preparation["items"]
+                ],
+            },
+        )
+
     def episode_plan(self, episode_id: str) -> tuple[dict[str, Any], int]:
         shots = self._shots(episode_id)
         if not shots:
@@ -585,6 +787,71 @@ class EpisodeFrontHalfActionService:
             {"shot_count": len(shots), "invalid_shots": [], "fact_refs": [str(row["current_revision_id"]) for row in shots]},
         )
 
+    def session_episode_plan(
+        self, production_session_id: str, episode_id: str
+    ) -> tuple[dict[str, Any], int]:
+        report, produced = self.episode_plan(episode_id)
+        if str(report["machine_check"]["status"]) in {"PASS", "SKIPPED"}:
+            return report, produced
+        shots = self._shots(episode_id)
+        with self.database.connect() as connection:
+            applied_shot_ids = {
+                str(row["id"])
+                for row in connection.execute(
+                    """SELECT sh.id FROM shots sh
+                       JOIN script_breakdown_scene_applications app
+                         ON app.created_scene_id=sh.scene_id AND app.episode_id=sh.episode_id
+                       JOIN script_breakdown_drafts d ON d.id=app.breakdown_draft_id
+                       WHERE sh.episode_id=? AND sh.archived_at IS NULL
+                         AND d.status='APPLIED'""",
+                    (episode_id,),
+                ).fetchall()
+            }
+        invalid: list[dict[str, Any]] = []
+        for shot in shots:
+            fields = _decode(shot.get("fields_json"), {})
+            fields = fields if isinstance(fields, dict) else {}
+            missing = missing_shot_fields(fields)
+            if (
+                not shot.get("current_revision_id")
+                or missing
+                or str(shot["id"]) not in applied_shot_ids
+                or str(shot["status"])
+                not in {"DRAFT", "READY", "GENERATING", "REVIEW", "APPROVED"}
+            ):
+                invalid.append(
+                    {
+                        "shot_id": str(shot["id"]),
+                        "shot_code": str(shot["code"]),
+                        "status": str(shot["status"]),
+                        "missing_fields": missing,
+                    }
+                )
+        if invalid or not shots:
+            return self._report(
+                "NEEDS_HITL",
+                "PRODUCTION_SESSION_EPISODE_PLAN_REVIEW_REQUIRED",
+                "自动应用的分镜仍有缺项或无法追溯到本集拆解草稿",
+                {
+                    "production_session_id": production_session_id,
+                    "invalid_shots": invalid,
+                    "human_approval_created": False,
+                    "fact_refs": [str(row["id"]) for row in shots],
+                },
+            )
+        return self._report(
+            "PASS",
+            "PRODUCTION_SESSION_EPISODE_PLAN_READY",
+            "自动应用的完整分镜已登记为本次会话机器临时输入，原镜头状态未冒充人工确认",
+            {
+                "production_session_id": production_session_id,
+                "selection_authority": "MACHINE_TEMPORARY",
+                "human_approval_created": False,
+                "shot_count": len(shots),
+                "fact_refs": [str(row["current_revision_id"]) for row in shots],
+            },
+        )
+
     def keyframe_check(self, episode_id: str) -> tuple[dict[str, Any], int]:
         episode = self._episode(episode_id)
         with self.database.connect() as connection:
@@ -618,8 +885,24 @@ class EpisodeFrontHalfActionService:
             {"checked_shots": len(shots), "missing_shots": [], "fact_refs": [str(row["id"]) for row in shots]},
         )
 
-    def run(self, action: str, episode_id: str) -> tuple[dict[str, Any], int]:
+    def run(
+        self,
+        action: str,
+        episode_id: str,
+        *,
+        production_session_id: str | None = None,
+    ) -> tuple[dict[str, Any], int]:
         normalized = str(action or "").strip().upper()
+        if normalized == "ASSET_IDENTITY" and production_session_id:
+            return self.session_asset_identity(production_session_id, episode_id)
+        if normalized == "ASSET_HERO_COMPLETION" and production_session_id:
+            return self.session_asset_hero_completion(
+                production_session_id, episode_id
+            )
+        if normalized == "ASSET_COMPLETION" and production_session_id:
+            return self.session_asset_completion(production_session_id, episode_id)
+        if normalized == "EPISODE_PLAN" and production_session_id:
+            return self.session_episode_plan(production_session_id, episode_id)
         handlers = {
             "STORY_PARSE": self.story_parse,
             "SCRIPT_BREAKDOWN": self.script_breakdown,

@@ -239,7 +239,11 @@ class AutomationWorkflowService:
                 "SELECT * FROM automation_workflows WHERE project_id=? AND code=? ORDER BY version_no DESC LIMIT 1",
                 (project_id, normalized_code),
             ).fetchone()
-            if latest is not None and str(latest["plan_hash"]) == plan_hash and (source_fingerprint is None or str(latest["source_fingerprint"] or "") == source_fingerprint):
+            if (
+                latest is not None
+                and str(latest["plan_hash"]) == plan_hash
+                and (source_fingerprint is None or str(latest["source_fingerprint"] or "") == source_fingerprint)
+            ):
                 replay = self._workflow_view(latest)
                 replay["idempotent_replay"] = True
                 return replay
@@ -252,11 +256,42 @@ class AutomationWorkflowService:
                 """INSERT INTO automation_workflows
                 (id,project_id,code,title,mode,definition_json,plan_hash,status,created_at,updated_at,created_by,revision,schema_version,version_no,template_code,source_fingerprint)
                 VALUES (?,?,?,?,?,?,?,'ACTIVE',?,?,?,1,'v2',?,?,?)""",
-                (workflow_id, project_id, normalized_code, normalized_title, definition["mode"], _json(definition), plan_hash, now, now, actor, version_no, template_code, source_fingerprint),
+                (
+                    workflow_id,
+                    project_id,
+                    normalized_code,
+                    normalized_title,
+                    definition["mode"],
+                    _json(definition),
+                    plan_hash,
+                    now,
+                    now,
+                    actor,
+                    version_no,
+                    template_code,
+                    source_fingerprint,
+                ),
             )
             connection.execute(
                 "INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json) VALUES (?,'producer','AUTOMATION_WORKFLOW_CREATED','automation_workflow',?,?,?)",
-                (actor, workflow_id, "创建声明式有限自动化 workflow 版本", _json({"project_id": project_id, "plan_hash": plan_hash, "version_no": version_no, "template_code": template_code, "source_fingerprint": source_fingerprint, "max_iterations": max_iterations, "max_tasks": max_tasks, "max_disk_bytes": max_disk_bytes, "ai_approval_allowed": False})),
+                (
+                    actor,
+                    workflow_id,
+                    "创建声明式有限自动化 workflow 版本",
+                    _json(
+                        {
+                            "project_id": project_id,
+                            "plan_hash": plan_hash,
+                            "version_no": version_no,
+                            "template_code": template_code,
+                            "source_fingerprint": source_fingerprint,
+                            "max_iterations": max_iterations,
+                            "max_tasks": max_tasks,
+                            "max_disk_bytes": max_disk_bytes,
+                            "ai_approval_allowed": False,
+                        }
+                    ),
+                ),
             )
         return self.get_workflow(workflow_id)
 
@@ -300,7 +335,10 @@ class AutomationWorkflowService:
             episode_code = episode["code"]
             batch_items.extend(
                 [
-                    {"key": f"{episode_code}:KEYFRAME_CHECK", "payload": {"action": "KEYFRAME_CHECK", "episode_id": episode["id"], "requires_human_approval": True}},
+                    {
+                        "key": f"{episode_code}:KEYFRAME_CHECK",
+                        "payload": {"action": "KEYFRAME_CHECK", "episode_id": episode["id"], "requires_human_approval": True},
+                    },
                     {"key": f"{episode_code}:TTS_BATCH", "payload": {"action": "TTS_BATCH", "episode_id": episode["id"]}},
                     {"key": f"{episode_code}:RENDER", "payload": {"action": "RENDER", "episode_id": episode["id"]}},
                     {"key": f"{episode_code}:DELIVERY", "payload": {"action": "DELIVERY", "episode_id": episode["id"]}},
@@ -308,7 +346,9 @@ class AutomationWorkflowService:
             )
         task_cap = len(batch_items) + 1  # one extra step lets the final advance observe batch exhaustion as SUCCEEDED
         estimated_disk = min(MAX_DISK_BYTES, max(1, len(episodes)) * _TEMPLATE_EPISODE_DISK_BYTES)
-        source_fingerprint = _hash({"template_code": normalized_code, "template_revision": 1, "episodes": episodes, "actions": ["KEYFRAME_CHECK", "TTS_BATCH", "RENDER", "DELIVERY"]})
+        source_fingerprint = _hash(
+            {"template_code": normalized_code, "template_revision": 1, "episodes": episodes, "actions": ["KEYFRAME_CHECK", "TTS_BATCH", "RENDER", "DELIVERY"]}
+        )
         return self.create_workflow(
             project_id,
             code=normalized_code,
@@ -332,10 +372,7 @@ class AutomationWorkflowService:
 
     @staticmethod
     def list_templates() -> list[dict[str, str]]:
-        return [
-            {"code": code, "title": meta["title"], "description": meta["description"]}
-            for code, meta in AUTOMATION_TEMPLATES.items()
-        ]
+        return [{"code": code, "title": meta["title"], "description": meta["description"]} for code, meta in AUTOMATION_TEMPLATES.items()]
 
     @staticmethod
     def _workflow_view(row: Any) -> dict[str, Any]:
@@ -372,7 +409,9 @@ class AutomationWorkflowService:
             if include_archived:
                 rows = connection.execute("SELECT * FROM automation_workflows WHERE project_id=? ORDER BY updated_at DESC", (project_id,)).fetchall()
             else:
-                rows = connection.execute("SELECT * FROM automation_workflows WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC", (project_id,)).fetchall()
+                rows = connection.execute(
+                    "SELECT * FROM automation_workflows WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC", (project_id,)
+                ).fetchall()
         return {"items": [self._workflow_view(row) for row in rows], "local_only": True, "network_contacted": False}
 
     def plan_workflow(self, workflow_id: str) -> dict[str, Any]:
@@ -380,7 +419,9 @@ class AutomationWorkflowService:
         definition = workflow["definition"]
         batch_count = len(definition["batch_items"])
         repeat_batch = bool(definition["repeat_batch"])
-        estimated_tasks = min(int(definition["max_tasks"]), int(definition["max_iterations"])) if repeat_batch else min(batch_count, int(definition["max_tasks"]))
+        estimated_tasks = (
+            min(int(definition["max_tasks"]), int(definition["max_iterations"])) if repeat_batch else min(batch_count, int(definition["max_tasks"]))
+        )
         return {
             "workflow_id": workflow_id,
             "project_id": workflow["project_id"],
@@ -412,7 +453,14 @@ class AutomationWorkflowService:
         if run:
             connection.execute(
                 "INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json) VALUES (?,'producer',?,?,?, ?,?)",
-                (actor, f"AUTOMATION_RUN_{event_type}", "automation_workflow_run", run_id, f"声明式 workflow run: {event_type}", _json({"project_id": run["project_id"], **payload})),
+                (
+                    actor,
+                    f"AUTOMATION_RUN_{event_type}",
+                    "automation_workflow_run",
+                    run_id,
+                    f"声明式 workflow run: {event_type}",
+                    _json({"project_id": run["project_id"], **payload}),
+                ),
             )
 
     @staticmethod
@@ -454,7 +502,13 @@ class AutomationWorkflowService:
                 for item in tasks
             ],
             "events": [
-                {"id": str(event["id"]), "event_type": str(event["event_type"]), "payload": _decode(event["event_json"], {}), "created_at": event["created_at"], "created_by": event["created_by"]}
+                {
+                    "id": str(event["id"]),
+                    "event_type": str(event["event_type"]),
+                    "payload": _decode(event["event_json"], {}),
+                    "created_at": event["created_at"],
+                    "created_by": event["created_by"],
+                }
                 for event in events
             ],
             "local_only": True,
@@ -467,7 +521,10 @@ class AutomationWorkflowService:
             row = connection.execute("SELECT * FROM automation_workflow_runs WHERE id=?", (run_id,)).fetchone()
             if row is None:
                 raise DomainRuleError("AUTOMATION_RUN_NOT_FOUND", "workflow run 不存在", {"run_id": run_id})
-            tasks = connection.execute("SELECT t.*, j.state AS job_state FROM automation_workflow_run_tasks t LEFT JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? ORDER BY t.ordinal", (run_id,)).fetchall()
+            tasks = connection.execute(
+                "SELECT t.*, j.state AS job_state FROM automation_workflow_run_tasks t LEFT JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? ORDER BY t.ordinal",
+                (run_id,),
+            ).fetchall()
             events = connection.execute("SELECT * FROM automation_workflow_run_events WHERE run_id=? ORDER BY created_at,id", (run_id,)).fetchall()
         return self._run_view(row, tasks, events)
 
@@ -476,12 +533,19 @@ class AutomationWorkflowService:
             raise DomainRuleError("AUTOMATION_RUN_PAGE_INVALID", "run limit 必须在 1—500 之间")
         with self.database.connect() as connection:
             if status:
-                rows = connection.execute("SELECT * FROM automation_workflow_runs WHERE project_id=? AND status=? ORDER BY created_at DESC LIMIT ?", (project_id, status, limit)).fetchall()
+                rows = connection.execute(
+                    "SELECT * FROM automation_workflow_runs WHERE project_id=? AND status=? ORDER BY created_at DESC LIMIT ?", (project_id, status, limit)
+                ).fetchall()
             else:
-                rows = connection.execute("SELECT * FROM automation_workflow_runs WHERE project_id=? ORDER BY created_at DESC LIMIT ?", (project_id, limit)).fetchall()
+                rows = connection.execute(
+                    "SELECT * FROM automation_workflow_runs WHERE project_id=? ORDER BY created_at DESC LIMIT ?", (project_id, limit)
+                ).fetchall()
             views = []
             for row in rows:
-                tasks = connection.execute("SELECT t.*, j.state AS job_state FROM automation_workflow_run_tasks t LEFT JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? ORDER BY t.ordinal", (row["id"],)).fetchall()
+                tasks = connection.execute(
+                    "SELECT t.*, j.state AS job_state FROM automation_workflow_run_tasks t LEFT JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? ORDER BY t.ordinal",
+                    (row["id"],),
+                ).fetchall()
                 events = connection.execute("SELECT * FROM automation_workflow_run_events WHERE run_id=? ORDER BY created_at,id", (row["id"],)).fetchall()
                 views.append(self._run_view(row, tasks, events))
         return {"items": views, "limit": limit, "local_only": True, "network_contacted": False}
@@ -504,7 +568,9 @@ class AutomationWorkflowService:
         pending_gate = {"reason": "BEFORE_RUN_APPROVAL", "source": "workflow_definition", "ai_score_ignored": True} if initial_status == "PAUSED_HITL" else {}
         approval_status = "PENDING" if initial_status == "PAUSED_HITL" else "NOT_REQUIRED"
         with self.database.transaction() as connection:
-            prior = connection.execute("SELECT payload_hash,response_json FROM command_idempotencies WHERE scope=? AND idempotency_key=?", (scope, idempotency_key)).fetchone()
+            prior = connection.execute(
+                "SELECT payload_hash,response_json FROM command_idempotencies WHERE scope=? AND idempotency_key=?", (scope, idempotency_key)
+            ).fetchone()
             if prior:
                 if str(prior["payload_hash"]) != payload_hash:
                     raise DomainRuleError("IDEMPOTENCY_PAYLOAD_MISMATCH", "相同 Idempotency-Key 不能复用不同 workflow plan")
@@ -517,10 +583,35 @@ class AutomationWorkflowService:
                 """INSERT INTO automation_workflow_runs
                 (id,workflow_id,project_id,status,plan_hash,iteration_count,task_count,disk_bytes,max_iterations,max_tasks,max_disk_bytes,pending_gate_json,machine_context_json,ai_scores_json,human_approval_status,started_at,created_at,updated_at,created_by,revision,schema_version)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (run_id, workflow_id, workflow["project_id"], initial_status, plan_hash, 0, 0, 0, definition["max_iterations"], definition["max_tasks"], definition["max_disk_bytes"], _json(pending_gate), _json({}), _json({}), approval_status, now, now, now, actor, 1, "v1"),
+                (
+                    run_id,
+                    workflow_id,
+                    workflow["project_id"],
+                    initial_status,
+                    plan_hash,
+                    0,
+                    0,
+                    0,
+                    definition["max_iterations"],
+                    definition["max_tasks"],
+                    definition["max_disk_bytes"],
+                    _json(pending_gate),
+                    _json({}),
+                    _json({}),
+                    approval_status,
+                    now,
+                    now,
+                    now,
+                    actor,
+                    1,
+                    "v1",
+                ),
             )
             self._event(connection, run_id, "STARTED", {"status": initial_status, "human_gate": gate, "ai_score_ignored": True}, actor)
-            connection.execute("INSERT INTO command_idempotencies (scope,idempotency_key,payload_hash,response_json) VALUES (?,?,?,?)", (scope, idempotency_key, payload_hash, _json({"id": run_id})))
+            connection.execute(
+                "INSERT INTO command_idempotencies (scope,idempotency_key,payload_hash,response_json) VALUES (?,?,?,?)",
+                (scope, idempotency_key, payload_hash, _json({"id": run_id})),
+            )
         if definition["mode"] == "BATCH_AUTOMATED" and gate != "BEFORE_RUN":
             # Prime the first task job so a worker/scheduler can drive the run
             # without a manual step.  Every later task is advanced by the task
@@ -594,7 +685,8 @@ class AutomationWorkflowService:
             if expected_completed_job_id:
                 completed = connection.execute(
                     """SELECT t.ordinal,j.state FROM automation_workflow_run_tasks t JOIN jobs j ON j.id=t.job_id
-                    WHERE t.run_id=? AND t.job_id=?""", (run_id, expected_completed_job_id),
+                    WHERE t.run_id=? AND t.job_id=?""",
+                    (run_id, expected_completed_job_id),
                 ).fetchone()
                 if completed is None:
                     raise DomainRuleError("AUTOMATION_COMPLETED_JOB_NOT_LINKED", "完成 Job 不属于该 workflow run")
@@ -607,6 +699,12 @@ class AutomationWorkflowService:
                     return self.get_run(run_id)
                 if int(completed["ordinal"]) != int(row["task_count"]):
                     raise DomainRuleError("AUTOMATION_COMPLETION_OUT_OF_ORDER", "task completion ordinal 与 run cursor 不一致")
+                connection.execute(
+                    """UPDATE automation_workflow_run_tasks
+                       SET status='SUCCEEDED',updated_at=?,revision=revision+1
+                       WHERE run_id=? AND job_id=? AND status<>'SUCCEEDED'""",
+                    (_now(), run_id, expected_completed_job_id),
+                )
             workflow = connection.execute("SELECT * FROM automation_workflows WHERE id=?", (row["workflow_id"],)).fetchone()
             if workflow is None:
                 raise DomainRuleError("AUTOMATION_WORKFLOW_NOT_FOUND", "workflow 不存在")
@@ -614,29 +712,63 @@ class AutomationWorkflowService:
             iteration = int(row["iteration_count"]) + 1
             task_count = int(row["task_count"])
             disk_bytes = int(row["disk_bytes"])
-            if iteration > int(row["max_iterations"]) or task_count >= int(row["max_tasks"]):
+            batch = definition["batch_items"]
+            finite_batch_exhausted = not definition.get("repeat_batch", False) and task_count >= len(batch)
+            if finite_batch_exhausted:
+                # Dispatching the final task is not completion.  Only the
+                # durable Job reaching SUCCEEDED can close a finite run.  A
+                # manual/API step while that Job is queued is an intentional
+                # no-op, preserving compatibility without reporting false
+                # success.
+                final_task = connection.execute(
+                    """SELECT t.job_id,j.state AS job_state
+                       FROM automation_workflow_run_tasks t
+                       LEFT JOIN jobs j ON j.id=t.job_id
+                       WHERE t.run_id=? ORDER BY t.ordinal DESC LIMIT 1""",
+                    (run_id,),
+                ).fetchone()
+                if final_task is not None and str(final_task["job_state"] or "") == "SUCCEEDED":
+                    connection.execute(
+                        """UPDATE automation_workflow_runs
+                           SET status='SUCCEEDED',completed_at=?,updated_at=?,machine_context_json=?,
+                               ai_scores_json=?,revision=revision+1 WHERE id=?""",
+                        (_now(), _now(), _json(machine), _json(scores), run_id),
+                    )
+                    self._event(
+                        connection,
+                        run_id,
+                        "COMPLETED",
+                        {"reason": "finite_batch_jobs_succeeded", "final_job_id": final_task["job_id"]},
+                        actor,
+                    )
+            elif iteration > int(row["max_iterations"]) or task_count >= int(row["max_tasks"]):
                 connection.execute(
                     "UPDATE automation_workflow_runs SET status='LIMIT_REACHED',completed_at=?,updated_at=?,machine_context_json=?,ai_scores_json=?,revision=revision+1 WHERE id=?",
                     (_now(), _now(), _json(machine), _json(scores), run_id),
                 )
-                self._event(connection, run_id, "LIMIT_REACHED", {"iteration": iteration, "task_count": task_count, "reason": "max_iterations_or_max_tasks"}, actor)
+                self._event(
+                    connection, run_id, "LIMIT_REACHED", {"iteration": iteration, "task_count": task_count, "reason": "max_iterations_or_max_tasks"}, actor
+                )
             else:
-                batch = definition["batch_items"]
-                if not definition.get("repeat_batch", False) and task_count >= len(batch):
-                    connection.execute(
-                        "UPDATE automation_workflow_runs SET status='SUCCEEDED',completed_at=?,updated_at=?,machine_context_json=?,ai_scores_json=?,revision=revision+1 WHERE id=?",
-                        (_now(), _now(), _json(machine), _json(scores), run_id),
-                    )
-                    self._event(connection, run_id, "COMPLETED", {"reason": "finite_batch_exhausted"}, actor)
-                elif disk_bytes + produced_bytes > int(row["max_disk_bytes"]):
+                if disk_bytes + produced_bytes > int(row["max_disk_bytes"]):
                     connection.execute(
                         "UPDATE automation_workflow_runs SET status='LIMIT_REACHED',completed_at=?,updated_at=?,machine_context_json=?,ai_scores_json=?,revision=revision+1 WHERE id=?",
                         (_now(), _now(), _json(machine), _json(scores), run_id),
                     )
-                    self._event(connection, run_id, "LIMIT_REACHED", {"reason": "max_disk_bytes", "disk_bytes": disk_bytes + produced_bytes, "max_disk_bytes": int(row["max_disk_bytes"])}, actor)
+                    self._event(
+                        connection,
+                        run_id,
+                        "LIMIT_REACHED",
+                        {"reason": "max_disk_bytes", "disk_bytes": disk_bytes + produced_bytes, "max_disk_bytes": int(row["max_disk_bytes"])},
+                        actor,
+                    )
                 else:
                     item = batch[task_count % len(batch)]
-                    context = {**machine, "task": {"status": str(machine.get("task", {}).get("status", "SUCCEEDED")) if isinstance(machine.get("task"), dict) else "SUCCEEDED"}, "iteration": iteration}
+                    context = {
+                        **machine,
+                        "task": {"status": str(machine.get("task", {}).get("status", "SUCCEEDED")) if isinstance(machine.get("task"), dict) else "SUCCEEDED"},
+                        "iteration": iteration,
+                    }
                     next_status = "RUNNING"
                     pending_gate: dict[str, Any] = {}
                     action = "CONTINUE"
@@ -678,9 +810,7 @@ class AutomationWorkflowService:
                         next_status = "PAUSED_HITL"
                     elif definition.get("repeat_batch", False) and (iteration >= int(row["max_iterations"]) or task_count + 1 >= int(row["max_tasks"])):
                         next_status = "LIMIT_REACHED"
-                    elif not definition.get("repeat_batch", False) and task_count + 1 >= len(batch):
-                        next_status = "SUCCEEDED"
-                    task_status = "SUCCEEDED" if machine_status not in {"FAIL", "FAILED", "BLOCKED"} else "BLOCKED_HITL"
+                    task_status = "QUEUED" if machine_status not in {"FAIL", "FAILED", "BLOCKED"} else "BLOCKED_HITL"
                     task_id = str(uuid.uuid4())
                     task_key = f"{iteration}:{item['key']}"
                     now = _now()
@@ -698,6 +828,8 @@ class AutomationWorkflowService:
                         normalized_dependency_id = str(dependency_id).strip()
                         if normalized_dependency_id and normalized_dependency_id not in dependencies:
                             dependencies.append(normalized_dependency_id)
+                    item_payload = item.get("payload") if isinstance(item, dict) else None
+                    production_session_id = str(item_payload.get("production_session_id") or "") if isinstance(item_payload, dict) else ""
                     job = self.jobs.create_job_in_transaction(
                         connection,
                         str(row["project_id"]),
@@ -718,6 +850,7 @@ class AutomationWorkflowService:
                             "machine_status": machine_status,
                             "local_only": True,
                             "network_contacted": False,
+                            **({"production_session_id": production_session_id} if production_session_id else {}),
                         },
                         f"automation-task:{task_id}",
                         # One transient local I/O/runtime failure should not
@@ -736,16 +869,63 @@ class AutomationWorkflowService:
                             "UPDATE jobs SET state='NEEDS_ATTENTION',last_error_code='AUTOMATION_HITL_REQUIRED',last_error_detail_redacted='awaiting explicit human workflow decision',updated_at=?,revision=revision+1 WHERE id=? AND state='QUEUED'",
                             (now, job["id"]),
                         )
-                        self.jobs._emit(connection, "JOB_BLOCKED_HITL", str(row["project_id"]), "JOB", str(job["id"]), {"state": "NEEDS_ATTENTION", "run_id": run_id, "task_id": task_id})
+                        self.jobs._emit(
+                            connection,
+                            "JOB_BLOCKED_HITL",
+                            str(row["project_id"]),
+                            "JOB",
+                            str(job["id"]),
+                            {"state": "NEEDS_ATTENTION", "run_id": run_id, "task_id": task_id},
+                        )
                     connection.execute(
                         "INSERT INTO automation_workflow_run_tasks (id,run_id,ordinal,item_key,item_json,status,produced_bytes,machine_context_json,review_status,job_id,created_at,updated_at,revision) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)",
-                        (task_id, run_id, task_count + 1, task_key, _json(item), task_status, produced_bytes, _json(machine), "PENDING" if next_status == "PAUSED_HITL" else "NOT_REQUIRED", job["id"], now, now),
+                        (
+                            task_id,
+                            run_id,
+                            task_count + 1,
+                            task_key,
+                            _json(item),
+                            task_status,
+                            produced_bytes,
+                            _json(machine),
+                            "PENDING" if next_status == "PAUSED_HITL" else "NOT_REQUIRED",
+                            job["id"],
+                            now,
+                            now,
+                        ),
                     )
                     connection.execute(
                         """UPDATE automation_workflow_runs SET status=?,iteration_count=?,task_count=?,disk_bytes=?,pending_gate_json=?,machine_context_json=?,ai_scores_json=?,human_approval_status=?,completed_at=?,updated_at=?,revision=revision+1 WHERE id=?""",
-                        (next_status, iteration, task_count + 1, disk_bytes + produced_bytes, _json(pending_gate), _json(machine), _json(scores), "PENDING" if next_status == "PAUSED_HITL" else str(row["human_approval_status"]), _now() if next_status in {"SUCCEEDED", "STOPPED", "LIMIT_REACHED"} else None, now, run_id),
+                        (
+                            next_status,
+                            iteration,
+                            task_count + 1,
+                            disk_bytes + produced_bytes,
+                            _json(pending_gate),
+                            _json(machine),
+                            _json(scores),
+                            "PENDING" if next_status == "PAUSED_HITL" else str(row["human_approval_status"]),
+                            _now() if next_status in {"SUCCEEDED", "STOPPED", "LIMIT_REACHED"} else None,
+                            now,
+                            run_id,
+                        ),
                     )
-                    self._event(connection, run_id, "STEP_COMPLETED", {"task_id": task_id, "task_key": task_key, "job_id": job["id"], "job_dependency_ids": dependencies, "status": next_status, "machine_status": machine_status, "ai_score_ignored": True, "produced_bytes": produced_bytes}, actor)
+                    self._event(
+                        connection,
+                        run_id,
+                        "STEP_COMPLETED",
+                        {
+                            "task_id": task_id,
+                            "task_key": task_key,
+                            "job_id": job["id"],
+                            "job_dependency_ids": dependencies,
+                            "status": next_status,
+                            "machine_status": machine_status,
+                            "ai_score_ignored": True,
+                            "produced_bytes": produced_bytes,
+                        },
+                        actor,
+                    )
                     if next_status == "PAUSED_HITL":
                         self._event(connection, run_id, "HITL_REQUIRED", pending_gate, actor)
         return self.get_run(run_id)
@@ -773,8 +953,18 @@ class AutomationWorkflowService:
                         "UPDATE jobs SET state='QUEUED',next_run_at=?,last_error_code=NULL,last_error_detail_redacted=NULL,updated_at=?,revision=revision+1 WHERE id=?",
                         (now, now, job["id"]),
                     )
-                    self.jobs._emit(connection, "JOB_HITL_APPROVED", str(job["project_id"]), "JOB", str(job["id"]), {"state": "QUEUED", "run_id": run_id, "decision": normalized})
-                connection.execute("UPDATE automation_workflow_runs SET status='RUNNING',pending_gate_json='{}',human_approval_status='APPROVED',updated_at=?,revision=revision+1 WHERE id=?", (now, run_id))
+                    self.jobs._emit(
+                        connection,
+                        "JOB_HITL_APPROVED",
+                        str(job["project_id"]),
+                        "JOB",
+                        str(job["id"]),
+                        {"state": "QUEUED", "run_id": run_id, "decision": normalized},
+                    )
+                connection.execute(
+                    "UPDATE automation_workflow_runs SET status='RUNNING',pending_gate_json='{}',human_approval_status='APPROVED',updated_at=?,revision=revision+1 WHERE id=?",
+                    (now, run_id),
+                )
                 self._event(connection, run_id, "HITL_APPROVED", {"decision": normalized, "note": note, "ai_score_ignored": True}, actor)
             else:
                 # Rejecting the workflow is terminal for the whole run, not
@@ -796,9 +986,25 @@ class AutomationWorkflowService:
                         "finished_at=CASE WHEN ?='CANCELLED' THEN ? ELSE finished_at END,updated_at=?,revision=revision+1 WHERE id=?",
                         (target, now, target, now, now, job["id"]),
                     )
-                    self.jobs._emit(connection, "JOB_HITL_REJECTED", str(job["project_id"]), "JOB", str(job["id"]), {"state": target, "run_id": run_id, "decision": normalized})
-                connection.execute("UPDATE automation_workflow_runs SET status='FAILED',pending_gate_json='{}',human_approval_status='REJECTED',completed_at=?,updated_at=?,revision=revision+1 WHERE id=?", (now, now, run_id))
-                self._event(connection, run_id, "HITL_REJECTED", {"decision": normalized, "note": note, "ai_score_ignored": True, "linked_job_count": len(linked_jobs)}, actor)
+                    self.jobs._emit(
+                        connection,
+                        "JOB_HITL_REJECTED",
+                        str(job["project_id"]),
+                        "JOB",
+                        str(job["id"]),
+                        {"state": target, "run_id": run_id, "decision": normalized},
+                    )
+                connection.execute(
+                    "UPDATE automation_workflow_runs SET status='FAILED',pending_gate_json='{}',human_approval_status='REJECTED',completed_at=?,updated_at=?,revision=revision+1 WHERE id=?",
+                    (now, now, run_id),
+                )
+                self._event(
+                    connection,
+                    run_id,
+                    "HITL_REJECTED",
+                    {"decision": normalized, "note": note, "ai_score_ignored": True, "linked_job_count": len(linked_jobs)},
+                    actor,
+                )
         return self.get_run(run_id)
 
     def pause_run(self, run_id: str, *, reason: str = "MANUAL_PAUSE", actor: str = "local-user") -> dict[str, Any]:
@@ -824,8 +1030,13 @@ class AutomationWorkflowService:
                     "UPDATE jobs SET state='NEEDS_ATTENTION',next_run_at=NULL,last_error_code='AUTOMATION_MANUAL_PAUSE',last_error_detail_redacted='workflow manually paused before dispatch',updated_at=?,revision=revision+1 WHERE id=?",
                     (now, job["id"]),
                 )
-                self.jobs._emit(connection, "JOB_BLOCKED_BY_WORKFLOW_PAUSE", str(job["project_id"]), "JOB", str(job["id"]), {"run_id": run_id, "state": "NEEDS_ATTENTION"})
-            connection.execute("UPDATE automation_workflow_runs SET status='PAUSED_HITL',pending_gate_json=?,human_approval_status='PENDING',updated_at=?,revision=revision+1 WHERE id=?", (_json(pending), now, run_id))
+                self.jobs._emit(
+                    connection, "JOB_BLOCKED_BY_WORKFLOW_PAUSE", str(job["project_id"]), "JOB", str(job["id"]), {"run_id": run_id, "state": "NEEDS_ATTENTION"}
+                )
+            connection.execute(
+                "UPDATE automation_workflow_runs SET status='PAUSED_HITL',pending_gate_json=?,human_approval_status='PENDING',updated_at=?,revision=revision+1 WHERE id=?",
+                (_json(pending), now, run_id),
+            )
             self._event(connection, run_id, "MANUAL_PAUSE", {**pending, "gated_job_count": len(queued_jobs)}, actor)
         return self.get_run(run_id)
 
@@ -854,6 +1065,8 @@ class AutomationWorkflowService:
                     (target, now, target, now, now, job["id"]),
                 )
                 self.jobs._emit(connection, "JOB_CANCEL_REQUESTED", str(job["project_id"]), "JOB", str(job["id"]), {"state": target, "run_id": run_id})
-            connection.execute("UPDATE automation_workflow_runs SET status='CANCELLED',completed_at=?,updated_at=?,revision=revision+1 WHERE id=?", (now, now, run_id))
+            connection.execute(
+                "UPDATE automation_workflow_runs SET status='CANCELLED',completed_at=?,updated_at=?,revision=revision+1 WHERE id=?", (now, now, run_id)
+            )
             self._event(connection, run_id, "CANCELLED", {"reason": "human", "linked_job_count": len(linked_jobs)}, actor)
         return self.get_run(run_id)

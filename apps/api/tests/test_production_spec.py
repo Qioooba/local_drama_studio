@@ -13,10 +13,12 @@ def _plan(
     width: int = 2560,
     height: int = 1440,
     aspect_ratio: str = "16:9",
+    allow_cross_orientation: bool = False,
 ) -> dict[str, object]:
     upscale_plan: dict[str, object] = {
         "enabled": upscale,
         "required": upscale,
+        "allow_cross_orientation": allow_cross_orientation,
         "stage": "COMPOSE_QC",
         "executor": "builtin:ffmpeg",
         "target": "PRESENTATION_SPEC",
@@ -99,6 +101,7 @@ def test_h3_resolves_proxy_generation_and_auditable_compose_upscale() -> None:
     assert generation["upscale"] == {
         "enabled": True,
         "required": True,
+        "allow_cross_orientation": False,
         "stage": "COMPOSE_QC",
         "executor": "builtin:ffmpeg",
         "target": "PRESENTATION_SPEC",
@@ -146,15 +149,20 @@ def test_partial_dimension_bindings_without_fixed_graph_fail_closed() -> None:
     assert result["blockers"][0]["missing_roles"] == ["FPS", "HEIGHT"]  # type: ignore[index]
 
 
-def test_mismatched_aspect_requires_explicit_composition_policy() -> None:
+def test_cross_orientation_requires_separate_explicit_confirmation() -> None:
     blocked = resolve_production_spec(_plan(), {}, _portrait_graph())
     assert blocked["status"] == "BLOCKED"
-    assert blocked["blockers"][0]["code"] == "PRODUCTION_COMPOSITION_POLICY_REQUIRED"  # type: ignore[index]
+    assert blocked["blockers"][0]["code"] == "PRODUCTION_CROSS_ORIENTATION_CONFIRMATION_REQUIRED"  # type: ignore[index]
 
-    ready = resolve_production_spec(_plan(fit="LETTERBOX"), {}, _portrait_graph())
+    still_blocked = resolve_production_spec(_plan(fit="LETTERBOX"), {}, _portrait_graph())
+    assert still_blocked["status"] == "BLOCKED"
+    assert still_blocked["blockers"][0]["code"] == "PRODUCTION_CROSS_ORIENTATION_CONFIRMATION_REQUIRED"  # type: ignore[index]
+
+    ready = resolve_production_spec(_plan(fit="LETTERBOX", allow_cross_orientation=True), {}, _portrait_graph())
     assert ready["status"] == "READY"
     assert ready["generation"]["mode"] == "UPSCALE_COMPOSE"  # type: ignore[index]
     assert ready["generation"]["upscale"]["fit"] == "LETTERBOX"  # type: ignore[index]
+    assert ready["generation"]["upscale"]["allow_cross_orientation"] is True  # type: ignore[index]
 
 
 def test_invalid_composition_policy_is_rejected_before_resolution() -> None:

@@ -490,6 +490,8 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
       <div className="episode-agent-identity"><p className="eyebrow">本集制作</p><h2>{summary.episode_code}{summary.episode_title ? ` · ${summary.episode_title}` : ""}</h2><p>{summary.episode_summary || (summary.shot_count ? "Agent 已根据本集分镜整理制作任务；剧情摘要会随已确认方案更新。" : "本集方案尚未生成。先从已确认原稿生成本集分场和分镜。")}</p></div>
       <div className="episode-agent-primary">
         {primaryAction}
+        {!run && <Link className="secondary v2-inline-link" to={routes.productionFactoryEpisode(projectId, episodeId)}>无人值守生成本集</Link>}
+        {!run && <p>进入持久生产会话，关闭页面后仍会继续，并在最后集中人工审核。</p>}
         {canRegenerateKeyframes && <p>按当前配置重新生成尚未批准的关键帧，再逐镜审核。旧候选与审核记录保留。</p>}
         {run && (run.status === "RUNNING" || run.status === "PAUSED_HITL") && <button
           className="secondary danger-outline"

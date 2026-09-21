@@ -4,6 +4,7 @@ import pytest
 
 from local_drama.application.comfy_jobs import ComfyGenerationService
 from local_drama.application.h3_workflows import H3WorkflowFactory
+from local_drama.application.ports.override_schema import default_override_schema, effective_schema
 from local_drama.domain.errors import DomainRuleError
 
 
@@ -38,6 +39,52 @@ def test_i2v_native_audio_false_removes_audio_vae_decode_and_mix(workspace) -> N
     assert "4" not in workflow
     assert "14" not in workflow
     assert "audio" not in workflow["15"]["inputs"]
+
+
+def test_t2v_and_i2v_default_to_silent_output(workspace) -> None:
+    factory = H3WorkflowFactory(workspace)
+
+    t2v = factory.build_t2va("a silent scripted shot", seed=10)
+    i2v = factory.build_fl2va(
+        "a silent scripted shot",
+        first_frame="keyframe.png",
+        seed=11,
+    )
+
+    assert "4" not in t2v and "12" not in t2v
+    assert "audio" not in t2v["13"]["inputs"]
+    assert "4" not in i2v and "14" not in i2v
+    assert "audio" not in i2v["15"]["inputs"]
+
+
+def test_video_override_contract_defaults_to_silent_except_required_ref2v() -> None:
+    i2v_audio = default_override_schema("VIDEO_I2V")["fields"]["native_audio"]
+    ref_audio = default_override_schema("VIDEO_REFERENCE")["fields"]["native_audio"]
+
+    assert i2v_audio["default"] is False
+    assert i2v_audio["editable"] is True
+    assert ref_audio["default"] is True
+    assert ref_audio["editable"] is False
+
+
+def test_effective_schema_safely_migrates_legacy_native_audio_default() -> None:
+    schema = effective_schema(
+        {
+            "capability": "VIDEO_I2V",
+            "override_schema": {
+                "fields": {
+                    "native_audio": {
+                        "type": "boolean",
+                        "default": True,
+                        "editable": True,
+                        "scopes": ["PROJECT", "SHOT", "RUN"],
+                    }
+                }
+            },
+        }
+    )
+
+    assert schema["fields"]["native_audio"]["default"] is False
 
 
 def test_ref2v_fails_closed_when_native_audio_is_disabled(workspace) -> None:

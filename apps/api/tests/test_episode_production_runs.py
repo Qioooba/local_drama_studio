@@ -23,6 +23,7 @@ from local_drama.application.episode_production_runs import (
 from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
 from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
+from local_drama.application.production_sessions import ProductionSessionService
 from local_drama.application.projects import ProjectService
 from local_drama.application.reviews import ReviewService
 from local_drama.application.timeline import TimelineService
@@ -47,6 +48,7 @@ def test_stage_definitions_and_front_half_action_mapping() -> None:
     assert ACTION_STAGE["STORY_PARSE"] == "STORY_ANALYSIS"
     assert ACTION_STAGE["SCRIPT_BREAKDOWN"] == "STORY_ANALYSIS"
     assert ACTION_STAGE["ASSET_IDENTITY"] == "ASSET_EXTRACTION"
+    assert ACTION_STAGE["ASSET_HERO_COMPLETION"] == "ASSET_COMPLETION"
     assert ACTION_STAGE["ASSET_COMPLETION"] == "ASSET_COMPLETION"
     assert ACTION_STAGE["EPISODE_PLAN"] == "SHOT_PLANNING"
     assert ACTION_STAGE["KEYFRAME_CHECK"] == "SHOT_IMAGE"
@@ -60,8 +62,181 @@ def test_stage_definitions_and_front_half_action_mapping() -> None:
     assert ACTION_STAGE["DELIVERY"] == "COMPOSE_QC"
 
 
+def test_session_workflow_waits_for_hero_before_multiview(workspace, database, monkeypatch: pytest.MonkeyPatch) -> None:
+    service = EpisodeProductionRunService(database, workspace)
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(service.automation, "list_workflows", lambda *_args, **_kwargs: {"items": []})
+
+    def capture_workflow(project_id: str, **kwargs):
+        captured.update({"project_id": project_id, **kwargs})
+        return {"id": "workflow-test", **kwargs}
+
+    monkeypatch.setattr(service.automation, "create_workflow", capture_workflow)
+    service._workflow_for_snapshot(
+        {"id": "episode-test", "code": "E001", "project_id": "project-test"},
+        {
+            "input_fingerprint": "f" * 64,
+            "production_session_id": "session-test",
+            "include_front_half": True,
+            "front_half_only": True,
+            "production_mode": "BALANCED",
+            "mode_policy": {"target_take_count": 2},
+            "checkpoint_policy": "ON_EXCEPTION",
+            "checks": [
+                {
+                    "code": "DISK_SPACE_LOW",
+                    "evidence": {"required_free_bytes": 1},
+                }
+            ],
+        },
+        actor="test",
+    )
+    actions = [
+        str(item["payload"]["action"])
+        for item in captured["batch_items"]  # type: ignore[index]
+    ]
+    assert actions.index("ASSET_IDENTITY") < actions.index("ASSET_HERO_COMPLETION")
+    assert actions.index("ASSET_HERO_COMPLETION") < actions.index("ASSET_COMPLETION")
+    assert actions.index("ASSET_COMPLETION") < actions.index("EPISODE_PLAN")
+
+
+def test_session_workflow_splits_keyframes_and_videos_into_bounded_waves(workspace, database, monkeypatch: pytest.MonkeyPatch) -> None:
+    project, episode = _episode(workspace, database, "session_generation_waves")
+    projects = ProjectService(database, workspace.projects_root)
+    for index in range(4):
+        projects.create_shot(str(episode["id"]), f"SH-{index + 1:03d}", 2_000)
+    sessions = ProductionSessionService(database)
+    command = {
+        "scope_type": "SINGLE_EPISODE",
+        "episode_ids": [str(episode["id"])],
+        "production_mode": "BALANCED",
+        "checkpoint_policy": "ON_EXCEPTION",
+        "tts_enabled": False,
+        "max_parallel_episodes": 1,
+        "min_free_disk_bytes": 1,
+        "max_queued_gpu_jobs": 4,
+        "dispatch_shots_per_tick": 4,
+    }
+    plan = sessions.plan(str(project["id"]), command)
+    session = sessions.create(
+        str(project["id"]),
+        {**command, "expected_plan_hash": plan["plan_hash"]},
+        idempotency_key="create-generation-waves",
+    )["session"]
+    service = EpisodeProductionRunService(database, workspace)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(service.automation, "list_workflows", lambda *_args, **_kwargs: {"items": []})
+
+    def capture_workflow(project_id: str, **kwargs):
+        captured.update({"project_id": project_id, **kwargs})
+        return {"id": "workflow-waves", **kwargs}
+
+    monkeypatch.setattr(service.automation, "create_workflow", capture_workflow)
+    service._workflow_for_snapshot(
+        {
+            "id": str(episode["id"]),
+            "code": str(episode["code"]),
+            "project_id": str(project["id"]),
+        },
+        {
+            "input_fingerprint": "e" * 64,
+            "production_session_id": str(session["id"]),
+            "include_front_half": False,
+            "front_half_only": False,
+            "production_mode": "BALANCED",
+            "mode_policy": {"target_take_count": 2},
+            "checkpoint_policy": "ON_EXCEPTION",
+            "tts_enabled": False,
+            "shot_profile_resolutions": [],
+            "checks": [
+                {
+                    "code": "DISK_SPACE_LOW",
+                    "evidence": {"required_free_bytes": 1},
+                }
+            ],
+        },
+        actor="test",
+    )
+    payloads = [
+        item["payload"]
+        for item in captured["batch_items"]  # type: ignore[index]
+    ]
+    item_keys = [
+        str(item["key"])
+        for item in captured["batch_items"]  # type: ignore[index]
+    ]
+    keyframe_waves = [payload for payload in payloads if payload["action"] == "KEYFRAME_GENERATION"]
+    video_waves = [payload for payload in payloads if payload["action"] == "VIDEO_GENERATION"]
+    assert len(keyframe_waves) == 2
+    assert len(video_waves) == 2
+    assert [payload["dispatch_wave_index"] for payload in keyframe_waves] == [1, 2]
+    assert len(item_keys) == len(set(item_keys))
+    assert f"{episode['code']}:KEYFRAME_GENERATION:WAVE_0001" in item_keys
+    assert f"{episode['code']}:KEYFRAME_GENERATION:WAVE_0002" in item_keys
+    assert {payload["dispatch_job_limit"] for payload in [*keyframe_waves, *video_waves]} == {4}
+    assert "RENDER" in {payload["action"] for payload in payloads}
+    assert "DELIVERY" not in {payload["action"] for payload in payloads}
+    assert payloads[-1]["action"] == "RENDER"
+
+
+def test_session_preflight_defers_missing_voice_to_audio_stage_without_silent_substitution(
+    workspace, database,
+) -> None:
+    project, episode = _episode(workspace, database, "session_voice_deferred")
+    episode_id = str(episode["id"])
+    DialogueService(database, workspace).create_line(
+        episode_id,
+        code="DLG-001",
+        speaker="未绑定角色",
+        text="先完成画面，再处理声音。",
+        pronunciation={},
+    )
+    sessions = ProductionSessionService(database)
+    command = {
+        "scope_type": "SINGLE_EPISODE",
+        "episode_ids": [episode_id],
+        "production_mode": "BALANCED",
+        "checkpoint_policy": "ON_EXCEPTION",
+        "tts_enabled": True,
+        "max_parallel_episodes": 1,
+        "min_free_disk_bytes": 1,
+    }
+    plan = sessions.plan(str(project["id"]), command)
+    session = sessions.create(
+        str(project["id"]),
+        {**command, "expected_plan_hash": plan["plan_hash"]},
+        idempotency_key="session-voice-deferred",
+    )["session"]
+    service = EpisodeProductionRunService(database, workspace)
+
+    ordinary = service.preflight(
+        episode_id,
+        tts_enabled=True,
+        min_free_disk_bytes=1,
+        include_front_half=False,
+    )
+    scoped = service.preflight(
+        episode_id,
+        tts_enabled=True,
+        min_free_disk_bytes=1,
+        include_front_half=False,
+        production_session_id=str(session["id"]),
+    )
+    ordinary_tts = next(check for check in ordinary["checks"] if check["code"] == "TTS_CONFIGURATION_MISSING")
+    scoped_tts = next(check for check in scoped["checks"] if check["code"] == "TTS_CONFIGURATION_MISSING")
+
+    assert ordinary_tts["status"] == "BLOCKED"
+    assert scoped_tts["status"] == "PASS"
+    assert scoped_tts["evidence"]["deferred_to_stage"] == "AUDIO_SUBTITLE"
+    assert scoped_tts["evidence"]["silent_voice_substitution_allowed"] is False
+    assert scoped_tts["evidence"]["blockers"][0]["blocked_reason"] == "VOICE_UNRESOLVED"
+
+
 def test_episode_start_replays_before_preflight_and_rejects_payload_mismatch(
-    workspace, database, monkeypatch: pytest.MonkeyPatch,
+    workspace,
+    database,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _project, episode = _episode(workspace, database, "episode_parent_identity")
     service = EpisodeProductionRunService(database, workspace)
@@ -84,8 +259,10 @@ def test_episode_start_replays_before_preflight_and_rejects_payload_mismatch(
     assert calls == 1
     with pytest.raises(DomainRuleError) as mismatch:
         service.start(
-            str(episode["id"]), idempotency_key="episode-command",
-            production_mode="QUALITY", min_free_disk_bytes=1,
+            str(episode["id"]),
+            idempotency_key="episode-command",
+            production_mode="QUALITY",
+            min_free_disk_bytes=1,
         )
     assert mismatch.value.code == "IDEMPOTENCY_PAYLOAD_MISMATCH"
 
@@ -93,8 +270,13 @@ def test_episode_start_replays_before_preflight_and_rejects_payload_mismatch(
 def test_front_half_dag_workflow_generation(workspace, database) -> None:
     projects = ProjectService(database, workspace.projects_root)
     project = projects.create_project(
-        code="dag_front_half_test", title="DAG Front Half Test", episode_count=1,
-        aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60_000,
+        code="dag_front_half_test",
+        title="DAG Front Half Test",
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
         allow_unconfigured_capabilities=True,
     )
     season = projects.list_seasons(str(project["id"]))[0]
@@ -120,7 +302,18 @@ def test_front_half_dag_workflow_generation(workspace, database) -> None:
     assert actions[2] == "ASSET_IDENTITY"
     assert actions[3] == "ASSET_COMPLETION"
     assert actions[4] == "EPISODE_PLAN"
-    assert actions[5:] == ["KEYFRAME_GENERATION", "KEYFRAME_CHECK", "VIDEO_GENERATION", "QC", "TTS_BATCH", "TTS_FINALIZE", "SUBTITLE", "TIMELINE_ASSEMBLY", "RENDER", "DELIVERY"]
+    assert actions[5:] == [
+        "KEYFRAME_GENERATION",
+        "KEYFRAME_CHECK",
+        "VIDEO_GENERATION",
+        "QC",
+        "TTS_BATCH",
+        "TTS_FINALIZE",
+        "SUBTITLE",
+        "TIMELINE_ASSEMBLY",
+        "RENDER",
+        "DELIVERY",
+    ]
     assert "_V2_" in workflow["code"]
     assert {item["payload"]["audio_strategy"] for item in batch_items} == {"EXTERNAL_TTS"}
 
@@ -130,20 +323,21 @@ def test_front_half_dag_workflow_generation(workspace, database) -> None:
         actor="test",
     )
     silent_items = silent["definition"]["batch_items"]
-    assert not {"TTS_BATCH", "TTS_FINALIZE", "SUBTITLE"}.intersection(
-        item["payload"]["action"] for item in silent_items
-    )
+    assert not {"TTS_BATCH", "TTS_FINALIZE", "SUBTITLE"}.intersection(item["payload"]["action"] for item in silent_items)
     assert {item["payload"]["audio_strategy"] for item in silent_items} == {"SILENT"}
     assert silent["definition"]["nodes"][0]["metadata"]["audio_strategy"] == "SILENT"
 
     readonly = service._workflow_for_snapshot(
-        episode_context, {**preflight, "front_half_only": True, "input_fingerprint": "b" * 64}, actor="test",
+        episode_context,
+        {**preflight, "front_half_only": True, "input_fingerprint": "b" * 64},
+        actor="test",
     )
     assert [item["payload"]["action"] for item in readonly["definition"]["batch_items"]] == actions[:5] + ["KEYFRAME_CHECK"]
 
 
 def test_operation_workflow_executes_the_previewed_scope_without_a_parallel_executor(
-    workspace, database,
+    workspace,
+    database,
 ) -> None:
     project, episode = _episode(workspace, database, "episode_operation_scope")
     service = EpisodeProductionRunService(database, workspace)
@@ -204,7 +398,9 @@ def test_operation_workflow_executes_the_previewed_scope_without_a_parallel_exec
 
 
 def test_operation_start_requires_the_current_preview_hash(
-    workspace, database, monkeypatch: pytest.MonkeyPatch,
+    workspace,
+    database,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _project, episode = _episode(workspace, database, "episode_operation_plan_guard")
     service = EpisodeProductionRunService(database, workspace)
@@ -219,9 +415,7 @@ def test_operation_start_requires_the_current_preview_hash(
             str(episode["id"]),
             operation="RETRY_ORIGINAL",
             target_shot_ids=(),
-            target_take_count=service.operation_target_take_count(
-                str(episode["id"]), operation="RETRY_ORIGINAL", production_mode="BALANCED"
-            ),
+            target_take_count=service.operation_target_take_count(str(episode["id"]), operation="RETRY_ORIGINAL", production_mode="BALANCED"),
             expected_plan_hash="d" * 64,
             expected_episode_revision=int(episode["revision"]),
             tts_enabled=True,
@@ -250,12 +444,15 @@ def _episode(workspace, database, code: str) -> tuple[dict, dict]:
 
 
 def test_full_preflight_uses_authoritative_asset_completion_gate(
-    workspace, database, monkeypatch: pytest.MonkeyPatch,
+    workspace,
+    database,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _project, episode = _episode(workspace, database, "full_asset_completion_gate")
 
     def _missing_completion(
-        self: EpisodeFrontHalfActionService, episode_id: str,
+        self: EpisodeFrontHalfActionService,
+        episode_id: str,
     ) -> tuple[dict, int]:
         del self, episode_id
         return (
@@ -274,7 +471,8 @@ def test_full_preflight_uses_authoritative_asset_completion_gate(
 
     monkeypatch.setattr(EpisodeFrontHalfActionService, "asset_completion", _missing_completion)
     result = EpisodeProductionRunService(database, workspace).preflight(
-        str(episode["id"]), include_front_half=True,
+        str(episode["id"]),
+        include_front_half=True,
     )
 
     check = next(item for item in result["checks"] if item["code"] == "ASSET_COMPLETION_REQUIRED")
@@ -285,13 +483,17 @@ def test_full_preflight_uses_authoritative_asset_completion_gate(
 
 
 def test_runtime_capacity_and_disk_changes_do_not_change_creative_fingerprints(
-    workspace, database, monkeypatch: pytest.MonkeyPatch,
+    workspace,
+    database,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _project, episode = _episode(workspace, database, "runtime_not_creative")
-    observations = iter([
-        {"name": "GPU", "total_bytes": 8_000_000_000, "source": "TEST"},
-        {"name": "GPU", "total_bytes": 24_000_000_000, "source": "TEST"},
-    ])
+    observations = iter(
+        [
+            {"name": "GPU", "total_bytes": 8_000_000_000, "source": "TEST"},
+            {"name": "GPU", "total_bytes": 24_000_000_000, "source": "TEST"},
+        ]
+    )
 
     def capacity(_self, _project_id):
         return {
@@ -329,8 +531,13 @@ def _commit_source(workspace, database, project_id: str, source_path: Path) -> d
 def test_front_half_snapshot_ignores_other_episode_draft(workspace, database, tmp_path: Path) -> None:
     projects = ProjectService(database, workspace.projects_root)
     project = projects.create_project(
-        code="episode_scoped_fingerprint", title="Episode scoped fingerprint", episode_count=2,
-        aspect_ratio="16:9", fps_num=24, fps_den=1, target_duration_ms=60_000,
+        code="episode_scoped_fingerprint",
+        title="Episode scoped fingerprint",
+        episode_count=2,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
         allow_unconfigured_capabilities=True,
     )
     episodes = projects.list_episodes(str(projects.list_seasons(str(project["id"]))[0]["id"]))
@@ -345,10 +552,14 @@ def test_front_half_snapshot_ignores_other_episode_draft(workspace, database, tm
              status,created_at,updated_at,created_by,revision,schema_version)
             VALUES (?,?,?,?,?,?,'DRAFT_READY',?,?,'test',1,'v2')""",
             (
-                str(uuid.uuid4()), project["id"], committed["source_document_version_id"], committed["id"],
+                str(uuid.uuid4()),
+                project["id"],
+                committed["source_document_version_id"],
+                committed["id"],
                 json.dumps({"scenes": []}),
                 json.dumps({"target_episode_id": str(episodes[1]["id"])}),
-                now, now,
+                now,
+                now,
             ),
         )
 
@@ -356,14 +567,17 @@ def test_front_half_snapshot_ignores_other_episode_draft(workspace, database, tm
 
 
 def test_front_half_only_start_is_fail_closed_and_idempotent(
-    workspace, database, tmp_path: Path,
+    workspace,
+    database,
+    tmp_path: Path,
 ) -> None:
     project, episode = _episode(workspace, database, "front_half_start")
     service = EpisodeProductionRunService(database, workspace)
 
     with pytest.raises(DomainRuleError) as missing_source:
         service.start(
-            str(episode["id"]), idempotency_key="front-half-missing-source",
+            str(episode["id"]),
+            idempotency_key="front-half-missing-source",
             front_half_only=True,
         )
     assert missing_source.value.code == "EPISODE_FRONT_HALF_PREFLIGHT_BLOCKED"
@@ -372,11 +586,13 @@ def test_front_half_only_start_is_fail_closed_and_idempotent(
 
     _commit_source(workspace, database, str(project["id"]), tmp_path / "front-half.md")
     first = service.start(
-        str(episode["id"]), idempotency_key="front-half-one-run",
+        str(episode["id"]),
+        idempotency_key="front-half-one-run",
         front_half_only=True,
     )
     replay = service.start(
-        str(episode["id"]), idempotency_key="front-half-one-run",
+        str(episode["id"]),
+        idempotency_key="front-half-one-run",
         front_half_only=True,
     )
 
@@ -385,22 +601,34 @@ def test_front_half_only_start_is_fail_closed_and_idempotent(
     assert first["include_front_half"] is True
     assert first["stages"][0]["jobs"][0]["job_id"] == replay["stages"][0]["jobs"][0]["job_id"]
     with database.connect() as connection:
-        assert connection.execute(
-            "SELECT COUNT(*) FROM automation_workflow_runs WHERE workflow_id=?", (first["automation_workflow_id"],),
-        ).fetchone()[0] == 1
-        assert connection.execute(
-            "SELECT COUNT(*) FROM automation_workflow_run_tasks WHERE run_id=?", (first["id"],),
-        ).fetchone()[0] == 1
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM automation_workflow_runs WHERE workflow_id=?",
+                (first["automation_workflow_id"],),
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM automation_workflow_run_tasks WHERE run_id=?",
+                (first["id"],),
+            ).fetchone()[0]
+            == 1
+        )
 
 
 def test_run_view_exposes_exact_shot_issues_from_durable_task_context(
-    workspace, database, tmp_path: Path,
+    workspace,
+    database,
+    tmp_path: Path,
 ) -> None:
     project, episode = _episode(workspace, database, "run_exact_shot_issue")
     _commit_source(workspace, database, str(project["id"]), tmp_path / "exact-shot.md")
     service = EpisodeProductionRunService(database, workspace)
     run = service.start(
-        str(episode["id"]), idempotency_key="exact-shot-issue-run", front_half_only=True,
+        str(episode["id"]),
+        idempotency_key="exact-shot-issue-run",
+        front_half_only=True,
     )
     task_id = str(run["stages"][0]["jobs"][0]["task_id"])
     context = {
@@ -436,13 +664,16 @@ def test_run_view_exposes_exact_shot_issues_from_durable_task_context(
 
 
 def test_real_front_half_worker_reports_and_parks_missing_human_decision(
-    workspace, database, tmp_path: Path,
+    workspace,
+    database,
+    tmp_path: Path,
 ) -> None:
     project, episode = _episode(workspace, database, "front_half_worker")
     _commit_source(workspace, database, str(project["id"]), tmp_path / "worker-source.txt")
     service = EpisodeProductionRunService(database, workspace)
     run = service.start(
-        str(episode["id"]), idempotency_key="front-half-worker-run",
+        str(episode["id"]),
+        idempotency_key="front-half-worker-run",
         front_half_only=True,
     )
     worker = LocalMediaWorker(database, workspace)
@@ -478,13 +709,16 @@ def test_real_front_half_worker_reports_and_parks_missing_human_decision(
 
 
 def test_front_half_recovery_marks_old_reports_stale_and_preserves_them(
-    workspace, database, tmp_path: Path,
+    workspace,
+    database,
+    tmp_path: Path,
 ) -> None:
     project, episode = _episode(workspace, database, "front_half_stale")
     committed = _commit_source(workspace, database, str(project["id"]), tmp_path / "stale-source.md")
     service = EpisodeProductionRunService(database, workspace)
     run = service.start(
-        str(episode["id"]), idempotency_key="front-half-stale-run",
+        str(episode["id"]),
+        idempotency_key="front-half-stale-run",
         front_half_only=True,
     )
     worker = LocalMediaWorker(database, workspace)
@@ -536,7 +770,9 @@ def test_front_half_recovery_marks_old_reports_stale_and_preserves_them(
 
 
 def test_asset_identity_handler_never_auto_decides_pending_proposal(
-    workspace, database, tmp_path: Path,
+    workspace,
+    database,
+    tmp_path: Path,
 ) -> None:
     project, episode = _episode(workspace, database, "front_half_asset_hitl")
     committed = _commit_source(workspace, database, str(project["id"]), tmp_path / "asset-hitl.md")
@@ -613,7 +849,9 @@ def test_asset_identity_handler_never_auto_decides_pending_proposal(
         human_gate="ON_CONDITION",
     )
     run = automation.start_run(
-        str(workflow["id"]), plan_hash=str(workflow["plan_hash"]), idempotency_key="asset-identity-hitl-run",
+        str(workflow["id"]),
+        plan_hash=str(workflow["plan_hash"]),
+        idempotency_key="asset-identity-hitl-run",
     )
 
     outcome = LocalMediaWorker(database, workspace).run_once("asset-identity-worker")
@@ -626,7 +864,8 @@ def test_asset_identity_handler_never_auto_decides_pending_proposal(
     assert report["machine_check"]["human_approval_created"] is False
     with database.connect() as connection:
         proposal = connection.execute(
-            "SELECT status,resolved_asset_id FROM story_asset_proposals WHERE breakdown_draft_id=?", (draft_id,),
+            "SELECT status,resolved_asset_id FROM story_asset_proposals WHERE breakdown_draft_id=?",
+            (draft_id,),
         ).fetchone()
         asset_count = connection.execute("SELECT COUNT(*) FROM story_assets WHERE project_id=?", (project["id"],)).fetchone()[0]
     assert dict(proposal) == {"status": "PENDING", "resolved_asset_id": None}
@@ -638,7 +877,9 @@ def test_asset_identity_handler_never_auto_decides_pending_proposal(
 
 @pytest.mark.parametrize("action", FRONT_HALF_ACTIONS)
 def test_every_front_half_action_has_a_real_idempotent_worker_handler(
-    workspace, database, action: str,
+    workspace,
+    database,
+    action: str,
 ) -> None:
     project, episode = _episode(workspace, database, f"handler_{action.lower()}")
     automation = AutomationWorkflowService(database)
@@ -668,7 +909,8 @@ def test_every_front_half_action_has_a_real_idempotent_worker_handler(
         human_gate="ON_CONDITION",
     )
     run = automation.start_run(
-        str(workflow["id"]), plan_hash=str(workflow["plan_hash"]),
+        str(workflow["id"]),
+        plan_hash=str(workflow["plan_hash"]),
         idempotency_key=f"handler-run-{action.lower()}",
     )
     job = JobService(database, workspace).get_job(str(run["tasks"][0]["job_id"]))
@@ -699,7 +941,9 @@ def test_every_front_half_action_has_a_real_idempotent_worker_handler(
 
 
 def test_one_failed_shot_retry_does_not_replay_ready_shot(
-    workspace, database, monkeypatch: pytest.MonkeyPatch,
+    workspace,
+    database,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = EpisodeWorkerActionService(database, workspace)
     shots = [
@@ -713,9 +957,13 @@ def test_one_failed_shot_retry_does_not_replay_ready_shot(
     monkeypatch.setattr(
         service,
         "_variant_jobs",
-        lambda shot_id: [] if shot_id == "shot-ready" else [
-            {"id": "failed-job", "variant_id": "failed-variant", "state": "FAILED"},
-        ],
+        lambda shot_id: (
+            []
+            if shot_id == "shot-ready"
+            else [
+                {"id": "failed-job", "variant_id": "failed-variant", "state": "FAILED"},
+            ]
+        ),
     )
     monkeypatch.setattr(
         service,
@@ -731,13 +979,22 @@ def test_one_failed_shot_retry_does_not_replay_ready_shot(
     monkeypatch.setattr(
         service,
         "_submit_shot",
-        lambda _project_id, shot, _run_id, _task_id, **_kwargs: submitted.append(str(shot["id"])) or {
-            "shot_id": str(shot["id"]), "shot_code": str(shot["code"]), "status": "SUBMITTED", "job_id": "new-job",
-        },
+        lambda _project_id, shot, _run_id, _task_id, **_kwargs: (
+            submitted.append(str(shot["id"]))
+            or {
+                "shot_id": str(shot["id"]),
+                "shot_code": str(shot["code"]),
+                "status": "SUBMITTED",
+                "job_id": "new-job",
+            }
+        ),
     )
 
     report, produced_bytes = service.video_generation(
-        "episode", "run", "task", target_take_count=1,
+        "episode",
+        "run",
+        "task",
+        target_take_count=1,
     )
 
     assert produced_bytes == 0
@@ -747,6 +1004,7 @@ def test_one_failed_shot_retry_does_not_replay_ready_shot(
     by_shot = {item["shot_id"]: item for item in report["produced"]["items"]}
     assert by_shot["shot-ready"]["status"] == "READY_FOR_QC"
     assert by_shot["shot-failed"]["status"] == "RETRIED"
+
 
 def test_timeline_assembly_action_assembles_then_skips(workspace, database) -> None:
     project, episode = _episode(workspace, database, "handler_timeline_assembly")
@@ -790,7 +1048,8 @@ def test_timeline_assembly_action_assembles_then_skips(workspace, database) -> N
         human_gate="ON_CONDITION",
     )
     run = automation.start_run(
-        str(workflow["id"]), plan_hash=str(workflow["plan_hash"]),
+        str(workflow["id"]),
+        plan_hash=str(workflow["plan_hash"]),
         idempotency_key="handler-run-timeline-assembly",
     )
     job = JobService(database, workspace).get_job(str(run["tasks"][0]["job_id"]))
@@ -891,9 +1150,7 @@ def test_frame_bridge_dependency_uses_scene_ids_and_waits_for_explicit_hard_pred
         str(first["id"]), str(second["id"]), "START_FROM_PREVIOUS_LAST", enforcement="HARD"
     )
     episode_shots = service._episode(str(episode["id"]))[1]
-    waiting = service._end_frame_chain(
-        episode_shots[1], episode_shots[0], {}, {"media_version_id": "current-first"}
-    )
+    waiting = service._end_frame_chain(episode_shots[1], episode_shots[0], {}, {"media_version_id": "current-first"})
     assert waiting == {
         "status": "WAITING",
         "reason": "PREDECESSOR_VIDEO_MISSING",
@@ -918,20 +1175,34 @@ def test_last_frame_anchor_reuses_fresh_anchor_before_extracting(workspace, data
         check=True,
         capture_output=True,
     )
-    video_version = str(MediaService(database, workspace).import_file(
-        str(project["id"]), video_source,
-        purpose="SHOT_VIDEO", owner_type="SHOT", owner_id=str(shot["id"]), media_kind="VIDEO", stage="PROXY",
-    )["media_version_id"])
+    video_version = str(
+        MediaService(database, workspace).import_file(
+            str(project["id"]),
+            video_source,
+            purpose="SHOT_VIDEO",
+            owner_type="SHOT",
+            owner_id=str(shot["id"]),
+            media_kind="VIDEO",
+            stage="PROXY",
+        )["media_version_id"]
+    )
     image_source = workspace.work_root / "anchor-reuse-frame.png"
     subprocess.run(
         [workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=blue:s=160x90:d=1", "-frames:v", "1", "-y", str(image_source)],
         check=True,
         capture_output=True,
     )
-    image_version = str(MediaService(database, workspace).import_file(
-        str(project["id"]), image_source,
-        purpose="FRAME_ANCHOR", owner_type="MEDIA_VERSION", owner_id=video_version, media_kind="IMAGE", stage="PROXY",
-    )["media_version_id"])
+    image_version = str(
+        MediaService(database, workspace).import_file(
+            str(project["id"]),
+            image_source,
+            purpose="FRAME_ANCHOR",
+            owner_type="MEDIA_VERSION",
+            owner_id=video_version,
+            media_kind="IMAGE",
+            stage="PROXY",
+        )["media_version_id"]
+    )
 
     service = EpisodeWorkerActionService(database, workspace)
     with database.transaction() as connection:
@@ -969,15 +1240,32 @@ class _FakeFinalizeDialogue:
     def submit_episode_tts_batch(self, episode_id: str, *, idempotency_key_prefix: str, actor: str = "local-user") -> dict:
         raise AssertionError("not used by TTS_FINALIZE")
 
-    def finalize_episode_tts_jobs(self, episode_id: str, *, auto_select: bool, actor: str = "episode-run-auto") -> dict:
-        self.calls.append({"episode_id": episode_id, "auto_select": auto_select})
+    def finalize_episode_tts_jobs(
+        self,
+        episode_id: str,
+        *,
+        auto_select: bool,
+        job_ids: list[str] | tuple[str, ...] | None = None,
+        actor: str = "episode-run-auto",
+    ) -> dict:
+        self.calls.append({"episode_id": episode_id, "auto_select": auto_select, "job_ids": job_ids})
         return self.result
 
     def list_lines(self, episode_id: str) -> list[dict]:
         return []
 
 
-def _run_tts_finalize_action(database, workspace, project_id: str, episode_id: str, dialogue_port, mode_policy: dict) -> tuple[str, str, dict, int]:
+def _run_tts_finalize_action(
+    database,
+    workspace,
+    project_id: str,
+    episode_id: str,
+    dialogue_port,
+    mode_policy: dict,
+    *,
+    production_session_id: str | None = None,
+    production_choice_port=None,
+) -> tuple[str, str, dict, int]:
     automation = AutomationWorkflowService(database)
     workflow = automation.create_workflow(
         project_id,
@@ -986,7 +1274,19 @@ def _run_tts_finalize_action(database, workspace, project_id: str, episode_id: s
         mode="BATCH_AUTOMATED",
         nodes=[{"id": "episode", "type": "EPISODE_PRODUCTION_TASK"}],
         batch_items=[
-            {"key": "TTS_FINALIZE", "payload": {"action": "TTS_FINALIZE", "episode_id": episode_id, "mode_policy": mode_policy}},
+            {
+                "key": "TTS_FINALIZE",
+                "payload": {
+                    "action": "TTS_FINALIZE",
+                    "episode_id": episode_id,
+                    "mode_policy": mode_policy,
+                    **(
+                        {"production_session_id": production_session_id}
+                        if production_session_id
+                        else {}
+                    ),
+                },
+            },
         ],
         conditions=[
             {"field": "machine_check.status", "operator": "EQ", "value": "NEEDS_HITL", "action": "PAUSE_HITL"},
@@ -1010,6 +1310,9 @@ def _run_tts_finalize_action(database, workspace, project_id: str, episode_id: s
         configuration_factory=lambda: ConfigurationService(database),
         timeline_factory=lambda: TimelineService(database, workspace),
         atomic_writer=write_atomic,
+        production_choice_factory=(
+            (lambda: production_choice_port) if production_choice_port is not None else None
+        ),
     )
 
 
@@ -1028,7 +1331,7 @@ def test_tts_finalize_handler_reports_pass_and_fail(workspace, database) -> None
     report = _run_tts_finalize_action(database, workspace, project_id, episode_id, good, {"auto_select_videos": True})[2]
     assert report["machine_check"]["status"] == "PASS"
     assert report["machine_check"]["auto_selected_count"] == 1
-    assert good.calls == [{"episode_id": episode_id, "auto_select": True}]
+    assert good.calls == [{"episode_id": episode_id, "auto_select": True, "job_ids": None}]
 
     bad = _FakeFinalizeDialogue(
         {
@@ -1042,3 +1345,135 @@ def test_tts_finalize_handler_reports_pass_and_fail(workspace, database) -> None
     report = _run_tts_finalize_action(database, workspace, project_id, episode_id, bad, {"auto_select_videos": True})[2]
     assert report["status"] == "FAIL"
     assert report["machine_check"]["code"] == "TTS_FINALIZE_FAILED"
+
+
+def test_session_tts_finalize_uses_only_dependency_jobs_and_temporary_choices(
+    workspace, database,
+) -> None:
+    project, episode_row = _episode(workspace, database, "session_tts_finalize")
+    project_id, episode_id = str(project["id"]), str(episode_row["id"])
+    dialogue = _FakeFinalizeDialogue(
+        {
+            "episode_id": episode_id,
+            "succeeded_jobs": 1,
+            "finalized": [
+                {
+                    "job_id": "filled-after-create",
+                    "candidate_id": "candidate-session",
+                    "dialogue_line_id": "line-session",
+                    "media_version_id": "media-session",
+                    "idempotent_replay": False,
+                }
+            ],
+            "auto_selected": [],
+            "failures": [],
+        }
+    )
+
+    class _Choices:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def record_tts_choice(
+            self,
+            production_session_id: str,
+            episode_id: str,
+            dialogue_line_id: str,
+            tts_candidate_id: str,
+            *,
+            actor: str = "production-session-worker",
+        ) -> dict:
+            self.calls.append(
+                {
+                    "production_session_id": production_session_id,
+                    "episode_id": episode_id,
+                    "dialogue_line_id": dialogue_line_id,
+                    "tts_candidate_id": tts_candidate_id,
+                    "actor": actor,
+                }
+            )
+            return {
+                "id": "choice-session",
+                "dialogue_line_id": dialogue_line_id,
+                "tts_candidate_id": tts_candidate_id,
+            }
+
+    choices = _Choices()
+    automation = AutomationWorkflowService(database)
+    workflow = automation.create_workflow(
+        project_id,
+        code="handler-session-tts-finalize",
+        title="session TTS_FINALIZE handler",
+        mode="BATCH_AUTOMATED",
+        nodes=[{"id": "episode", "type": "EPISODE_PRODUCTION_TASK"}],
+        batch_items=[
+            {
+                "key": "TTS_FINALIZE",
+                "payload": {
+                    "action": "TTS_FINALIZE",
+                    "episode_id": episode_id,
+                    "mode_policy": {"auto_select_videos": True},
+                    "production_session_id": "session-tts",
+                },
+            }
+        ],
+        conditions=[],
+        max_iterations=2,
+        max_tasks=2,
+        max_disk_bytes=1_000_000,
+        human_gate="ON_CONDITION",
+    )
+    run = automation.start_run(
+        str(workflow["id"]),
+        plan_hash=str(workflow["plan_hash"]),
+        idempotency_key="handler-run-session-tts-finalize",
+    )
+    handler_job = JobService(database, workspace).get_job(str(run["tasks"][0]["job_id"]))
+    tts_job = JobService(database, workspace).create_job(
+        project_id,
+        "TTS_GENERATION",
+        "DIALOGUE_TEXT_REVISION",
+        "text-session",
+        "CPU",
+        {"schema_version": "test.v1"},
+        "session-tts-dependency",
+        scope_project_id=project_id,
+        scope_episode_id=episode_id,
+        stage_code="AUDIO_SUBTITLE",
+    )
+    dialogue.result["finalized"][0]["job_id"] = str(tts_job["id"])
+    with database.transaction() as connection:
+        connection.execute(
+            "INSERT INTO job_dependencies (job_id,depends_on_job_id) VALUES (?,?)",
+            (handler_job["id"], tts_job["id"]),
+        )
+
+    report = run_automation_task(
+        handler_job,
+        workspace.work_root / "session-tts-finalize-handler-tests",
+        worker_id="handler-test",
+        work_root=workspace.work_root,
+        database=database,
+        front_half_actions_factory=lambda: EpisodeFrontHalfActionService(database, workspace),
+        episode_worker_actions_factory=lambda: EpisodeWorkerActionService(database, workspace),
+        dialogue_factory=lambda: dialogue,
+        configuration_factory=lambda: ConfigurationService(database),
+        timeline_factory=lambda: TimelineService(database, workspace),
+        atomic_writer=write_atomic,
+        production_choice_factory=lambda: choices,
+    )[2]
+
+    assert dialogue.calls == [
+        {"episode_id": episode_id, "auto_select": False, "job_ids": [str(tts_job["id"])]}
+    ]
+    assert report["machine_check"]["session_choice_count"] == 1
+    assert report["machine_check"]["auto_selected_count"] == 0
+    assert choices.calls == [
+        {
+            "production_session_id": "session-tts",
+            "episode_id": episode_id,
+            "dialogue_line_id": "line-session",
+            "tts_candidate_id": "candidate-session",
+            "actor": "production-session-worker",
+        }
+    ]

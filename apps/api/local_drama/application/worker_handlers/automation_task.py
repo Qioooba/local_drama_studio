@@ -23,6 +23,7 @@ from typing import Any, Callable, Protocol
 from local_drama.domain.errors import DomainRuleError
 
 from ..keyframe_references import approved_keyframes_for_shots
+from ..production_session_budgets import ProductionSessionBudgetService
 
 AtomicWriter = Callable[[Path, Callable[[Path], object]], None]
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -40,7 +41,13 @@ class FrontHalfActionPort(Protocol):
 
     ACTIONS: frozenset[str]
 
-    def run(self, action: str, episode_id: str) -> tuple[dict[str, Any], int]:  # pragma: no cover - protocol boundary
+    def run(
+        self,
+        action: str,
+        episode_id: str,
+        *,
+        production_session_id: str | None = None,
+    ) -> tuple[dict[str, Any], int]:  # pragma: no cover - protocol boundary
         ...
 
 
@@ -48,7 +55,14 @@ class EpisodeWorkerActionsPort(Protocol):
     """Episode production actions exposed to worker executions."""
 
     def keyframe_generation(
-        self, episode_id: str, run_id: str, task_id: str, *, candidate_count: int = 1,
+        self,
+        episode_id: str,
+        run_id: str,
+        task_id: str,
+        *,
+        candidate_count: int = 1,
+        production_session_id: str | None = None,
+        dispatch_job_limit: int | None = None,
     ) -> tuple[dict[str, Any], int]:  # pragma: no cover - protocol boundary
         ...
 
@@ -64,12 +78,42 @@ class EpisodeWorkerActionsPort(Protocol):
         retry_original_only: bool = False,
         expected_profile_version_ids: dict[str, str] | None = None,
         expected_input_fingerprints: dict[str, str] | None = None,
+        production_session_id: str | None = None,
+        dispatch_job_limit: int | None = None,
     ) -> tuple[dict[str, Any], int]:  # pragma: no cover - protocol boundary
         ...
 
     def qc(
-        self, episode_id: str, run_id: str, task_id: str, *, auto_select: bool = False
+        self,
+        episode_id: str,
+        run_id: str,
+        task_id: str,
+        *,
+        auto_select: bool = False,
+        production_session_id: str | None = None,
     ) -> tuple[dict[str, Any], int]:  # pragma: no cover - protocol boundary
+        ...
+
+
+class ProductionChoicePort(Protocol):
+    def ensure_keyframes(
+        self,
+        production_session_id: str,
+        episode_id: str,
+        *,
+        actor: str = "production-session-runner",
+    ) -> tuple[dict[str, Any], int]:  # pragma: no cover - protocol boundary
+        ...
+
+    def record_tts_choice(
+        self,
+        production_session_id: str,
+        episode_id: str,
+        dialogue_line_id: str,
+        tts_candidate_id: str,
+        *,
+        actor: str = "production-session-worker",
+    ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
         ...
 
 
@@ -77,12 +121,22 @@ class AutomationDialoguePort(Protocol):
     """Dialogue capabilities required by TTS batch / subtitle actions."""
 
     def submit_episode_tts_batch(
-        self, episode_id: str, *, idempotency_key_prefix: str, actor: str = "local-user"
+        self,
+        episode_id: str,
+        *,
+        idempotency_key_prefix: str,
+        production_session_id: str | None = None,
+        actor: str = "local-user",
     ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
         ...
 
     def finalize_episode_tts_jobs(
-        self, episode_id: str, *, auto_select: bool, actor: str = "episode-run-auto"
+        self,
+        episode_id: str,
+        *,
+        auto_select: bool,
+        job_ids: list[str] | tuple[str, ...] | None = None,
+        actor: str = "episode-run-auto",
     ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
         ...
 
@@ -105,12 +159,18 @@ class AutomationTimelinePort(Protocol):
         episode_id: str,
         *,
         audio_strategy: str = "EXTERNAL_TTS",
+        production_session_id: str | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
         ...
 
     def plan_tts_subtitle_draft(
-        self, episode_id: str, *, source_document_version_id: str | None = None, align_words: bool = False
+        self,
+        episode_id: str,
+        *,
+        source_document_version_id: str | None = None,
+        align_words: bool = False,
+        production_session_id: str | None = None,
     ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
         ...
 
@@ -139,6 +199,7 @@ class AutomationTimelinePort(Protocol):
         format: str = "SRT",
         authority: dict[str, Any],
         style: dict[str, Any] | None = None,
+        production_session_id: str | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]:  # pragma: no cover - protocol boundary
         ...
@@ -196,10 +257,7 @@ def _automation_keyframe_check(database: AutomationPersistencePort, episode_id: 
             (str(shot["id"]) for shot in shots),
             project_id=project_id,
         )
-        missing = [
-            {"shot_id": str(shot["id"]), "shot_code": str(shot["code"])}
-            for shot in shots if str(shot["id"]) not in approved
-        ]
+        missing = [{"shot_id": str(shot["id"]), "shot_code": str(shot["code"])} for shot in shots if str(shot["id"]) not in approved]
     if missing:
         summary = f"{len(missing)} 个镜头缺少已批准关键帧，等待人工确认"
         machine_check: dict[str, Any] = {
@@ -224,15 +282,30 @@ def _automation_keyframe_check(database: AutomationPersistencePort, episode_id: 
     return report, 0
 
 
-def _automation_tts_batch(dialogue: AutomationDialoguePort, episode_id: str, run_id: str, task_id: str) -> tuple[dict[str, Any], int]:
+def _automation_tts_batch(
+    dialogue: AutomationDialoguePort,
+    episode_id: str,
+    run_id: str,
+    task_id: str,
+    production_session_id: str | None = None,
+) -> tuple[dict[str, Any], int]:
     prefix = f"automation:{run_id}:{task_id}"
-    result = dialogue.submit_episode_tts_batch(episode_id, idempotency_key_prefix=prefix, actor="local-user")
+    if production_session_id:
+        result = dialogue.submit_episode_tts_batch(
+            episode_id,
+            idempotency_key_prefix=prefix,
+            production_session_id=production_session_id,
+            actor="local-user",
+        )
+    else:
+        result = dialogue.submit_episode_tts_batch(
+            episode_id,
+            idempotency_key_prefix=prefix,
+            actor="local-user",
+        )
     counts = {key: int(result["counts"].get(key, 0)) for key in ("submitted", "skipped", "failed")}
     machine_check = {"status": "PASS", "ok": True, "counts": counts, "job_count": counts["submitted"]}
-    submitted = [
-        {"line_id": str(item["line_id"]), "code": str(item["code"]), "job_id": str(item["job_id"])}
-        for item in result["submitted"]
-    ]
+    submitted = [{"line_id": str(item["line_id"]), "code": str(item["code"]), "job_id": str(item["job_id"])} for item in result["submitted"]]
     produced = {
         "counts": counts,
         # "items" is the dependency-attach contract consumed by
@@ -260,6 +333,7 @@ def _automation_timeline_assembly(
         result = timeline_factory().assemble_episode_timeline(
             episode_id,
             audio_strategy=str(payload.get("audio_strategy") or "EXTERNAL_TTS"),
+            production_session_id=str(payload.get("production_session_id") or "") or None,
             actor="local-user",
         )
     except DomainRuleError as error:
@@ -267,7 +341,9 @@ def _automation_timeline_assembly(
     status = str(result.get("status"))
     if status == "SKIPPED":
         machine_check = {"status": "SKIPPED", "ok": False, "code": "TIMELINE_ALREADY_CURRENT", "detail": "最新时间线仍与当前采用事实一致，跳过重组"}
-        return _automation_report("SKIPPED", machine_check, {"timeline_revision_id": str(result.get("timeline_revision_id") or "")}, "时间线已是最新，跳过自动组装"), 0
+        return _automation_report(
+            "SKIPPED", machine_check, {"timeline_revision_id": str(result.get("timeline_revision_id") or "")}, "时间线已是最新，跳过自动组装"
+        ), 0
     if status == "BLOCKED":
         blockers = result.get("blockers", [])
         machine_check = {"status": "FAIL", "ok": False, "code": "TIMELINE_ASSEMBLY_BLOCKED", "detail": "当前采用事实不足以组装时间线", "blockers": blockers}
@@ -283,9 +359,12 @@ def _automation_timeline_assembly(
 
 
 def _automation_tts_finalize(
+    database: AutomationPersistencePort,
     dialogue: AutomationDialoguePort,
     episode_id: str,
     payload: dict[str, Any],
+    task_job_id: str,
+    production_choice_factory: Callable[[], ProductionChoicePort] | None,
 ) -> tuple[dict[str, Any], int]:
     """Register succeeded TTS Jobs and fill empty voice selections.
 
@@ -296,11 +375,71 @@ def _automation_tts_finalize(
     """
     mode_policy = payload.get("mode_policy", {})
     auto_select = bool(mode_policy.get("auto_select_videos", False)) if isinstance(mode_policy, dict) else False
-    result = dialogue.finalize_episode_tts_jobs(episode_id, auto_select=auto_select, actor="local-user")
+    production_session_id = str(payload.get("production_session_id") or "")
+    dependency_tts_job_ids: list[str] | None = None
+    if production_session_id:
+        if production_choice_factory is None:
+            raise DomainRuleError(
+                "PRODUCTION_CHOICE_SERVICE_REQUIRED",
+                "生产会话 TTS 收尾缺少机器临时选择服务",
+            )
+        with database.connect() as connection:
+            dependency_tts_job_ids = [
+                str(row["id"])
+                for row in connection.execute(
+                    """SELECT dependency.id
+                       FROM job_dependencies relation
+                       JOIN jobs dependency ON dependency.id=relation.depends_on_job_id
+                       WHERE relation.job_id=? AND dependency.type='TTS_GENERATION'
+                         AND dependency.scope_episode_id=?
+                       ORDER BY dependency.created_at,dependency.id""",
+                    (task_job_id, episode_id),
+                ).fetchall()
+            ]
+    if production_session_id:
+        result = dialogue.finalize_episode_tts_jobs(
+            episode_id,
+            auto_select=False,
+            job_ids=dependency_tts_job_ids,
+            actor="local-user",
+        )
+    else:
+        result = dialogue.finalize_episode_tts_jobs(
+            episode_id,
+            auto_select=auto_select,
+            actor="local-user",
+        )
     finalized = result.get("finalized", [])
     failures = result.get("failures", [])
     selected = result.get("auto_selected", [])
-    produced = {"finalized": finalized, "auto_selected": selected, "failures": failures}
+    session_choices: list[dict[str, Any]] = []
+    if production_session_id:
+        choice_service = production_choice_factory()
+        for item in finalized:
+            try:
+                session_choices.append(
+                    choice_service.record_tts_choice(
+                        production_session_id,
+                        episode_id,
+                        str(item["dialogue_line_id"]),
+                        str(item["candidate_id"]),
+                        actor="production-session-worker",
+                    )
+                )
+            except DomainRuleError as error:
+                failures.append(
+                    {
+                        "job_id": str(item.get("job_id") or ""),
+                        "code": error.code,
+                        "message": error.message,
+                    }
+                )
+    produced = {
+        "finalized": finalized,
+        "auto_selected": selected,
+        "session_choices": session_choices,
+        "failures": failures,
+    }
     if failures:
         machine_check = {"status": "FAIL", "ok": False, "code": "TTS_FINALIZE_FAILED", "failures": failures, "finalized_count": len(finalized)}
         return _automation_report("FAIL", machine_check, produced, f"TTS 收尾存在 {len(failures)} 个失败任务"), 0
@@ -310,10 +449,13 @@ def _automation_tts_finalize(
         "succeeded_jobs": int(result.get("succeeded_jobs", 0)),
         "finalized_count": len(finalized),
         "auto_selected_count": len(selected),
+        "session_choice_count": len(session_choices),
     }
     summary = f"TTS 收尾完成：登记 {len(finalized)} 条候选"
     if auto_select and selected:
         summary += f"，自动采用 {len(selected)} 条"
+    if production_session_id and session_choices:
+        summary += f"，会话临时选择 {len(session_choices)} 条"
     return _automation_report("PASS", machine_check, produced, summary), 0
 
 
@@ -325,21 +467,44 @@ def _automation_render(
 ) -> tuple[dict[str, Any], int]:
     payload = payload or {}
     frozen_timeline_id = str(payload.get("timeline_revision_id") or "").strip()
+    production_session_id = str(payload.get("production_session_id") or "").strip()
     with database.connect() as connection:
         if frozen_timeline_id:
-            timeline = connection.execute(
-                "SELECT id, revision_no, status FROM timeline_revisions WHERE id=? AND episode_id=?",
-                (frozen_timeline_id, episode_id),
-            ).fetchone()
-            latest_timeline = connection.execute(
-                "SELECT id FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
-                (episode_id,),
-            ).fetchone()
+            if production_session_id:
+                timeline = connection.execute(
+                    """SELECT id,revision_no,status FROM timeline_revisions
+                       WHERE id=? AND episode_id=?
+                         AND json_extract(input_snapshot_json,'$.production_session_id')=?""",
+                    (frozen_timeline_id, episode_id, production_session_id),
+                ).fetchone()
+                latest_timeline = connection.execute(
+                    """SELECT id FROM timeline_revisions WHERE episode_id=?
+                         AND json_extract(input_snapshot_json,'$.production_session_id')=?
+                       ORDER BY revision_no DESC,id DESC LIMIT 1""",
+                    (episode_id, production_session_id),
+                ).fetchone()
+            else:
+                timeline = connection.execute(
+                    "SELECT id, revision_no, status FROM timeline_revisions WHERE id=? AND episode_id=?",
+                    (frozen_timeline_id, episode_id),
+                ).fetchone()
+                latest_timeline = connection.execute(
+                    "SELECT id FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
+                    (episode_id,),
+                ).fetchone()
         else:
-            timeline = connection.execute(
-                "SELECT id, revision_no, status FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
-                (episode_id,),
-            ).fetchone()
+            if production_session_id:
+                timeline = connection.execute(
+                    """SELECT id,revision_no,status FROM timeline_revisions WHERE episode_id=?
+                         AND json_extract(input_snapshot_json,'$.production_session_id')=?
+                       ORDER BY revision_no DESC,id DESC LIMIT 1""",
+                    (episode_id, production_session_id),
+                ).fetchone()
+            else:
+                timeline = connection.execute(
+                    "SELECT id, revision_no, status FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
+                    (episode_id,),
+                ).fetchone()
             latest_timeline = timeline
     if timeline is None:
         code = "RENDER_TIMELINE_CHANGED" if frozen_timeline_id else "RENDER_NO_TIMELINE"
@@ -379,19 +544,54 @@ def _automation_delivery(
     configuration: AutomationConfigurationPort,
     timeline_factory: Callable[[], AutomationTimelinePort],
     episode_id: str,
+    payload: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], int]:
+    payload = payload or {}
+    production_session_id = str(payload.get("production_session_id") or "").strip()
     episode = _automation_episode(database, episode_id)
     project_id = str(episode["project_id"])
+    if production_session_id:
+        # Workflows frozen by an older application version may still contain
+        # DELIVERY as their final session task.  Do not let those durable runs
+        # fail on the intentional human render-approval gate.  New session
+        # workflows omit this action entirely; this compatibility path has no
+        # delivery side effects and never manufactures an approval.
+        machine_check = {
+            "status": "SKIPPED",
+            "ok": False,
+            "code": "DELIVERY_DEFERRED_TO_HUMAN_REVIEW",
+            "detail": "生产会话已生成待审预览；正式交付须在人工批准整集成片后单独构建",
+            "production_session_id": production_session_id,
+        }
+        return (
+            _automation_report(
+                "SKIPPED",
+                machine_check,
+                {},
+                "正式交付已推迟到人工审核之后",
+            ),
+            0,
+        )
     snapshot = configuration.inspect_project_configuration(project_id)
     target_version_id = snapshot.get("selected_delivery_target_version_id")
     if not target_version_id:
         machine_check = {"status": "SKIPPED", "ok": False, "code": "DELIVERY_NO_TARGET", "detail": "项目未选定交付目标版本，交付跳过"}
         return _automation_report("SKIPPED", machine_check, {}, "交付跳过：项目未选定交付目标版本"), 0
     with database.connect() as connection:
-        render = connection.execute(
-            "SELECT id FROM episode_render_versions WHERE episode_id=? ORDER BY created_at DESC, id DESC LIMIT 1",
-            (episode_id,),
-        ).fetchone()
+        if production_session_id:
+            render = connection.execute(
+                """SELECT erv.id FROM episode_render_versions erv
+                   JOIN timeline_revisions tr ON tr.id=erv.timeline_revision_id
+                   WHERE erv.episode_id=? AND erv.render_kind='COMPOSE'
+                     AND json_extract(tr.input_snapshot_json,'$.production_session_id')=?
+                   ORDER BY erv.created_at DESC,erv.id DESC LIMIT 1""",
+                (episode_id, production_session_id),
+            ).fetchone()
+        else:
+            render = connection.execute(
+                "SELECT id FROM episode_render_versions WHERE episode_id=? AND render_kind='COMPOSE' ORDER BY created_at DESC, id DESC LIMIT 1",
+                (episode_id,),
+            ).fetchone()
     if render is None:
         return _automation_failure("DELIVERY_NO_RENDER", "该集还没有整集渲染版本，无法构建交付包"), 0
     try:
@@ -407,7 +607,12 @@ def _automation_delivery(
         "manifest_sha256": str(package.get("manifest_sha256") or ""),
         "package_status": str(package.get("status") or ""),
     }
-    report = _automation_report("PASS", machine_check, {"delivery_package_id": str(package["id"]), "rel_path": str(package.get("rel_path") or "")}, "交付包构建完成（机器预检 PASS，人工/平台审签仍为 PENDING）")
+    report = _automation_report(
+        "PASS",
+        machine_check,
+        {"delivery_package_id": str(package["id"]), "rel_path": str(package.get("rel_path") or "")},
+        "交付包构建完成（机器预检 PASS，人工/平台审签仍为 PENDING）",
+    )
     return report, 0
 
 
@@ -424,7 +629,13 @@ def _automation_subtitle(
     """
     requested_source = str(payload.get("source_document_version_id") or "").strip() or None
     try:
-        draft = timeline_factory().plan_tts_subtitle_draft(episode_id, source_document_version_id=requested_source, align_words=True)
+        production_session_id = str(payload.get("production_session_id") or "") or None
+        draft = timeline_factory().plan_tts_subtitle_draft(
+            episode_id,
+            source_document_version_id=requested_source,
+            align_words=True,
+            production_session_id=production_session_id,
+        )
     except DomainRuleError as error:
         return _automation_failure(error.code, error.message), 0
     if draft["status"] == "BLOCKED" or not draft["cues"]:
@@ -433,12 +644,23 @@ def _automation_subtitle(
         if draft["status"] == "BLOCKED" and blocker_codes and blocker_codes <= source_blockers:
             # A rough cut is a valid outcome without subtitles: missing script
             # authority is a configuration gap, not a production failure.
-            machine_check = {"status": "SKIPPED", "ok": False, "code": "SUBTITLE_SOURCE_REQUIRED", "detail": "本集没有已应用的剧本权威，字幕跳过（粗剪不依赖字幕）"}
+            machine_check = {
+                "status": "SKIPPED",
+                "ok": False,
+                "code": "SUBTITLE_SOURCE_REQUIRED",
+                "detail": "本集没有已应用的剧本权威，字幕跳过（粗剪不依赖字幕）",
+            }
             return _automation_report("SKIPPED", machine_check, {"blockers": draft["blockers"]}, "字幕跳过：本集缺少剧本权威"), 0
         machine_check = {"status": "FAIL", "ok": False, "code": "SUBTITLE_DRAFT_BLOCKED", "detail": "字幕草稿无法构建", "blockers": draft["blockers"]}
         return _automation_report("FAIL", machine_check, {"blockers": draft["blockers"]}, "字幕草稿被阻塞，无法创建 revision"), 0
     try:
-        revision = timeline_factory().create_subtitle_revision(episode_id, draft["cues"], authority=draft["authority"], actor="local-user")
+        revision = timeline_factory().create_subtitle_revision(
+            episode_id,
+            draft["cues"],
+            authority=draft["authority"],
+            production_session_id=production_session_id,
+            actor="local-user",
+        )
     except DomainRuleError as error:
         return _automation_failure(error.code, error.message), 0
     machine_check = {
@@ -473,6 +695,7 @@ def run_automation_task(
     configuration_factory: Callable[[], AutomationConfigurationPort],
     timeline_factory: Callable[[], AutomationTimelinePort],
     atomic_writer: AtomicWriter,
+    production_choice_factory: Callable[[], ProductionChoicePort] | None = None,
 ) -> tuple[str, str, dict[str, Any], int]:
     snapshot = job["input_snapshot"]
     run_id = str(snapshot.get("automation_run_id", "") or "")
@@ -480,9 +703,7 @@ def run_automation_task(
     if not run_id or not task_id:
         raise DomainRuleError("JOB_INPUT_INVALID", "自动化任务 Job 缺少 automation_run_id/automation_task_id")
     with database.connect() as connection:
-        task = connection.execute(
-            "SELECT item_json FROM automation_workflow_run_tasks WHERE id=? AND run_id=?", (task_id, run_id)
-        ).fetchone()
+        task = connection.execute("SELECT item_json FROM automation_workflow_run_tasks WHERE id=? AND run_id=?", (task_id, run_id)).fetchone()
     if task is None:
         raise DomainRuleError("AUTOMATION_TASK_NOT_FOUND", "workflow 任务不存在", {"task_id": task_id})
     try:
@@ -494,17 +715,47 @@ def run_automation_task(
         raise DomainRuleError("AUTOMATION_TASK_PAYLOAD_INVALID", "workflow 任务 payload 必须是对象")
     action = str(payload.get("action", "") or "").strip()
     episode_id = str(payload.get("episode_id", "") or "").strip()
+    production_session_id = str(payload.get("production_session_id", "") or "").strip()
     if not action:
         raise DomainRuleError("AUTOMATION_TASK_PAYLOAD_INVALID", "自动化任务 payload 缺少 action")
     if not episode_id:
         raise DomainRuleError("AUTOMATION_TASK_PAYLOAD_INVALID", "自动化任务 payload 缺少 episode_id")
+    production_budget: dict[str, Any] = {}
+    if production_session_id:
+        with database.connect() as connection:
+            production_budget = ProductionSessionBudgetService.inspect_with_connection(connection, production_session_id)
+    hard_budget_blockers = production_budget.get("hard_blockers") or []
+    requested_dispatch_limit = int(payload["dispatch_job_limit"]) if payload.get("dispatch_job_limit") is not None else None
+    effective_dispatch_limit = requested_dispatch_limit
+    if effective_dispatch_limit is not None and production_budget:
+        remaining = production_budget.get("remaining") or {}
+        effective_dispatch_limit = min(
+            effective_dispatch_limit,
+            int(remaining.get("new_jobs") or 0),
+            int(remaining.get("attempts_total") or 0),
+        )
     managed_front_half = action != "KEYFRAME_CHECK" or bool(payload.get("front_half_managed"))
     front_half = front_half_actions_factory()
-    if action in front_half.ACTIONS and managed_front_half:
+    if action == "KEYFRAME_CHECK" and production_session_id:
+        if production_choice_factory is None:
+            raise DomainRuleError(
+                "PRODUCTION_CHOICE_SERVICE_REQUIRED",
+                "生产会话关键帧检查缺少机器临时选择服务",
+            )
+        report, produced_extra = production_choice_factory().ensure_keyframes(
+            production_session_id,
+            episode_id,
+            actor="production-session-worker",
+        )
+    elif action in front_half.ACTIONS and managed_front_half:
         # Front-half Jobs never auto-apply/auto-approve creative facts.
         # The action service emits PASS/SKIPPED for existing authorities
         # or NEEDS_HITL with bounded evidence for the workflow gate.
-        report, produced_extra = front_half.run(action, episode_id)
+        report, produced_extra = front_half.run(
+            action,
+            episode_id,
+            production_session_id=production_session_id or None,
+        )
     elif action == "KEYFRAME_CHECK":
         # Frozen WHOLE_DRAMA v1 workflows retain their historical
         # approved_version authority.  New Episode Production snapshots
@@ -513,59 +764,126 @@ def run_automation_task(
     elif action == "KEYFRAME_GENERATION":
         mode_policy = payload.get("mode_policy", {})
         count = int(mode_policy.get("target_take_count", 1)) if isinstance(mode_policy, dict) else 1
-        report, produced_extra = episode_worker_actions_factory().keyframe_generation(
-            episode_id, run_id, task_id, candidate_count=max(1, min(4, count)),
-        )
+        if hard_budget_blockers or effective_dispatch_limit == 0:
+            blockers = hard_budget_blockers or [
+                {
+                    "code": "PRODUCTION_SESSION_JOB_BUDGET_EXHAUSTED",
+                    "message": "生产预算不足以继续提交关键帧任务",
+                }
+            ]
+            report, produced_extra = (
+                {
+                    "status": "NEEDS_HITL",
+                    "machine_check": {
+                        "status": "NEEDS_HITL",
+                        "code": str(blockers[0]["code"]),
+                        "issues": blockers,
+                    },
+                    "produced": {"items": []},
+                    "summary": str(blockers[0]["message"]),
+                },
+                0,
+            )
+        else:
+            report, produced_extra = episode_worker_actions_factory().keyframe_generation(
+                episode_id,
+                run_id,
+                task_id,
+                candidate_count=max(1, min(4, count)),
+                production_session_id=production_session_id or None,
+                dispatch_job_limit=effective_dispatch_limit,
+            )
     elif action == "VIDEO_GENERATION":
         mode_policy = payload.get("mode_policy", {})
         target_take_count = int(mode_policy.get("target_take_count", 2)) if isinstance(mode_policy, dict) else 2
         frozen_profiles = {
             str(shot_id): str(profile_id)
             for shot_id, profile_id in (
-                payload.get("expected_profile_version_ids", {}).items()
-                if isinstance(payload.get("expected_profile_version_ids"), dict)
-                else []
+                payload.get("expected_profile_version_ids", {}).items() if isinstance(payload.get("expected_profile_version_ids"), dict) else []
             )
         }
-        frozen_profile_kwargs = (
-            {"expected_profile_version_ids": frozen_profiles} if frozen_profiles else {}
-        )
+        frozen_profile_kwargs = {"expected_profile_version_ids": frozen_profiles} if frozen_profiles else {}
         frozen_inputs = {
             str(shot_id): str(fingerprint)
             for shot_id, fingerprint in (
-                payload.get("expected_input_fingerprints", {}).items()
-                if isinstance(payload.get("expected_input_fingerprints"), dict)
-                else []
+                payload.get("expected_input_fingerprints", {}).items() if isinstance(payload.get("expected_input_fingerprints"), dict) else []
             )
         }
-        frozen_input_kwargs = (
-            {"expected_input_fingerprints": frozen_inputs} if frozen_inputs else {}
-        )
-        report, produced_extra = episode_worker_actions_factory().video_generation(
-            episode_id,
-            run_id,
-            task_id,
-            target_take_count=target_take_count,
-            target_shot_ids=tuple(str(item) for item in payload.get("target_shot_ids", []) if str(item).strip()),
-            force_new_take=bool(payload.get("force_new_take", False)),
-            retry_original_only=bool(payload.get("retry_original_only", False)),
-            **frozen_profile_kwargs,
-            **frozen_input_kwargs,
-        )
+        frozen_input_kwargs = {"expected_input_fingerprints": frozen_inputs} if frozen_inputs else {}
+        if hard_budget_blockers or effective_dispatch_limit == 0:
+            blockers = hard_budget_blockers or [
+                {
+                    "code": "PRODUCTION_SESSION_JOB_BUDGET_EXHAUSTED",
+                    "message": "生产预算不足以继续提交视频任务",
+                }
+            ]
+            report, produced_extra = (
+                {
+                    "status": "NEEDS_HITL",
+                    "machine_check": {
+                        "status": "NEEDS_HITL",
+                        "code": str(blockers[0]["code"]),
+                        "issues": blockers,
+                    },
+                    "produced": {"items": []},
+                    "summary": str(blockers[0]["message"]),
+                },
+                0,
+            )
+        else:
+            report, produced_extra = episode_worker_actions_factory().video_generation(
+                episode_id,
+                run_id,
+                task_id,
+                target_take_count=target_take_count,
+                target_shot_ids=tuple(str(item) for item in payload.get("target_shot_ids", []) if str(item).strip()),
+                force_new_take=bool(payload.get("force_new_take", False)),
+                retry_original_only=bool(payload.get("retry_original_only", False)),
+                production_session_id=production_session_id or None,
+                dispatch_job_limit=effective_dispatch_limit,
+                **frozen_profile_kwargs,
+                **frozen_input_kwargs,
+            )
     elif action == "QC":
         mode_policy = payload.get("mode_policy", {})
         auto_select = bool(mode_policy.get("auto_select_videos", False)) if isinstance(mode_policy, dict) else False
-        report, produced_extra = episode_worker_actions_factory().qc(episode_id, run_id, task_id, auto_select=auto_select)
+        session_qc_kwargs = {"production_session_id": production_session_id} if production_session_id else {}
+        report, produced_extra = episode_worker_actions_factory().qc(
+            episode_id,
+            run_id,
+            task_id,
+            auto_select=auto_select or bool(production_session_id),
+            **session_qc_kwargs,
+        )
     elif action == "TTS_BATCH":
-        report, produced_extra = _automation_tts_batch(dialogue_factory(), episode_id, run_id, task_id)
+        report, produced_extra = _automation_tts_batch(
+            dialogue_factory(),
+            episode_id,
+            run_id,
+            task_id,
+            production_session_id or None,
+        )
     elif action == "TTS_FINALIZE":
-        report, produced_extra = _automation_tts_finalize(dialogue_factory(), episode_id, payload)
+        report, produced_extra = _automation_tts_finalize(
+            database,
+            dialogue_factory(),
+            episode_id,
+            payload,
+            str(job["id"]),
+            production_choice_factory,
+        )
     elif action == "TIMELINE_ASSEMBLY":
         report, produced_extra = _automation_timeline_assembly(timeline_factory, episode_id, payload)
     elif action == "RENDER":
         report, produced_extra = _automation_render(database, timeline_factory, episode_id, payload)
     elif action == "DELIVERY":
-        report, produced_extra = _automation_delivery(database, configuration_factory(), timeline_factory, episode_id)
+        report, produced_extra = _automation_delivery(
+            database,
+            configuration_factory(),
+            timeline_factory,
+            episode_id,
+            payload,
+        )
     elif action == "SUBTITLE":
         report, produced_extra = _automation_subtitle(timeline_factory, episode_id, payload)
     else:

@@ -37,6 +37,9 @@ def run_story_pipeline_apply_job(
                     "project_id": project_id,
                     "apply_state": result["run"]["apply_state"],
                     "sections": result.get("sections") or result["run"].get("applied_sections", []),
+                    "production_session_id": (
+                        ((result.get("production") or {}).get("session") or {}).get("id")
+                    ),
                     "idempotent_replay": bool(result.get("idempotent_replay")),
                 },
                 ensure_ascii=False,

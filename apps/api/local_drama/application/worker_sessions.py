@@ -393,20 +393,28 @@ class WorkerSupervisor:
         from local_drama.application.comfy_jobs import ComfyGenerationService
         from local_drama.application.episode_production_runs import EpisodeProductionRunService
         from local_drama.application.gpu_runtime import GpuRuntimeCoordinator
+        from local_drama.application.jobs import JobService
+        from local_drama.application.production_session_runner import ProductionSessionRunner
         from local_drama.application.storage_operations import StorageOperationService
         from local_drama.application.worker import LocalMediaWorker
 
         episode_runs = EpisodeProductionRunService(self.database, self.settings)
+        production_sessions = ProductionSessionRunner(self.database, self.settings)
         session_reconcile = self.sessions.reconcile()
         comfy_recovery = ComfyGenerationService(self.database, self.settings)
         provider_reconcile = comfy_recovery.recover_uncertain_successes() if "GPU_H3" in (channels or ["CPU"]) else {"inspected": 0, "recovered": 0, "items": []}
         business_output_reconcile = comfy_recovery.reconcile_succeeded_business_outputs()
+        dependency_reconcile = JobService(self.database, self.settings).requeue_recovered_dependencies(
+            actor="worker-startup-dependency-reconcile"
+        )
         startup_reconcile = {
             "worker_sessions": session_reconcile,
             "provider_successes": provider_reconcile,
             "business_outputs": business_output_reconcile,
+            "recovered_dependencies": dependency_reconcile,
             "storage_operations": StorageOperationService(self.database, self.settings).reconcile(),
             "episode_runs": episode_runs.watchdog(stale_seconds=0, actor="worker-startup-watchdog"),
+            "production_sessions": production_sessions.reconcile_active(actor="worker-startup-reconcile"),
         }
         session = self.sessions.start_session(
             worker_id,
@@ -432,6 +440,7 @@ class WorkerSupervisor:
         comfy_worker = ComfyGenerationService(self.database, self.settings, gpu_coordinator=gpu_coordinator)
         last_episode_watchdog_at = time.monotonic()
         last_episode_watchdog = startup_reconcile["episode_runs"]
+        last_production_session_reconcile = startup_reconcile["production_sessions"]
         last_provider_reconcile = provider_reconcile
         heartbeat_stop = threading.Event()
         heartbeat_errors: list[BaseException] = []
@@ -465,9 +474,16 @@ class WorkerSupervisor:
                         # Mark its expired attempts before provider recovery;
                         # otherwise completed Comfy outputs remain RUNNING.
                         self.sessions.reconcile()
-                        last_episode_watchdog = episode_runs.watchdog()
                         if "GPU_H3" in requested_channels:
                             last_provider_reconcile = comfy_worker.recover_uncertain_successes()
+                            comfy_worker.reconcile_succeeded_business_outputs()
+                        JobService(self.database, self.settings).requeue_recovered_dependencies(
+                            actor="worker-periodic-dependency-reconcile"
+                        )
+                        last_episode_watchdog = episode_runs.watchdog()
+                        last_production_session_reconcile = production_sessions.reconcile_active(
+                            actor="worker-periodic-reconcile"
+                        )
                         last_episode_watchdog_at = now_monotonic
                     result = None
                     cpu_channels = [item for item in requested_channels if item != "GPU_H3"]
@@ -538,7 +554,11 @@ class WorkerSupervisor:
                 "results": results,
                 "status": "STOPPED",
                 "startup_reconcile": startup_reconcile,
-                "maintenance": {"episode_runs": last_episode_watchdog, "provider_successes": last_provider_reconcile},
+                "maintenance": {
+                    "episode_runs": last_episode_watchdog,
+                    "production_sessions": last_production_session_reconcile,
+                    "provider_successes": last_provider_reconcile,
+                },
             }
         except Exception:
             heartbeat_stop.set()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import math
 import time
@@ -11,12 +12,22 @@ from typing import Any
 DEFAULT_MODEL_ROOT = Path(r"F:\AI_Models\LocalDramaStudio")
 
 
+def _decode_text(value: str) -> str:
+    """Decode the ASCII-safe text transport used by the Windows parent."""
+    return base64.b64decode(value.encode("ascii"), validate=True).decode("utf-8")
+
+
 def _emit(payload: dict[str, Any], output: Path | None) -> None:
     rendered = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(rendered, encoding="utf-8")
-    print(rendered, end="")
+    # Windows child processes can still inherit an OEM/ANSI stdout code page
+    # despite PYTHONIOENCODING.  Keep the machine-readable subprocess channel
+    # ASCII-only so the parent can always decode JSON as UTF-8 and recover the
+    # original Unicode text from \u escapes.  Explicit output files remain
+    # human-readable UTF-8.
+    print(json.dumps(payload, ensure_ascii=True, indent=2), end="\n")
 
 
 def _embedding_smoke(
@@ -285,22 +296,33 @@ def main() -> int:
     parser.add_argument("--audio-input", type=Path)
     parser.add_argument("--audio-output", type=Path)
     parser.add_argument("--text", action="append")
+    parser.add_argument("--text-b64", action="append")
     parser.add_argument("--instruction")
+    parser.add_argument("--instruction-b64")
     parser.add_argument("--include-vectors", action="store_true")
     parser.add_argument("--transcript")
+    parser.add_argument("--transcript-b64")
     parser.add_argument("--language", default="Chinese")
+    parser.add_argument("--language-b64")
     parser.add_argument("--prompt-audio", type=Path)
     parser.add_argument("--prompt-text")
+    parser.add_argument("--prompt-text-b64")
     parser.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
     parser.add_argument("--ollama-model", default="qwen3.8:27b")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    texts = list(args.text or [])
+    texts.extend(_decode_text(value) for value in (args.text_b64 or []))
+    instruction = _decode_text(args.instruction_b64) if args.instruction_b64 else args.instruction
+    transcript = _decode_text(args.transcript_b64) if args.transcript_b64 else args.transcript
+    language = _decode_text(args.language_b64) if args.language_b64 else args.language
+    prompt_text = _decode_text(args.prompt_text_b64) if args.prompt_text_b64 else args.prompt_text
 
     if args.task == "embedding":
         result = _embedding_smoke(
             args.model_root,
-            args.text,
-            args.instruction,
+            texts or None,
+            instruction,
             include_vectors=args.include_vectors,
         )
     elif args.task == "voxcpm2":
@@ -308,9 +330,9 @@ def main() -> int:
         result = _voxcpm_smoke(
             args.model_root,
             audio_output,
-            (args.text or ["本地导演台配音测试通过。"])[0],
+            (texts or ["本地导演台配音测试通过。"])[0],
             prompt_audio=args.prompt_audio,
-            prompt_text=args.prompt_text,
+            prompt_text=prompt_text,
         )
     elif args.task == "asr":
         if args.audio_input is None or not args.audio_input.is_file():
@@ -320,11 +342,11 @@ def main() -> int:
         if (
             args.audio_input is None
             or not args.audio_input.is_file()
-            or not args.transcript
+            or not transcript
         ):
             parser.error("alignment requires --audio-input and --transcript")
         result = _alignment_smoke(
-            args.model_root, args.audio_input, args.transcript, args.language
+            args.model_root, args.audio_input, transcript, language
         )
     else:
         result = _ollama_smoke(args.ollama_base_url, args.ollama_model)

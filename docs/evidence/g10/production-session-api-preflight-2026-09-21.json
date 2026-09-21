@@ -1,0 +1,36 @@
+{
+  "schema_version": "localdrama.production-session-api-preflight.v1",
+  "status": "PASS",
+  "observed_at": "2026-09-21T03:57:07.074496+00:00",
+  "source": {
+    "kind": "isolated_online-backup-copy",
+    "database_path": "F:\\AI_Projects\\h3\\local_drama_studio\\.codex-tmp\\isolated-api-20260921-0356\\local_drama.sqlite3",
+    "sha256": "3a93d477de668f5685bb582ca27b62d48eeb26b09f67ff254cd62f8102587c2c",
+    "migration_heads": [
+      "0100_production_session_waiting_user"
+    ]
+  },
+  "runtime": {
+    "bind": "127.0.0.1:43211",
+    "managed_worker": true,
+    "health": "HEALTHY",
+    "shutdown": "GRACEFUL"
+  },
+  "route_check": {
+    "method": "POST",
+    "path": "/api/v2/projects/c76c90e2-28b0-4563-97e7-feb0b926691d/production-sessions:plan",
+    "request_shape": "production_session_plan_v2",
+    "project_code": "video_5fa4ef6eb2eb420b",
+    "episode_id": "06cf1d17-243a-4dd5-b7f6-c465bc49fd18",
+    "scope_type": "SINGLE_EPISODE",
+    "production_mode": "DRAFT",
+    "episode_count": 1,
+    "shot_count": 1,
+    "warnings": 0,
+    "plan_hash": "2858290bab6cfc439bb55d7261094eaafa08af6c7367f938daecf0983503664e"
+  },
+  "mutated_live_database": false,
+  "limitations": [
+    "This preflight proves startup and planning against an isolated upgraded copy; it does not claim a real generation completed."
+  ]
+}

@@ -3,6 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from local_drama.api.schemas.reviews import (
+    EpisodeRenderBatchReviewCommitRequest,
+    EpisodeRenderBatchReviewCommitResponse,
+    EpisodeRenderBatchReviewPlanRequest,
+    EpisodeRenderBatchReviewPlanResponse,
+    EpisodeRenderReviewRequest,
+    EpisodeRenderReviewResponse,
     MachineCheckRequest,
     ReviewTemplateVersionRequest,
 )
@@ -82,6 +88,73 @@ async def list_reviews(subject_type: str, subject_id: str, request: Request) -> 
     return {"items": service(request).list_reviews(subject_type, subject_id)}
 
 
+@router.post(
+    "/episode-renders/{render_id}/reviews",
+    status_code=201,
+    operation_id="submitEpisodeRenderReview",
+    response_model=EpisodeRenderReviewResponse,
+)
+async def submit_episode_render_review(
+    render_id: str,
+    payload: EpisodeRenderReviewRequest,
+    request: Request,
+) -> dict[str, object]:
+    try:
+        return {
+            "review": service(request).submit_episode_render_review(
+                render_id,
+                payload.template_version_id,
+                payload.decision,
+                payload.expected_subject_revision,
+                [item.model_dump() for item in payload.checks],
+                comment=payload.comment,
+            )
+        }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post(
+    "/projects/{project_id}/episode-render-review-batches:plan",
+    operation_id="planEpisodeRenderReviewBatch",
+    response_model=EpisodeRenderBatchReviewPlanResponse,
+)
+async def plan_episode_render_review_batch(
+    project_id: str,
+    payload: EpisodeRenderBatchReviewPlanRequest,
+    request: Request,
+) -> dict[str, object]:
+    try:
+        return {
+            "plan": service(request).episode_render_batch_review_plan(
+                project_id,
+                [item.model_dump() for item in payload.items],
+            )
+        }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post(
+    "/episode-render-review-batches:commit",
+    operation_id="commitEpisodeRenderReviewBatch",
+    response_model=EpisodeRenderBatchReviewCommitResponse,
+)
+async def commit_episode_render_review_batch(
+    payload: EpisodeRenderBatchReviewCommitRequest,
+    request: Request,
+) -> dict[str, object]:
+    try:
+        return {
+            "commit": service(request).episode_render_batch_review_commit(
+                payload.plan_token,
+                payload.plan_hash,
+            )
+        }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
 @router.post("/subjects/{subject_type}/{subject_id}/machine-checks", status_code=201, operation_id="runMachineCheck")
 async def machine_check(subject_type: str, subject_id: str, payload: MachineCheckRequest, request: Request) -> dict[str, object]:
     try:
@@ -90,4 +163,3 @@ async def machine_check(subject_type: str, subject_id: str, payload: MachineChec
         return {"machine_check": service(request).machine_check(subject_id, payload.policy_version)}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
-

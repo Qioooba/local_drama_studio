@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 
 from local_drama.config import Settings
@@ -24,3 +25,10 @@ def test_machine_config_resolves_f_drive_local_ai_runtime_paths() -> None:
     assert settings.local_ai_python is not None and settings.local_ai_python.is_file()
     assert settings.latentsync_root is not None and settings.latentsync_root.is_dir()
     assert settings.latentsync_python is not None and settings.latentsync_python.is_file()
+
+
+def test_local_ai_text_transport_is_ascii_safe_and_lossless() -> None:
+    source = "有些时间不是为了追回，而是为了好好告别。"
+    encoded = LocalAiSubprocessRuntime._encode_text(source)
+    assert encoded.isascii()
+    assert base64.b64decode(encoded).decode("utf-8") == source

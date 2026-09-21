@@ -174,12 +174,20 @@ class T2IProbePlanService:
                 or not str(source_reference["mime_type"] or "").startswith("image/")
             ):
                 blockers.append("VERIFIED_PROJECT_REFERENCE_IMAGE_REQUIRED")
+        authoring_parameters = workflow_contract.get("authoring_parameters")
+        if not isinstance(authoring_parameters, dict):
+            authoring_parameters = {}
+        width = int(authoring_parameters.get("width") or 0)
+        height = int(authoring_parameters.get("height") or 0)
+        orientation = "landscape" if width > height else "portrait" if height > width else "square"
         semantic_inputs = {
             "PROMPT": CAPABILITY_EVIDENCE_PROMPTS.get(
                 profile_capability,
-                "cinematic vertical drama keyframe, moody practical lighting, high detail",
+                f"cinematic {orientation} drama keyframe, moody practical lighting, high detail",
             ),
             "SEED": 260826,
+            "WIDTH": width,
+            "HEIGHT": height,
             "NEGATIVE_PROMPT": "collage, multiple panels, distorted anatomy, extra limbs, text, watermark",
             "OUTPUT_PREFIX": "local_drama/t2i_profile_probe",
         }
@@ -187,7 +195,7 @@ class T2IProbePlanService:
         if identity_count:
             cast = "exactly one person, alone" if identity_count == 1 else f"exactly {identity_count} people"
             semantic_inputs["PROMPT"] = (
-                f"Create one cinematic vertical frame showing {cast} in a modern office. "
+                f"Create one cinematic {orientation} frame showing {cast} in a modern office. "
                 f"The entire image must contain exactly {identity_count} human figure(s), one per supplied reference image. "
                 "Use only the referenced person or people. No other person, bystander, colleague, background figure, "
                 "reflection of a person, or duplicate is allowed. Preserve each reference person's face, gender, "

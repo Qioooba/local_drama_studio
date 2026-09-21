@@ -68,7 +68,8 @@ class SqliteReviewDecisionCommandRepository:
             row = connection.execute(
                 """SELECT erv.id,NULL AS asset_id,se.project_id,'EPISODE' AS owner_type,
                 erv.episode_id AS owner_id,NULL AS media_kind,'FORMAL' AS stage,
-                erv.integrity_status,erv.revision AS subject_revision,NULL AS approved_version_id
+                erv.integrity_status,erv.revision AS subject_revision,NULL AS approved_version_id,
+                erv.render_kind
                 FROM episode_render_versions erv JOIN episodes e ON e.id=erv.episode_id
                 JOIN seasons se ON se.id=e.season_id WHERE erv.id=?""",
                 (target_id,),
@@ -80,7 +81,7 @@ class SqliteReviewDecisionCommandRepository:
     @staticmethod
     def _expected_template_code(target: dict[str, Any], kind: str) -> str:
         if kind == "EPISODE_RENDER_VERSION":
-            return "episode_render"
+            return "episode_upscale" if str(target.get("render_kind") or "COMPOSE") == "SUPER_RESOLUTION" else "episode_render"
         if str(target["media_kind"]) == "AUDIO":
             return "audio_mix"
         if str(target["media_kind"]) == "VIDEO":

@@ -226,6 +226,7 @@ def test_one_manual_shot_does_not_claim_the_episode_plan_is_complete(
         "status": "QUEUED",
         "episode_id": "episode-1",
         "job_id": "planning-job-1",
+        "job_ownership": "OWNED",
         "shot_count": 0,
     }
     assert captured["kwargs"] == {
@@ -233,6 +234,7 @@ def test_one_manual_shot_does_not_claim_the_episode_plan_is_complete(
         "source_paragraph_start": 1,
         "source_paragraph_end": 3,
         "automatic_apply": True,
+        "actor": "production-session-worker",
     }
 
 

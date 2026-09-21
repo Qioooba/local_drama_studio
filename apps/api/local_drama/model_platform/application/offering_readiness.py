@@ -31,6 +31,8 @@ def supports_installed_smoke(runtime_kind: str, capability_code: str) -> bool:
         return normalized_capability == "EMBEDDING_TEXT"
     if normalized_kind == "COMFYUI":
         return True
+    if normalized_kind == "TOOL_PROCESS":
+        return normalized_capability == "UPSCALE_VIDEO"
     return False
 
 

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
 from local_drama.application.profiles import ProfileService
-from local_drama.application.projects import ProjectService
 from local_drama.application.reviews import ReviewService
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
@@ -31,11 +31,12 @@ class I2VProbePlanService:
         source_media_version_id: str,
         confirm_review_checks: bool,
     ) -> dict[str, Any]:
-        """Create a dedicated, reviewed shot keyframe for the first I2V evidence run.
+        """Create a dedicated, reviewed project keyframe for an I2V evidence run.
 
         The source remains immutable and keeps its original ownership.  A byte-for-byte
-        project-local copy receives explicit SHOT/KEYFRAME ownership so Profile evidence
-        publication never mutates or reinterprets an unrelated media asset.
+        project-local copy receives explicit PROJECT/PROFILE_EVIDENCE_KEYFRAME ownership
+        so Profile evidence publication never mutates an unrelated media asset or adds a
+        synthetic shot to the creator's episode/timeline.
         """
         if self.settings is None:
             raise DomainRuleError("I2V_PROBE_SETTINGS_REQUIRED", "I2V 验证首帧准备缺少本机运行设置")
@@ -57,20 +58,19 @@ class I2VProbePlanService:
         shot_code = "PROFILE_I2V_EVIDENCE_001"
         with self.database.connect() as connection:
             existing = connection.execute(
-                """SELECT mv.id AS media_version_id, ma.owner_id AS shot_id, rd.id AS approval_id
+                """SELECT mv.id AS media_version_id, ma.owner_id, rd.id AS approval_id
                 FROM media_assets ma
                 JOIN media_versions mv ON mv.id=ma.approved_version_id
-                JOIN shots s ON s.id=ma.owner_id
-                JOIN episodes e ON e.id=s.episode_id
-                JOIN seasons se ON se.id=e.season_id
                 JOIN review_decisions rd ON rd.subject_type='MEDIA_VERSION' AND rd.subject_id=mv.id
-                WHERE se.project_id=? AND s.code=? AND ma.owner_type='SHOT' AND ma.purpose='KEYFRAME'
+                WHERE ma.project_id=? AND ma.owner_type='PROJECT' AND ma.owner_id=?
+                AND ma.purpose='PROFILE_EVIDENCE_KEYFRAME'
                 AND ma.media_kind='IMAGE' AND mv.stage='KEYFRAME' AND mv.integrity_status='VERIFIED'
                 AND mv.sha256=? AND rd.decision='APPROVED' AND rd.is_stale=0
                 ORDER BY rd.created_at DESC LIMIT 1""",
-                (project_id, shot_code, str(source["sha256"])),
+                (project_id, project_id, str(source["sha256"])),
             ).fetchone()
         if existing is not None:
+            self._archive_legacy_probe_shots(project_id, shot_code)
             return {
                 "approved_keyframe": {
                     **dict(existing),
@@ -79,23 +79,10 @@ class I2VProbePlanService:
                 }
             }
 
-        projects = ProjectService(self.database, self.settings.projects_root)
-        seasons = projects.list_seasons(project_id)
-        episodes = projects.list_episodes(str(seasons[0]["id"])) if seasons else []
-        if not episodes:
-            raise DomainRuleError("I2V_KEYFRAME_EPISODE_REQUIRED", "项目至少需要一集才能登记验证首帧")
-        episode_id = str(episodes[0]["id"])
-        with self.database.connect() as connection:
-            shot = connection.execute(
-                "SELECT * FROM shots WHERE episode_id=? AND code=? AND archived_at IS NULL",
-                (episode_id, shot_code),
-            ).fetchone()
-        if shot is None:
-            shot = projects.create_shot(episode_id, shot_code, 4_458, "MEDIUM")
-
-        keyframe = media_service.create_keyframe_candidate(
+        keyframe = media_service.create_project_keyframe_candidate(
             source_media_version_id,
-            str(shot["id"]),
+            project_id,
+            purpose="PROFILE_EVIDENCE_KEYFRAME",
             actor="local-user",
         )
         keyframe_id = str(keyframe["media_version_id"])
@@ -119,15 +106,33 @@ class I2VProbePlanService:
             actor="local-user",
         )
         reviews.select_version(keyframe_id, "KEYFRAME", actor="local-user")
+        self._archive_legacy_probe_shots(project_id, shot_code)
         return {
             "approved_keyframe": {
                 "media_version_id": keyframe_id,
-                "shot_id": str(shot["id"]),
+                "owner_id": project_id,
                 "approval_id": str(approval["id"]),
                 "source_media_version_id": source_media_version_id,
                 "reused": False,
             }
         }
+
+    def _archive_legacy_probe_shots(self, project_id: str, shot_code: str) -> None:
+        """Hide probe-only shots created by releases before project-owned evidence.
+
+        Archiving is reversible and keeps all historical media/review lineage intact while
+        preventing the technical probe from extending the episode edit or delivery runtime.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self.database.transaction() as connection:
+            connection.execute(
+                """UPDATE shots SET archived_at=?, updated_at=?, revision=revision+1
+                WHERE code=? AND archived_at IS NULL AND episode_id IN (
+                    SELECT e.id FROM episodes e JOIN seasons s ON s.id=e.season_id
+                    WHERE s.project_id=?
+                )""",
+                (now, now, shot_code, project_id),
+            )
 
     def plan(
         self,
@@ -140,15 +145,16 @@ class I2VProbePlanService:
             if connection.execute("SELECT id FROM projects WHERE id=?", (project_id,)).fetchone() is None:
                 raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
             keyframe = connection.execute(
-                """SELECT mv.id AS media_version_id, mv.sha256, mv.byte_size, ma.owner_id AS shot_id,
+                """SELECT mv.id AS media_version_id, mv.sha256, mv.byte_size, ma.owner_id,
                 rd.id AS approval_id, rd.created_at AS approved_at
                 FROM media_assets ma JOIN media_versions mv ON mv.id=ma.approved_version_id
                 JOIN review_decisions rd ON rd.subject_type='MEDIA_VERSION' AND rd.subject_id=mv.id
-                WHERE ma.project_id=? AND ma.owner_type='SHOT' AND ma.purpose='KEYFRAME'
+                WHERE ma.project_id=? AND ma.owner_type='PROJECT' AND ma.owner_id=?
+                AND ma.purpose='PROFILE_EVIDENCE_KEYFRAME'
                 AND ma.media_kind='IMAGE' AND mv.stage='KEYFRAME' AND mv.integrity_status='VERIFIED'
                 AND rd.decision='APPROVED' AND rd.is_stale=0
                 ORDER BY rd.created_at DESC LIMIT 1""",
-                (project_id,),
+                (project_id, project_id),
             ).fetchone()
             profile = connection.execute(
                 """SELECT * FROM execution_profile_versions
@@ -212,13 +218,17 @@ class I2VProbePlanService:
         required_roles = {"PROMPT", "SEED", "FIRST_FRAME", "OUTPUT_PREFIX"}
         if explicit_profile and selected_workflow is not None and not required_roles.issubset(set(workflow_bindings)):
             blockers.append("WORKFLOW_SEMANTIC_BINDINGS_REQUIRED")
+        authoring_parameters = workflow_contract.get("authoring_parameters")
+        if not isinstance(authoring_parameters, dict):
+            authoring_parameters = {}
         semantic_inputs = {
             "PROMPT": "subtle natural breathing, gentle camera push-in, stable identity and lighting",
             "SEED": 260825,
             "DURATION_SECONDS": 4.458,
-            "ASPECT_RATIO": "9:16",
+            "ASPECT_RATIO": str(authoring_parameters.get("aspect_ratio") or "9:16"),
             "SIGMA_POINTS": 20,
-            "ACCELERATION": "off",
+            "ACCELERATION": str(authoring_parameters.get("acceleration") or "off"),
+            "NATIVE_AUDIO": bool(authoring_parameters.get("native_audio", False)),
             "OUTPUT_PREFIX": "local_drama/i2v_profile_probe",
         }
         if selected_workflow is not None:

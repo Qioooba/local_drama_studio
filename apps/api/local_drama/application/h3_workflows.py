@@ -338,7 +338,7 @@ class H3WorkflowFactory:
         sigma_points: int = 50,
         acceleration: str = "off",
         lora_strength: float = 1.0,
-        native_audio: bool = True,
+        native_audio: bool = False,
         tier: str | None = None,
     ) -> dict[str, Any]:
         """Compile the native MiniMax H3 T2V graph (core comfy_extras nodes).
@@ -407,7 +407,7 @@ class H3WorkflowFactory:
         sigma_points: int = 50,
         acceleration: str = "off",
         lora_strength: float = 1.0,
-        native_audio: bool = True,
+        native_audio: bool = False,
         tier: str | None = None,
     ) -> dict[str, Any]:
         """Compile the native MiniMax H3 first-frame FL2VA graph.
@@ -442,7 +442,7 @@ class H3WorkflowFactory:
             "3": {"class_type": "VAELoader", "inputs": {"vae_name": assets["video_vae_name"]}},
             "4": {"class_type": "VAELoader", "inputs": {"vae_name": assets["audio_vae_name"]}},
             "5": {"class_type": "LoadImage", "inputs": {"image": first_frame}},
-            "6": {"class_type": "ImageScale", "inputs": {"image": ["5", 0], "upscale_method": "lanczos", "width": width, "height": height, "crop": "disabled"}},
+            "6": {"class_type": "ImageScale", "inputs": {"image": ["5", 0], "upscale_method": "lanczos", "width": width, "height": height, "crop": "center"}},
             "7": {"class_type": "MiniMaxH3ImageToVideo", "inputs": {"clip": ["2", 0], "vae": ["3", 0], "prompt": prompt, "width": width, "height": height, "length": length, "first_frame": ["6", 0]}},
             "8": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
             "9": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "res_multistep"}},
@@ -556,7 +556,7 @@ class H3WorkflowFactory:
             "3": {"class_type": "VAELoader", "inputs": {"vae_name": assets["video_vae_name"]}},
             "4": {"class_type": "VAELoader", "inputs": {"vae_name": assets["audio_vae_name"]}},
             "5": {"class_type": "LoadImage", "inputs": {"image": first_frame_media_version_id}},
-            "6": {"class_type": "ImageScale", "inputs": {"image": ["5", 0], "upscale_method": "lanczos", "width": width, "height": height, "crop": "disabled"}},
+            "6": {"class_type": "ImageScale", "inputs": {"image": ["5", 0], "upscale_method": "lanczos", "width": width, "height": height, "crop": "center"}},
             "7": {
                 "class_type": "MiniMaxH3ReferenceToVideo",
                 "inputs": {"clip": ["2", 0], "vae": ["3", 0], "audio_vae": ["4", 0], "prompt": prompt, "width": width, "height": height, "length": length, "ref_image_size": "match", "ref_image_0": ["6", 0]},

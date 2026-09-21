@@ -105,7 +105,14 @@ class EpisodePreparationService:
             "applied_plan_count": applied_plan_count,
         }
 
-    def prepare(self, episode_id: str, *, idempotency_key: str) -> dict[str, Any]:
+    def prepare(
+        self,
+        episode_id: str,
+        *,
+        idempotency_key: str,
+        actor: str = "production-session-worker",
+        application_authority: str = "MACHINE_TEMPORARY",
+    ) -> dict[str, Any]:
         context = self._context(episode_id)
         # A single hand-authored shot is not evidence that the episode plan is
         # complete. Only a previously applied breakdown gives the preparation
@@ -115,7 +122,10 @@ class EpisodePreparationService:
 
         if context["ready_draft_id"]:
             applied = BreakdownApplyService(self.database, self.settings).apply_draft(
-                str(context["ready_draft_id"]), episode_id
+                str(context["ready_draft_id"]),
+                episode_id,
+                actor=actor,
+                application_authority=application_authority,
             )
             return {
                 "status": "APPLIED",
@@ -142,10 +152,12 @@ class EpisodePreparationService:
             source_paragraph_start=start,
             source_paragraph_end=end,
             automatic_apply=True,
+            actor=actor,
         )
         return {
             "status": "QUEUED",
             "episode_id": episode_id,
             "job_id": str(job["id"]),
+            "job_ownership": "REUSED" if bool(job.get("idempotent_replay")) else "OWNED",
             "shot_count": 0,
         }

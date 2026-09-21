@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import unicodedata
 import uuid
 from collections import deque
 from datetime import UTC, datetime
@@ -30,6 +31,7 @@ from local_drama.application.media import _hash_file
 from local_drama.application.ports.timeline import TimelineMediaPort, TimelineUnitOfWork
 from local_drama.application.production_spec_resolution import effective_video_profile
 from local_drama.application.subtitle_styles import DEFAULT_SUBTITLE_STYLE, validate_style
+from local_drama.application.video_upscale.delivery_effects import resolve_delivery_effect_application
 from local_drama.config import Settings
 from local_drama.domain.dialogue_timing import assert_dialogue_timing, dialogue_timing_issues
 from local_drama.domain.errors import DomainRuleError
@@ -65,6 +67,14 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _json_object(value: object) -> dict[str, Any]:
+    try:
+        parsed = json.loads(str(value or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _timestamp_us(value: int) -> str:
     return subtitle_time(value)
 
@@ -79,7 +89,7 @@ _SENTENCE_BREAKS = "。！？；!?;"
 # final muxing must invalidate a previously composed render.  Keep this
 # contract in the immutable render snapshot so the compose fingerprint and
 # durable job identity move together with the implementation.
-RENDERER_CONTRACT = "TIMELINE_SOURCE_COVERAGE_V5"
+RENDERER_CONTRACT = "TIMELINE_CURATED_AUDIO_AND_SUBTITLE_V6"
 
 # FFprobe writes useful diagnostics to stderr, but that text can echo the
 # absolute local path passed to it. Keep the detail useful to an operator
@@ -160,25 +170,52 @@ def split_aligned_cue(
             valid.append((token, start_s, end_s))
     if not valid:
         return []
-    # Alignment tokens are timing evidence only.  Some aligners return ASR
-    # hypotheses, so feeding those tokens back into the cue would silently
-    # replace the authoritative dialogue text and make the subtitle revision
-    # fail its script-authority check.  When the token stream is not exactly
-    # the canonical dialogue (after the shared whitespace normalization),
-    # discard the alignment and let the caller keep one original-text cue.
+    # Alignment tokens are timing evidence only.  Forced aligners commonly
+    # omit punctuation, so compare the spoken characters while allowing only
+    # whitespace and Unicode punctuation to differ.  The cue text below is
+    # projected from the canonical dialogue; ASR hypotheses never replace it.
+    def spoken_characters(value: str) -> str:
+        return "".join(
+            character
+            for character in value
+            if not character.isspace() and not unicodedata.category(character).startswith("P")
+        )
+
     aligned_text, _ = _normalized_text_with_offsets("".join(token for token, _start_s, _end_s in valid))
     canonical_text, _ = _normalized_text_with_offsets(text)
-    if aligned_text != canonical_text:
+    canonical_spoken = spoken_characters(canonical_text)
+    if not canonical_spoken or spoken_characters(aligned_text) != canonical_spoken:
         return []
     audio_end_s = max(end_s for _token, _start_s, end_s in valid)
     scale = media_duration_us / max(1, int(audio_end_s * 1_000_000))
 
+    # Map each timed spoken token onto the matching canonical source span.
+    # Punctuation between two spoken characters belongs to the preceding
+    # token, which preserves source punctuation and lets it drive cue breaks
+    # even when the aligner omitted that punctuation entirely.
     chunks: list[list[tuple[str, float, float]]] = []
     current: list[tuple[str, float, float]] = []
-    for aligned_word in valid:
-        current.append(aligned_word)
+    canonical_offset = 0
+    for token, start_s, end_s in valid:
+        spoken_count = len(spoken_characters(token))
+        if spoken_count == 0:
+            continue
+        remaining = spoken_count
+        end_offset = canonical_offset
+        while end_offset < len(canonical_text) and remaining:
+            character = canonical_text[end_offset]
+            end_offset += 1
+            if spoken_characters(character):
+                remaining -= 1
+        if remaining:
+            return []
+        while end_offset < len(canonical_text) and not spoken_characters(canonical_text[end_offset]):
+            end_offset += 1
+        source_span = canonical_text[canonical_offset:end_offset]
+        canonical_offset = end_offset
+        current.append((source_span, start_s, end_s))
         joined = "".join(item[0] for item in current)
-        ends_sentence = aligned_word[0][-1:] in _SENTENCE_BREAKS
+        ends_sentence = any(character in _SENTENCE_BREAKS for character in source_span)
         if len(joined) >= ALIGNED_CUE_MAX_CHARS or ends_sentence:
             chunks.append(current)
             current = []
@@ -213,7 +250,7 @@ class TimelineService:
     def _episode(self, episode_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             row = connection.execute(
-                """SELECT e.*, s.project_id, p.root_rel FROM episodes e
+                """SELECT e.*, s.project_id, p.root_rel, p.subtitle_mode FROM episodes e
                 JOIN seasons s ON s.id=e.season_id JOIN projects p ON p.id=s.project_id
                 WHERE e.id=?""",
                 (episode_id,),
@@ -222,7 +259,14 @@ class TimelineService:
             raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
         return dict(row)
 
-    def timeline_selections(self, project_id: str, episode_id: str, limit: int = 500) -> dict[str, Any]:
+    def timeline_selections(
+        self,
+        project_id: str,
+        episode_id: str,
+        limit: int = 500,
+        *,
+        production_session_id: str | None = None,
+    ) -> dict[str, Any]:
         """Return bounded timeline inputs without loading the Shot Studio aggregate."""
         bounded_limit = max(1, min(int(limit), 500))
         with self.database.connect() as connection:
@@ -283,8 +327,33 @@ class TimelineService:
                 ORDER BY CAST(s.order_key AS REAL),s.code,s.id LIMIT ?""",
                 (episode_id, bounded_limit),
             ).fetchall()
+        items = [dict(row) for row in rows]
+        if production_session_id:
+            with self.database.connect() as connection:
+                session_choices = {
+                    str(row["shot_id"]): str(row["media_version_id"])
+                    for row in connection.execute(
+                        """SELECT pc.target_id AS shot_id,pc.candidate_id AS media_version_id
+                           FROM production_choices pc
+                           JOIN production_sessions ps ON ps.id=pc.session_id
+                           JOIN production_session_items psi
+                             ON psi.session_id=ps.id AND psi.episode_id=pc.episode_id
+                           JOIN media_versions mv ON mv.id=pc.candidate_id
+                           JOIN media_assets ma ON ma.id=mv.media_asset_id
+                           WHERE pc.session_id=? AND pc.episode_id=?
+                             AND ps.project_id=? AND pc.target_kind='SHOT' AND pc.slot_role='VIDEO'
+                             AND pc.selection_state IN ('TEMPORARY','CONFIRMED')
+                             AND mv.integrity_status='VERIFIED' AND ma.media_kind='VIDEO'""",
+                        (production_session_id, episode_id, project_id),
+                    ).fetchall()
+                }
+            for item in items:
+                session_media_version_id = session_choices.get(str(item["id"]))
+                if session_media_version_id:
+                    item["current_video_media_version_id"] = session_media_version_id
+                    item["video_selection_authority"] = "MACHINE_TEMPORARY"
         return {
-            "items": [dict(row) for row in rows], "total": total,
+            "items": items, "total": total,
             "has_more": total > len(rows), "limit": bounded_limit,
             "read_only": True, "request_shape": "bounded_timeline_selection_read_model",
         }
@@ -556,12 +625,49 @@ class TimelineService:
 
         return align
 
+    @staticmethod
+    def _session_tts_selections(
+        connection: Any,
+        production_session_id: str,
+        episode_id: str,
+    ) -> dict[str, dict[str, Any]]:
+        rows = connection.execute(
+            """SELECT pc.target_id AS dialogue_line_id,pc.id AS selection_id,
+                      tc.dialogue_text_revision_id AS source_text_revision_id,
+                      tc.id AS tts_candidate_id,tc.media_version_id,tc.candidate_kind,
+                      mv.duration_ms,mv.sha256 AS media_sha256,mv.integrity_status
+               FROM production_choices pc
+               JOIN production_sessions ps ON ps.id=pc.session_id
+               JOIN production_session_items psi
+                 ON psi.session_id=ps.id AND psi.episode_id=pc.episode_id
+               JOIN dialogue_lines dl
+                 ON dl.id=pc.target_id AND dl.episode_id=psi.episode_id
+               JOIN tts_candidates tc
+                 ON tc.media_version_id=pc.candidate_id
+                AND tc.dialogue_text_revision_id=(
+                  SELECT latest.id FROM dialogue_text_revisions latest
+                  WHERE latest.dialogue_line_id=dl.id
+                  ORDER BY latest.revision_no DESC,latest.id DESC LIMIT 1)
+               JOIN media_versions mv
+                 ON mv.id=tc.media_version_id AND mv.integrity_status='VERIFIED'
+               JOIN media_assets ma
+                 ON ma.id=mv.media_asset_id
+                AND ma.project_id=ps.project_id AND ma.media_kind='AUDIO'
+               WHERE pc.session_id=? AND pc.episode_id=?
+                 AND pc.target_kind='DIALOGUE_LINE' AND pc.slot_role='TTS_AUDIO'
+                 AND pc.selection_state IN ('TEMPORARY','CONFIRMED')
+               ORDER BY pc.updated_at,pc.id""",
+            (production_session_id, episode_id),
+        ).fetchall()
+        return {str(row["dialogue_line_id"]): dict(row) for row in rows}
+
     def plan_tts_subtitle_draft(
         self,
         episode_id: str,
         *,
         source_document_version_id: str | None = None,
         align_words: bool = False,
+        production_session_id: str | None = None,
     ) -> dict[str, Any]:
         """Build a read-only subtitle draft from current TTS selections.
 
@@ -575,7 +681,7 @@ class TimelineService:
                 "SELECT id,code,order_key,target_duration_ms FROM shots WHERE episode_id=? ORDER BY CAST(order_key AS REAL),code,id",
                 (episode_id,),
             ).fetchall()
-            lines = connection.execute(
+            raw_lines = connection.execute(
                 """SELECT dl.id,dl.code,dl.speaker,dl.shot_id,
                     dtr.id AS text_revision_id,dtr.revision_no AS text_revision_no,dtr.text,dtr.text_hash,
                     dcs.id AS selection_id,dcs.source_text_revision_id,
@@ -599,6 +705,11 @@ class TimelineService:
                     CAST(shot.order_key AS REAL),shot.code,dl.code,dl.id""",
                 (episode_id,),
             ).fetchall()
+            session_tts = (
+                self._session_tts_selections(connection, production_session_id, episode_id)
+                if production_session_id
+                else {}
+            )
             applied_sources = connection.execute(
                 """SELECT DISTINCT draft.source_document_version_id
                 FROM script_breakdown_scene_applications application
@@ -608,6 +719,11 @@ class TimelineService:
                 (episode_id,),
             ).fetchall()
 
+        lines = [dict(row) for row in raw_lines]
+        for row in lines:
+            session_selection = session_tts.get(str(row["id"]))
+            if session_selection:
+                row.update(session_selection)
         source_candidates = [str(row["source_document_version_id"]) for row in applied_sources]
         requested_source = str(source_document_version_id or "").strip()
         resolved_source = requested_source or (source_candidates[0] if len(source_candidates) == 1 else "")
@@ -734,6 +850,7 @@ class TimelineService:
         status = "BLOCKED" if not ready else "PARTIAL" if missing else "READY"
         return {
             "episode_id": episode_id,
+            "production_session_id": production_session_id,
             "status": status,
             "ready_to_load": ready,
             "source_document_version_id": resolved_source or None,
@@ -755,7 +872,11 @@ class TimelineService:
             "mutated": False,
         }
 
-    def _dialogue_selection_rows(self, episode_id: str) -> list[dict[str, Any]]:
+    def _dialogue_selection_rows(
+        self,
+        episode_id: str,
+        production_session_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Bounded dialogue facts for assembly: latest text + latest selection."""
         with self.database.connect() as connection:
             rows = connection.execute(
@@ -780,7 +901,17 @@ class TimelineService:
                 ORDER BY dl.code,dl.id""",
                 (episode_id,),
             ).fetchall()
-        return [dict(row) for row in rows]
+            session_tts = (
+                self._session_tts_selections(connection, production_session_id, episode_id)
+                if production_session_id
+                else {}
+            )
+        result = [dict(row) for row in rows]
+        for row in result:
+            session_selection = session_tts.get(str(row["id"]))
+            if session_selection:
+                row.update(session_selection)
+        return result
 
     def plan_stale_timeline_refresh(self, episode_id: str) -> dict[str, Any]:
         """Recheck current upstream facts before replacing a stale timeline.
@@ -796,6 +927,7 @@ class TimelineService:
         episode_id: str,
         *,
         audio_strategy: str = "EXTERNAL_TTS",
+        production_session_id: str | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         """Create or refresh the frozen timeline from current adopted facts.
@@ -810,15 +942,32 @@ class TimelineService:
             episode_id,
             require_stale_revision=False,
             audio_strategy=audio_strategy,
+            production_session_id=production_session_id,
         )
         if plan["status"] != "READY":
             return {"status": "BLOCKED", "blockers": plan["blockers"], "warnings": plan["warnings"], "mutated": False}
         with self.database.connect() as connection:
             latest = connection.execute(
-                "SELECT id, revision_no, status FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
+                """SELECT id,revision_no,status,input_snapshot_json
+                   FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1""",
                 (episode_id,),
             ).fetchone()
-        if latest is not None and str(latest["status"]).upper() != "STALE":
+        latest_snapshot = _json_object(latest["input_snapshot_json"]) if latest is not None else {}
+        session_choice_fingerprint = _hash(
+            {
+                "selected_videos": plan["selected_videos"],
+                "selected_dialogue": plan["selected_dialogue"],
+                "subtitle_revision_id": plan["subtitle_revision_id"],
+            }
+        )
+        latest_matches_session = bool(
+            production_session_id
+            and str(latest_snapshot.get("production_session_id") or "") == production_session_id
+            and str(latest_snapshot.get("session_choice_fingerprint") or "") == session_choice_fingerprint
+        )
+        if latest is not None and str(latest["status"]).upper() != "STALE" and (
+            not production_session_id or latest_matches_session
+        ):
             return {
                 "status": "SKIPPED",
                 "reason": "TIMELINE_ALREADY_CURRENT",
@@ -836,9 +985,12 @@ class TimelineService:
                 "refreshed_from_timeline_revision_id": source.get("id"),
                 "refreshed_from_timeline_revision_hash": source.get("revision_hash"),
                 "selected_videos": plan["selected_videos"],
+                "selected_dialogue": plan["selected_dialogue"],
                 "audio_binding_ids": plan["audio_binding_ids"],
                 "audio_strategy": plan["audio_strategy"],
                 "subtitle_revision_id": plan["subtitle_revision_id"],
+                "production_session_id": production_session_id,
+                "session_choice_fingerprint": session_choice_fingerprint if production_session_id else None,
                 "requires_human_confirmation": False,
             },
             status="FROZEN",
@@ -847,7 +999,7 @@ class TimelineService:
         with self.database.transaction() as connection:
             connection.execute(
                 "INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json) VALUES (?,'producer','TIMELINE_AUTO_ASSEMBLED','timeline_revision',?,'按当前采用事实自动组装并冻结时间线',?)",
-                (actor, str(revision["id"]), _json({"episode_id": episode_id, "source_timeline_revision_id": source.get("id"), "plan_hash": plan["plan_hash"]})),
+                (actor, str(revision["id"]), _json({"episode_id": episode_id, "source_timeline_revision_id": source.get("id"), "plan_hash": plan["plan_hash"], "production_session_id": production_session_id})),
             )
         return {"status": "CREATED", "timeline": revision, "plan_hash": plan["plan_hash"], "source_timeline_revision_id": source.get("id"), "mutated": True}
 
@@ -857,6 +1009,7 @@ class TimelineService:
         *,
         require_stale_revision: bool,
         audio_strategy: str = "EXTERNAL_TTS",
+        production_session_id: str | None = None,
     ) -> dict[str, Any]:
         """Shared read-only assembly plan for stale refresh and run assembly."""
         audio_strategy = str(audio_strategy).strip().upper()
@@ -872,12 +1025,30 @@ class TimelineService:
                 "SELECT id,revision_no,revision_hash,status FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
                 (episode_id,),
             ).fetchone()
-            subtitle = connection.execute(
-                "SELECT id,revision_no,content_hash,status FROM subtitle_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
-                (episode_id,),
-            ).fetchone()
+            if production_session_id:
+                subtitle = connection.execute(
+                    """SELECT id,revision_no,content_hash,status FROM subtitle_revisions
+                       WHERE episode_id=? AND (
+                         json_extract(input_snapshot_json,'$.production_session_id')=?
+                         OR json_extract(input_snapshot_json,'$.production_session_id') IS NULL)
+                       ORDER BY CASE
+                         WHEN json_extract(input_snapshot_json,'$.production_session_id')=? THEN 0
+                         ELSE 1 END,revision_no DESC,id DESC LIMIT 1""",
+                    (episode_id, production_session_id, production_session_id),
+                ).fetchone()
+            else:
+                subtitle = connection.execute(
+                    """SELECT id,revision_no,content_hash,status FROM subtitle_revisions
+                       WHERE episode_id=?
+                         AND json_extract(input_snapshot_json,'$.production_session_id') IS NULL
+                       ORDER BY revision_no DESC,id DESC LIMIT 1""",
+                    (episode_id,),
+                ).fetchone()
         selections = self.timeline_selections(
-            str(episode["project_id"]), episode_id, limit=500,
+            str(episode["project_id"]),
+            episode_id,
+            limit=500,
+            production_session_id=production_session_id,
         )
         blockers: list[dict[str, Any]] = []
         warnings: list[dict[str, Any]] = []
@@ -962,8 +1133,13 @@ class TimelineService:
                 }
             )
 
-        dialogue_lines = self._dialogue_selection_rows(episode_id) if audio_strategy == "EXTERNAL_TTS" else []
+        dialogue_lines = (
+            self._dialogue_selection_rows(episode_id, production_session_id)
+            if audio_strategy == "EXTERNAL_TTS"
+            else []
+        )
         dialogue_items: list[dict[str, Any]] = []
+        selected_dialogue: list[dict[str, Any]] = []
         dialogue_missing: list[dict[str, Any]] = []
         shot_clip_start_us = {str(item["parameters"]["shot_id"]): int(item["start_us"]) for item in video_items}
         dialogue_cursor: dict[str, int] = {}
@@ -1020,6 +1196,15 @@ class TimelineService:
                     },
                 }
             )
+            selected_dialogue.append(
+                {
+                    "dialogue_line_id": line_id,
+                    "selection_id": str(row["selection_id"]),
+                    "tts_candidate_id": str(row["tts_candidate_id"]),
+                    "media_version_id": str(row["media_version_id"]),
+                    "sha256": str(media["sha256"]),
+                }
+            )
             dialogue_cursor[shot_id] = end_us - shot_clip_start_us[shot_id]
 
         blockers.extend(dialogue_timing_issues([*video_items, *dialogue_items]))
@@ -1047,8 +1232,10 @@ class TimelineService:
         snapshot = {
             "schema_version": "localdrama.timeline-stale-refresh-plan.v1",
             "episode_id": episode_id,
+            "production_session_id": production_session_id,
             "source_timeline": source_timeline,
             "selected_videos": selected_videos,
+            "selected_dialogue": selected_dialogue,
             "audio_bindings": self._binding_snapshot(audio_bindings),
             "subtitle_revision": subtitle_snapshot,
             "audio_strategy": audio_strategy,
@@ -1063,6 +1250,7 @@ class TimelineService:
             "summary": {"shot_count": len(selections["items"]), "video_count": len(video_items), "audio_count": len(audio_items), "dialogue_count": len(dialogue_items), "subtitle_count": 1 if subtitle else 0, "duration_us": cursor_us},
             "items": [*video_items, *audio_items, *dialogue_items],
             "selected_videos": selected_videos,
+            "selected_dialogue": selected_dialogue,
             "audio_binding_ids": [str(binding["id"]) for binding in audio_bindings],
             "audio_strategy": audio_strategy,
             "subtitle_revision_id": str(subtitle["id"]) if subtitle else None,
@@ -1116,6 +1304,7 @@ class TimelineService:
         format: str = "SRT",
         authority: dict[str, Any],
         style: dict[str, Any] | None = None,
+        production_session_id: str | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         episode = self._episode(episode_id)
@@ -1171,6 +1360,9 @@ class TimelineService:
             previous_end = end_us
         authority_snapshot["source_passages"] = source_passages
         authority_snapshot["style"] = revision_style
+        if production_session_id:
+            authority_snapshot["production_session_id"] = production_session_id
+            authority_snapshot["selection_authority"] = "MACHINE_TEMPORARY"
         content = self._render_subtitles(normalized, normalized_format)
         revision_id = str(uuid.uuid4())
         now = _now()
@@ -1192,12 +1384,24 @@ class TimelineService:
                 "INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json) VALUES (?, 'producer', 'SUBTITLE_REVISION_CREATED', 'subtitle_revision', ?, ?, ?)",
                 (actor, revision_id, "创建字幕 revision", _json({"episode_id": episode_id, "format": normalized_format})),
             )
-            connection.execute(
-                """UPDATE timeline_revisions SET status='STALE',updated_at=?
-                WHERE id=(SELECT id FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC,id DESC LIMIT 1)
-                  AND status!='STALE'""",
-                (now, episode_id),
-            )
+            if production_session_id:
+                connection.execute(
+                    """UPDATE timeline_revisions SET status='STALE',updated_at=?
+                       WHERE id=(SELECT id FROM timeline_revisions WHERE episode_id=?
+                         AND json_extract(input_snapshot_json,'$.production_session_id')=?
+                         ORDER BY revision_no DESC,id DESC LIMIT 1)
+                         AND status!='STALE'""",
+                    (now, episode_id, production_session_id),
+                )
+            else:
+                connection.execute(
+                    """UPDATE timeline_revisions SET status='STALE',updated_at=?
+                       WHERE id=(SELECT id FROM timeline_revisions WHERE episode_id=?
+                         AND json_extract(input_snapshot_json,'$.production_session_id') IS NULL
+                         ORDER BY revision_no DESC,id DESC LIMIT 1)
+                         AND status!='STALE'""",
+                    (now, episode_id),
+                )
         return self.get_subtitles(revision_id)
 
     def _subtitle_authority(self, episode: dict[str, Any], authority: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -1997,6 +2201,7 @@ class TimelineService:
             paths.append(path)
             input_snapshot_items.append({"media_version_id": str(media["id"]), "sha256": str(media["sha256"]), "byte_size": int(media["byte_size"]), "start_us": int(item["start_us"]), "end_us": int(item["end_us"]), "track_type": str(item["track_type"]), "parameters": item["parameters"]})
         bindings = self._audio_bindings_for_timeline(timeline, str(episode["id"]))
+        include_source_audio = self._include_source_audio(timeline)
         timeline_duration_us = self._timeline_video_duration_us(video_items)
         input_snapshot = {
             "schema_version": "localdrama.episode-render-input.v1",
@@ -2005,6 +2210,7 @@ class TimelineService:
             "timeline_revision_hash": timeline["revision_hash"],
             "timeline_input_snapshot": timeline["input_snapshot"],
             "timeline_duration_us": timeline_duration_us,
+            "source_audio_policy": "INCLUDE" if include_source_audio else "MUTE",
             "items": input_snapshot_items,
         }
         if production_spec is not None:
@@ -2013,6 +2219,10 @@ class TimelineService:
             if geometry is not None:
                 input_snapshot["geometry"] = geometry
         subtitle = self._subtitle_for_render(timeline, str(episode["id"]))
+        subtitle_mode = str(episode.get("subtitle_mode") or "NONE").upper()
+        subtitle_burned_in = subtitle is not None and subtitle_mode in {"BURN_IN", "BOTH"}
+        input_snapshot["subtitle_mode"] = subtitle_mode
+        input_snapshot["subtitle_burned_in"] = subtitle_burned_in
         if subtitle is not None:
             input_snapshot["subtitle_revision"] = {
                 "id": str(subtitle["id"]),
@@ -2021,8 +2231,8 @@ class TimelineService:
                 "content_hash": str(subtitle["content_hash"]),
                 "status": str(subtitle["status"]),
             }
+        input_snapshot["render_mode"] = self._render_audio_mode(bindings, include_source_audio)
         if bindings:
-            input_snapshot["render_mode"] = "MIXED_AUDIO"
             input_snapshot["audio_bindings"] = self._binding_snapshot(bindings)
         project_root = self.settings.resolve_project_root(str(episode["root_rel"]))
         if not force_rerender:
@@ -2038,8 +2248,9 @@ class TimelineService:
             render_dir,
             render_path,
             video_items=video_items,
-            subtitle=subtitle,
+            subtitle=subtitle if subtitle_burned_in else None,
             production_spec=production_spec,
+            include_source_audio=include_source_audio,
         )
         return self._register_render(episode=episode, timeline_revision_id=timeline_revision_id, timeline=timeline, render_path=render_path, project_root=project_root, input_snapshot=input_snapshot, ffmpeg_execution=execution, actor=actor)
 
@@ -2071,6 +2282,7 @@ class TimelineService:
         if not items:
             raise DomainRuleError("TIMELINE_VIDEO_REQUIRED", "整集渲染至少需要一个 VIDEO item")
         bindings = self._audio_bindings_for_timeline(timeline, str(episode["id"]))
+        include_source_audio = self._include_source_audio(timeline)
         for binding in bindings:
             _, audio_path = self.media.content_path(str(binding["media_version_id"]))
             actual_sha, actual_size = _hash_file(audio_path)
@@ -2083,6 +2295,7 @@ class TimelineService:
             "timeline_revision_hash": timeline["revision_hash"],
             "timeline_input_snapshot": timeline["input_snapshot"],
             "timeline_duration_us": self._timeline_video_duration_us(items),
+            "source_audio_policy": "INCLUDE" if include_source_audio else "MUTE",
             "items": items,
         }
         if production_spec is not None:
@@ -2091,6 +2304,10 @@ class TimelineService:
             if geometry is not None:
                 snapshot["geometry"] = geometry
         subtitle = self._subtitle_for_render(timeline, str(episode["id"]))
+        subtitle_mode = str(episode.get("subtitle_mode") or "NONE").upper()
+        subtitle_burned_in = subtitle is not None and subtitle_mode in {"BURN_IN", "BOTH"}
+        snapshot["subtitle_mode"] = subtitle_mode
+        snapshot["subtitle_burned_in"] = subtitle_burned_in
         if subtitle is not None:
             snapshot["subtitle_revision"] = {
                 "id": str(subtitle["id"]),
@@ -2099,8 +2316,8 @@ class TimelineService:
                 "content_hash": str(subtitle["content_hash"]),
                 "status": str(subtitle["status"]),
             }
+        snapshot["render_mode"] = self._render_audio_mode(bindings, include_source_audio)
         if bindings:
-            snapshot["render_mode"] = "MIXED_AUDIO"
             snapshot["audio_bindings"] = self._binding_snapshot(bindings)
         project_root = self.settings.resolve_project_root(str(episode["root_rel"]))
         existing = self._existing_render(timeline_revision_id, snapshot, project_root)
@@ -2144,11 +2361,13 @@ class TimelineService:
         ]
         timeline_duration_us = self._timeline_video_duration_us(timeline_video_items)
         bindings = self._audio_bindings_for_timeline(timeline, str(episode["id"]))
+        include_source_audio = self._include_source_audio(timeline)
         input_snapshot = {
             "schema_version": "localdrama.episode-render-input.v1",
             "renderer_contract": RENDERER_CONTRACT,
-            "render_mode": "SEGMENTED_CONCAT",
+            "render_mode": f"SEGMENTED_{self._render_audio_mode(bindings, include_source_audio)}",
             "timeline_duration_us": timeline_duration_us,
+            "source_audio_policy": "INCLUDE" if include_source_audio else "MUTE",
             "segments": snapshot_items,
             "timeline_revision_id": timeline_revision_id,
             "timeline_revision_hash": timeline["revision_hash"],
@@ -2162,6 +2381,16 @@ class TimelineService:
                 input_snapshot["geometry"] = geometry
         if bindings:
             input_snapshot["audio_bindings"] = self._binding_snapshot(bindings)
+        subtitle = self._subtitle_for_render(timeline, str(episode["id"]))
+        subtitle_mode = str(episode.get("subtitle_mode") or "NONE").upper()
+        input_snapshot["subtitle_mode"] = subtitle_mode
+        input_snapshot["subtitle_burned_in"] = subtitle is not None and subtitle_mode in {"BURN_IN", "BOTH"}
+        if subtitle is not None:
+            input_snapshot["subtitle_revision"] = {
+                "id": str(subtitle["id"]), "revision_no": int(subtitle["revision_no"]),
+                "format": str(subtitle["format"]), "content_hash": str(subtitle["content_hash"]),
+                "status": str(subtitle["status"]),
+            }
         project_root = self.settings.resolve_project_root(str(episode["root_rel"]))
         existing = self._existing_render(timeline_revision_id, input_snapshot, project_root)
         return {
@@ -2228,11 +2457,13 @@ class TimelineService:
         ]
         timeline_duration_us = self._timeline_video_duration_us(timeline_video_items)
         bindings = self._audio_bindings_for_timeline(timeline, str(episode["id"]))
+        include_source_audio = self._include_source_audio(timeline)
         input_snapshot = {
             "schema_version": "localdrama.episode-render-input.v1",
             "renderer_contract": RENDERER_CONTRACT,
-            "render_mode": "SEGMENTED_CONCAT",
+            "render_mode": f"SEGMENTED_{self._render_audio_mode(bindings, include_source_audio)}",
             "timeline_duration_us": timeline_duration_us,
+            "source_audio_policy": "INCLUDE" if include_source_audio else "MUTE",
             "segments": input_snapshot_items,
             "timeline_revision_id": timeline_revision_id,
             "timeline_revision_hash": timeline["revision_hash"],
@@ -2246,6 +2477,17 @@ class TimelineService:
                 input_snapshot["geometry"] = geometry
         if bindings:
             input_snapshot["audio_bindings"] = self._binding_snapshot(bindings)
+        subtitle = self._subtitle_for_render(timeline, str(episode["id"]))
+        subtitle_mode = str(episode.get("subtitle_mode") or "NONE").upper()
+        subtitle_burned_in = subtitle is not None and subtitle_mode in {"BURN_IN", "BOTH"}
+        input_snapshot["subtitle_mode"] = subtitle_mode
+        input_snapshot["subtitle_burned_in"] = subtitle_burned_in
+        if subtitle is not None:
+            input_snapshot["subtitle_revision"] = {
+                "id": str(subtitle["id"]), "revision_no": int(subtitle["revision_no"]),
+                "format": str(subtitle["format"]), "content_hash": str(subtitle["content_hash"]),
+                "status": str(subtitle["status"]),
+            }
         project_root = self.settings.resolve_project_root(str(episode["root_rel"]))
         if not force_rerender:
             existing = self._existing_render(timeline_revision_id, input_snapshot, project_root)
@@ -2260,7 +2502,9 @@ class TimelineService:
             render_dir,
             render_path,
             target_duration_seconds=timeline_duration_us / 1_000_000,
+            subtitle=subtitle if subtitle_burned_in else None,
             production_spec=production_spec,
+            include_source_audio=include_source_audio,
         )
         return self._register_render(episode=episode, timeline_revision_id=timeline_revision_id, timeline=timeline, render_path=render_path, project_root=project_root, input_snapshot=input_snapshot, ffmpeg_execution=execution, actor=actor)
 
@@ -2287,7 +2531,7 @@ class TimelineService:
         with self.database.connect() as connection:
             rows = connection.execute(
                 """SELECT * FROM episode_render_versions
-                WHERE timeline_revision_id=? AND integrity_status='VERIFIED'
+                WHERE timeline_revision_id=? AND render_kind='COMPOSE' AND integrity_status='VERIFIED'
                 ORDER BY created_at DESC,id DESC LIMIT 20""", (timeline_revision_id,),
             ).fetchall()
         for row in rows:
@@ -2405,6 +2649,18 @@ class TimelineService:
             )
         return subtitle
 
+    @staticmethod
+    def _include_source_audio(timeline: dict[str, Any]) -> bool:
+        """Source-model sound is opt-in because it can contain unscripted speech."""
+        snapshot = timeline.get("input_snapshot")
+        return bool(snapshot.get("include_source_audio", False)) if isinstance(snapshot, dict) else False
+
+    @staticmethod
+    def _render_audio_mode(bindings: list[dict[str, Any]], include_source_audio: bool) -> str:
+        if include_source_audio:
+            return "MIXED_AUDIO" if bindings else "SOURCE_AUDIO"
+        return "CURATED_AUDIO" if bindings else "SILENT_AUDIO"
+
     def _subtitle_for_render_snapshot(self, snapshot: dict[str, Any], episode_id: str) -> dict[str, Any] | None:
         """Resolve the immutable subtitle revision carried by a render snapshot.
 
@@ -2432,6 +2688,47 @@ class TimelineService:
                 {"subtitle_revision_id": subtitle_revision_id},
             )
         return subtitle
+
+    def _audio_for_render_snapshot(self, snapshot: dict[str, Any], episode_id: str) -> list[dict[str, Any]]:
+        """Return the audio identities frozen into the selected render.
+
+        Super-resolution renders carry the parent compose snapshot under
+        ``input_snapshot``.  Delivery must never replace those bindings with
+        whichever mutable mix happens to be active when packaging runs.
+        Historical renders without an audio snapshot retain the legacy lookup.
+        """
+
+        frozen = snapshot.get("input_snapshot") if isinstance(snapshot.get("input_snapshot"), dict) else snapshot
+        raw_bindings = frozen.get("audio_bindings") if isinstance(frozen, dict) else None
+        if not isinstance(raw_bindings, list):
+            raw_bindings = self._binding_snapshot(self._audio_bindings_for_render(episode_id))
+        binding_ids = [str(item.get("id") or "") for item in raw_bindings if isinstance(item, dict) and item.get("id")]
+        evidence_by_id: dict[str, dict[str, Any]] = {}
+        if binding_ids:
+            placeholders = ",".join("?" for _ in binding_ids)
+            with self.database.connect() as connection:
+                rows = connection.execute(
+                    f"""SELECT id,media_version_id,source_license_status,license_evidence_json
+                    FROM audio_bindings WHERE episode_id=? AND id IN ({placeholders})""",
+                    (episode_id, *binding_ids),
+                ).fetchall()
+            evidence_by_id = {str(row["id"]): dict(row) for row in rows}
+        result: list[dict[str, Any]] = []
+        for raw in raw_bindings:
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            evidence = evidence_by_id.get(str(item.get("id") or ""))
+            evidence_matches = bool(evidence and str(evidence["media_version_id"]) == str(item.get("media_version_id") or ""))
+            if evidence_matches and evidence is not None:
+                item["source_license_status"] = str(evidence["source_license_status"])
+                item["license_evidence"] = json.loads(str(evidence["license_evidence_json"] or "{}"))
+            else:
+                item["source_license_status"] = "FROZEN_EVIDENCE_UNAVAILABLE"
+                item["license_evidence"] = {}
+            item["identity_source"] = "FROZEN_RENDER_SNAPSHOT"
+            result.append(item)
+        return result
 
     @staticmethod
     def _timeline_video_duration_us(video_items: list[dict[str, Any]]) -> int:
@@ -2784,13 +3081,13 @@ class TimelineService:
         target_duration_seconds: float | None = None,
         subtitle: dict[str, Any] | None = None,
         production_spec: dict[str, Any] | None = None,
+        include_source_audio: bool = False,
     ) -> dict[str, Any]:
-        """Concat videos and, when bindings exist, mix + mux the audio tracks.
+        """Concat video, apply subtitle/geometry, then enforce audio policy.
 
-        Without bindings the concat output IS the final render (identical
-        command and artifact to the historical single-pass render).  With
-        bindings the concat goes to a partial file, the audio is mixed and the
-        final mp4 is muxed with the mixed track.
+        Source audio is preserved only when explicitly opted in. Otherwise a
+        curated binding mix—or a standards-compliant silent track—is muxed so
+        model-generated speech cannot leak into the episode by default.
         """
         if video_items is not None:
             target_duration_seconds = self._timeline_video_duration_us(video_items) / 1_000_000
@@ -2802,7 +3099,7 @@ class TimelineService:
             and isinstance(production_spec.get("generation"), dict)
             and str(production_spec["generation"].get("mode")) == "UPSCALE_COMPOSE"
         )
-        if not bindings and not subtitle and video_items is None and not needs_upscale:
+        if include_source_audio and not bindings and not subtitle and video_items is None and not needs_upscale:
             return self._concat_videos(paths, render_path, duration_seconds=target_duration_seconds)
         concat_out = render_dir / f".partial-{uuid.uuid4().hex}.mp4"
         concat_execution = (
@@ -2829,8 +3126,12 @@ class TimelineService:
             video_duration = target_duration_seconds if target_duration_seconds is not None else observed_duration
             if video_duration <= 0:
                 raise DomainRuleError("RENDER_DURATION_INVALID", "整集渲染时长无效，无法混音")
-            if bindings:
-                mix_execution = self._mix_audio(current_video, bindings, mixed_wav, video_duration)
+            needs_audio_remix = bool(bindings) or not include_source_audio
+            if needs_audio_remix:
+                mix_execution = self._mix_audio(
+                    current_video, bindings, mixed_wav, video_duration,
+                    include_source_audio=include_source_audio,
+                )
                 mux_args = ["-i", str(current_video), "-i", str(mixed_wav), "-map", "0:v:0", "-map", "1:a:0", "-t", f"{video_duration:.6f}", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-y", str(render_path)]
                 mux_execution = self._run_ffmpeg(mux_args, timeout=900)
             else:
@@ -2933,8 +3234,16 @@ class TimelineService:
             timeout=900,
         )
 
-    def _mix_audio(self, video_path: Path, bindings: list[dict[str, Any]], output_path: Path, video_duration_seconds: float) -> dict[str, Any]:
-        """Build one mixed audio stream: the video's own audio plus every binding.
+    def _mix_audio(
+        self,
+        video_path: Path,
+        bindings: list[dict[str, Any]],
+        output_path: Path,
+        video_duration_seconds: float,
+        *,
+        include_source_audio: bool = False,
+    ) -> dict[str, Any]:
+        """Build one deliberate audio stream from opted-in source audio and bindings.
 
         Each binding is placed at its ``start_us`` with ``adelay``, ``gain_db``
         applied as linear volume, optional loop (``atrim`` to the binding
@@ -2948,7 +3257,7 @@ class TimelineService:
         chains: list[str] = []
         mix_inputs: list[str] = []
         input_index = 0
-        if video_has_audio:
+        if include_source_audio and video_has_audio:
             args += ["-i", str(video_path)]
             chains.append("[0:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[vid_a]")
             mix_inputs.append("[vid_a]")
@@ -2966,7 +3275,13 @@ class TimelineService:
             gain_db = float(binding.get("gain_db") or 0.0)
             fade_in_s = int(binding.get("fade_in_us") or 0) / 1_000_000
             fade_out_s = int(binding.get("fade_out_us") or 0) / 1_000_000
-            chain = f"[{input_index}:a]volume={10 ** (gain_db / 20):.6f}"
+            chain = f"[{input_index}:a]"
+            if str(binding.get("track_type") or "").upper() == "DIALOGUE":
+                # TTS candidates can differ materially in recording level.
+                # Normalize each spoken line before user gain and the final mix
+                # so a quiet line remains intelligible beside BGM and other TTS.
+                chain += "loudnorm=I=-18:TP=-3:LRA=7,"
+            chain += f"volume={10 ** (gain_db / 20):.6f}"
             if fade_in_s > 0:
                 chain += f",afade=t=in:st=0:d={fade_in_s:.3f}"
             if fade_out_s > 0:
@@ -2977,6 +3292,10 @@ class TimelineService:
             chains.append(chain)
             mix_inputs.append(f"[a{index}]")
             input_index += 1
+        if not mix_inputs:
+            args += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
+            chains.append(f"[{input_index}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[silence]")
+            mix_inputs.append("[silence]")
         filter_complex = (
             ";".join(chains)
             + f";{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:duration=longest:normalize=0[mix]"
@@ -3104,7 +3423,7 @@ class TimelineService:
         )
         return destination, mime
 
-    def build_delivery(self, episode_render_version_id: str, target_version_id: str, brand_kit_id: str | None = None, watermark_profile_id: str | None = None, compliance_policy_id: str | None = None, *, actor: str = "local-user") -> dict[str, Any]:
+    def build_delivery(self, episode_render_version_id: str, target_version_id: str, brand_kit_id: str | None = None, watermark_profile_id: str | None = None, compliance_policy_id: str | None = None, *, actor: str = "local-user", operation_id: str | None = None, allow_inactive_target: bool = False) -> dict[str, Any]:
         with self.database.connect() as connection:
             render = connection.execute("SELECT erv.*, e.code AS episode_code, e.id AS episode_id, s.project_id, p.root_rel FROM episode_render_versions erv JOIN episodes e ON e.id=erv.episode_id JOIN seasons s ON s.id=e.season_id JOIN projects p ON p.id=s.project_id WHERE erv.id=?", (episode_render_version_id,)).fetchone()
             target = connection.execute("SELECT dtv.*, dt.project_id, dt.transport, dt.code AS target_code, dt.title AS target_title FROM delivery_target_versions dtv JOIN delivery_targets dt ON dt.id=dtv.delivery_target_id WHERE dtv.id=?", (target_version_id,)).fetchone()
@@ -3126,7 +3445,11 @@ class TimelineService:
         # this check identical to the queued delivery preflight so direct and
         # background submissions cannot disagree about the eligible render.
         with self.database.connect() as connection:
-            require_latest_episode_render_approval(connection, dict(render))
+            require_latest_episode_render_approval(
+                connection,
+                dict(render),
+                target_version_id=target_version_id,
+            )
         with self.database.connect() as connection:
             brand = None if explicit_no_brand else connection.execute("SELECT * FROM brand_kits WHERE id=? AND project_id=? AND status='ACTIVE'", (brand_kit_id, project_id)).fetchone() if brand_kit_id else connection.execute("SELECT * FROM brand_kits WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC LIMIT 1", (project_id,)).fetchone()
             watermark = None if explicit_no_watermark else connection.execute("SELECT * FROM watermark_profiles WHERE id=? AND project_id=? AND status='ACTIVE'", (watermark_profile_id, project_id)).fetchone() if watermark_profile_id else connection.execute("SELECT * FROM watermark_profiles WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC LIMIT 1", (project_id,)).fetchone()
@@ -3157,6 +3480,32 @@ class TimelineService:
         spec = json.loads(target["target_spec_json"])
         if not isinstance(spec, dict):
             raise DomainRuleError("DELIVERY_TARGET_SPEC_INVALID", "交付目标 spec 必须是对象")
+        if str(render["render_kind"] or "COMPOSE") == "SUPER_RESOLUTION":
+            render_stream: dict[str, Any] = next(
+                (stream for stream in probe.get("streams", []) if stream.get("codec_type") == "video"),
+                {},
+            )
+            target_width = int(spec.get("width") or 0)
+            target_height = int(spec.get("height") or 0)
+            if target_width <= 0 or target_height <= 0:
+                raise DomainRuleError(
+                    "DELIVERY_TARGET_SPEC_INCOMPLETE",
+                    "超分成片交付目标必须显式冻结 width 和 height",
+                )
+            if (
+                int(render_stream.get("width") or 0) != target_width
+                or int(render_stream.get("height") or 0) != target_height
+            ):
+                raise DomainRuleError(
+                    "DELIVERY_TARGET_GEOMETRY_MISMATCH",
+                    "已采用超分成片与交付目标像素不一致，系统不会静默缩放",
+                    {
+                        "render_width": int(render_stream.get("width") or 0),
+                        "render_height": int(render_stream.get("height") or 0),
+                        "target_width": target_width,
+                        "target_height": target_height,
+                    },
+                )
         subtitle_mode = str(spec.get("subtitles") or "NONE").upper()
         if subtitle_mode not in {"NONE", "SIDECAR", "BURN_IN", "BOTH"}:
             raise DomainRuleError("DELIVERY_SUBTITLE_MODE_INVALID", "交付目标 subtitles 必须是 NONE/SIDECAR/BURN_IN/BOTH")
@@ -3164,7 +3513,7 @@ class TimelineService:
         if not isinstance(path_value, str) or not path_value.strip():
             raise DomainRuleError("DELIVERY_TARGET_SPEC_INCOMPLETE", "交付目标必须显式指定项目内 path_rel")
         path_rel = canonical_relative_path(path_value, code="INVALID_DELIVERY_TARGET")
-        if str(target["status"]) != "ACTIVE":
+        if str(target["status"]) != "ACTIVE" and not allow_inactive_target:
             raise DomainRuleError("DELIVERY_TARGET_VERSION_INACTIVE", "只能使用当前 ACTIVE 的交付目标版本创建新候选")
         project_root = self.settings.resolve_project_root(str(render["root_rel"]))
         source = controlled_path(
@@ -3180,7 +3529,21 @@ class TimelineService:
         timeline_input = json.loads(str(render["input_snapshot_json"] or "{}"))
         if not isinstance(timeline_input, dict):
             raise DomainRuleError("DELIVERY_RENDER_SNAPSHOT_INVALID", "整集渲染输入快照格式无效")
+        effect_application = resolve_delivery_effect_application(
+            input_snapshot=timeline_input,
+            target_spec=spec,
+            watermark_snapshot=watermark_snapshot,
+        )
         subtitle = self._subtitle_for_render_snapshot(timeline_input, str(render["episode_id"]))
+        subtitle_burned_in = bool(timeline_input.get("subtitle_burned_in", False))
+        if subtitle_mode in {"BURN_IN", "BOTH"}:
+            if subtitle is None:
+                raise DomainRuleError("DELIVERY_SUBTITLE_REQUIRED", "当前交付目标要求烧录字幕，但冻结成片没有字幕 revision")
+            if not subtitle_burned_in:
+                raise DomainRuleError(
+                    "DELIVERY_BURNED_SUBTITLE_REQUIRED",
+                    "当前交付目标要求烧录字幕，但该成片快照未证明字幕已烧录；请重新合成",
+                )
         subtitle_sidecar_content: str | None = None
         subtitle_sidecar_extension: str | None = None
         if subtitle_mode in {"SIDECAR", "BOTH"}:
@@ -3197,7 +3560,38 @@ class TimelineService:
             content_hash = hashlib.sha256(subtitle_sidecar_content.encode("utf-8")).hexdigest()
             if not hmac.compare_digest(content_hash, str(subtitle.get("content_hash") or "")):
                 raise DomainRuleError("DELIVERY_SUBTITLE_INTEGRITY_FAILED", "冻结字幕 revision 的内容 hash 与 cue 渲染结果不一致", {"subtitle_revision_id": str(subtitle["id"])})
-        package_id = str(uuid.uuid4())
+        package_id = operation_id or str(uuid.uuid4())
+        if operation_id:
+            with self.database.connect() as connection:
+                existing_package = connection.execute(
+                    """SELECT id,episode_render_version_id,target_version_id,brand_kit_id,
+                    watermark_profile_id,compliance_policy_id,rel_path
+                    FROM delivery_packages WHERE id=?""",
+                    (package_id,),
+                ).fetchone()
+            if existing_package is not None:
+                expected_controls = (brand["id"] if brand else None, watermark["id"] if watermark else None, compliance["id"] if compliance else None)
+                actual_controls = (
+                    existing_package["brand_kit_id"],
+                    existing_package["watermark_profile_id"],
+                    existing_package["compliance_policy_id"],
+                )
+                if (
+                    str(existing_package["episode_render_version_id"]) != episode_render_version_id
+                    or str(existing_package["target_version_id"]) != target_version_id
+                    or actual_controls != expected_controls
+                ):
+                    raise DomainRuleError(
+                        "DELIVERY_OPERATION_ID_CONFLICT",
+                        "交付操作标识已绑定到不同的冻结输入，不能复用",
+                    )
+                marker = controlled_path(
+                    project_root,
+                    str(existing_package["rel_path"]),
+                    code="DELIVERY_FILE_INVALID",
+                ) / ".local-drama-delivery-build.json"
+                marker.unlink(missing_ok=True)
+                return self.get_delivery_package(package_id)
         delivery_parent = controlled_path(project_root, path_rel, code="INVALID_DELIVERY_TARGET")
         episode_code = canonical_relative_path(str(render["episode_code"]), code="INVALID_EPISODE_CODE")
         if "/" in episode_code:
@@ -3217,17 +3611,61 @@ class TimelineService:
                 f"{episode_code}/delivery-{package_id}",
                 code="PATH_ESCAPE",
             )
+        recovery_dir = destination_dir.with_name(f".{destination_dir.name}.recovery-{package_id}")
+        if operation_id and recovery_dir.exists():
+            shutil.rmtree(recovery_dir)
         if destination_dir.exists():
-            raise DomainRuleError("DELIVERY_DESTINATION_OCCUPIED", "交付目标目录已存在，系统不会覆盖既有文件")
+            recovery_marker = destination_dir / ".local-drama-delivery-build.json"
+            expected_marker = {
+                "schema_version": "localdrama.delivery-build-publish.v1",
+                "operation_id": operation_id,
+                "episode_render_version_id": episode_render_version_id,
+                "target_version_id": target_version_id,
+            }
+            marker_matches = False
+            if operation_id and recovery_marker.is_file():
+                try:
+                    marker_matches = json.loads(recovery_marker.read_text(encoding="utf-8")) == expected_marker
+                except (OSError, ValueError, TypeError):
+                    marker_matches = False
+            if not marker_matches:
+                raise DomainRuleError("DELIVERY_DESTINATION_OCCUPIED", "交付目标目录已存在，系统不会覆盖既有文件")
+            # A prior process published this exact operation but died before
+            # the database transaction committed.  Only its marker authorizes
+            # removal; unrelated or historical delivery directories remain
+            # strictly immutable.
+            destination_dir.rename(recovery_dir)
+            shutil.rmtree(recovery_dir)
         partial_dir = destination_dir.with_name(f".{destination_dir.name}.partial-{package_id}")
+        if operation_id and partial_dir.exists():
+            shutil.rmtree(partial_dir)
         destination_dir.parent.mkdir(parents=True, exist_ok=True)
         partial_dir.mkdir(parents=True, exist_ok=False)
+        publish_marker = partial_dir / ".local-drama-delivery-build.json"
+        if operation_id:
+            publish_marker.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "localdrama.delivery-build-publish.v1",
+                        "operation_id": operation_id,
+                        "episode_render_version_id": episode_render_version_id,
+                        "target_version_id": target_version_id,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
         destination = destination_dir / f"{episode_code}.mp4"
         partial_output = partial_dir / f"{episode_code}.mp4"
         partial_subtitle = partial_dir / f"{episode_code}.{subtitle_sidecar_extension}" if subtitle_sidecar_content is not None and subtitle_sidecar_extension is not None else None
         watermark_text_path = partial_dir / f"{episode_code}.watermark.txt"
         try:
-            if watermark_config and bool(watermark_config.get("enabled", True)):
+            if (
+                watermark_config
+                and bool(watermark_config.get("enabled", True))
+                and effect_application["watermark"]["action"] == "APPLY"
+            ):
                 watermark_text_path.write_text(str(watermark_config["text"]), encoding="utf-8")
                 margin = int(watermark_config["margin"])
                 position = str(watermark_config["position"])
@@ -3246,6 +3684,20 @@ class TimelineService:
                 # Write the immutable frozen cue output before the directory is
                 # atomically published, keeping the MP4 and sidecar together.
                 partial_subtitle.write_bytes(subtitle_sidecar_content.encode("utf-8"))
+            actual_delivery_probe = self._probe(partial_output)
+            actual_delivery_stream: dict[str, Any] = next(
+                (
+                    stream
+                    for stream in actual_delivery_probe.get("streams", [])
+                    if stream.get("codec_type") == "video"
+                ),
+                {},
+            )
+            if str(render["render_kind"] or "COMPOSE") == "SUPER_RESOLUTION" and (
+                int(actual_delivery_stream.get("width") or 0) != int(spec["width"])
+                or int(actual_delivery_stream.get("height") or 0) != int(spec["height"])
+            ):
+                raise DomainRuleError("DELIVERY_OUTPUT_GEOMETRY_MISMATCH", "正式交付文件实际像素与目标不一致")
             # The directory itself is published atomically only after the
             # render has been copied/transcoded successfully.
             replace_path(partial_dir, destination_dir)
@@ -3282,16 +3734,8 @@ class TimelineService:
                 "byte_size": subtitle_size,
             }
             delivery_manifest_files.append(subtitle_sidecar_file)
-        with self.database.connect() as connection:
-            audio_rows = connection.execute(
-                """SELECT ab.id, ab.media_version_id, ab.track_type, ab.start_us, ab.end_us,
-                ab.source_license_status, ab.license_evidence_json, mv.sha256, mv.byte_size
-                FROM audio_bindings ab JOIN media_versions mv ON mv.id=ab.media_version_id
-                WHERE ab.episode_id=? ORDER BY ab.start_us, ab.id""",
-                (render["episode_id"],),
-            ).fetchall()
         subtitle_snapshot = ({"id": str(subtitle["id"]), "revision_no": int(subtitle["revision_no"]), "format": str(subtitle["format"]), "content_hash": str(subtitle["content_hash"]), "status": str(subtitle["status"]), "delivery_mode": subtitle_mode, "sidecar": subtitle_sidecar_file} if subtitle else None)
-        audio_snapshot = [{"id": str(row["id"]), "media_version_id": str(row["media_version_id"]), "track_type": str(row["track_type"]), "start_us": int(row["start_us"]), "end_us": int(row["end_us"]), "source_license_status": str(row["source_license_status"]), "license_evidence": json.loads(str(row["license_evidence_json"] or "{}")), "sha256": str(row["sha256"]), "byte_size": int(row["byte_size"])} for row in audio_rows]
+        audio_snapshot = self._audio_for_render_snapshot(timeline_input, str(render["episode_id"]))
         target_spec = spec
         manifest = {
             "schema_version": "delivery-manifest.v3",
@@ -3301,12 +3745,25 @@ class TimelineService:
             "target": {"target_version_id": target_version_id, "target_code": str(target["target_code"]), "target_title": str(target["target_title"]), "version_no": int(target["version_no"]), "transport": str(target["transport"]), "spec": target_spec},
             "encoding": {"render_mime_type": str(render["mime_type"] or "video/mp4"), "probe": probe, "target": {key: target_spec.get(key) for key in ("width", "height", "fps", "bitrate", "video_codec", "audio_codec") if key in target_spec}},
             "subtitles": subtitle_snapshot,
+            "audio": {"bindings": audio_snapshot, "identity_source": "FROZEN_RENDER_SNAPSHOT"},
             "cover": {"status": "NOT_SELECTED", "media_version_id": None},
             "licenses": {"audio": [{"media_version_id": item["media_version_id"], "status": item["source_license_status"], "evidence": item["license_evidence"]} for item in audio_snapshot], "model": "USER_SUPPLIED_LOCAL_REFERENCE_ONLY"},
-            "controls": {"brand_kit": brand_snapshot, "watermark_profile": watermark_snapshot, "compliance_policy": compliance_snapshot, "machine_preflight": machine_preflight},
+            "controls": {"brand_kit": brand_snapshot, "watermark_profile": watermark_snapshot, "compliance_policy": compliance_snapshot, "machine_preflight": machine_preflight, "effect_application": effect_application},
             "review_responsibility": {"machine_preflight": "PASS", "human_review": "PENDING", "platform_review": "PENDING"},
             "files": delivery_manifest_files,
         }
+        if str(render["render_kind"] or "COMPOSE") == "SUPER_RESOLUTION":
+            manifest["derivation"] = {
+                "render_kind": "SUPER_RESOLUTION",
+                "root_compose_render_id": str(render["parent_render_version_id"]),
+                "upscale_run_id": str(render["upscale_run_id"]),
+                "derivation_fingerprint": str(render["derivation_fingerprint"]),
+                "source_descriptor": timeline_input.get("source_descriptor"),
+                "applied_effects": timeline_input.get("applied_effects"),
+                "execution_snapshot_id": timeline_input.get("execution_snapshot_id"),
+                "output_geometry": timeline_input.get("geometry"),
+                "actual_delivery_probe": actual_delivery_probe,
+            }
         manifest_hash = _hash(manifest)
         manifest_path = destination_dir / "manifest.json"
         manifest_path.write_text(json.dumps({**manifest, "manifest_sha256": manifest_hash}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -3320,6 +3777,7 @@ class TimelineService:
                 )
             connection.execute("INSERT INTO delivery_files (id, delivery_package_id, rel_path, sha256, byte_size) VALUES (?, ?, ?, ?, ?)", (str(uuid.uuid4()), package_id, manifest_path.relative_to(project_root).as_posix(), hashlib.sha256(manifest_path.read_bytes()).hexdigest(), manifest_path.stat().st_size))
             connection.execute("INSERT INTO delivery_events (id, delivery_package_id, action, manifest_sha256, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'BUILT', ?, ?, ?, ?, ?, 1, 'v3')", (str(uuid.uuid4()), package_id, manifest_hash, "local filesystem delivery built; machine preflight PASS; human/platform review remains separate", now, now, actor))
+        (destination_dir / ".local-drama-delivery-build.json").unlink(missing_ok=True)
         return {"id": package_id, "status": "VERIFIED", "rel_path": destination_dir.relative_to(project_root).as_posix(), "manifest_sha256": manifest_hash, "files": manifest["files"], "controls": manifest["controls"], "machine_preflight": machine_preflight, "human_review_status": "PENDING", "platform_review_status": "PENDING"}
 
     def _delivery_package_row(self, package_id: str) -> Any:

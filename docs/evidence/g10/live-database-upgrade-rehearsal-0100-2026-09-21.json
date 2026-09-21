@@ -1,0 +1,119 @@
+{
+  "checks": {
+    "all_session_tables_created": true,
+    "copy_integrity_ok": true,
+    "copy_reached_expected_head": true,
+    "core_row_counts_equal": true,
+    "live_api_healthy_after_rehearsal": true,
+    "maintenance_passed": true,
+    "source_head_unchanged": true,
+    "source_integrity_ok": true
+  },
+  "limitations": [
+    "The live source remains on 0094 until the active Comfy workload is clear and the API/embedded worker can be stopped safely.",
+    "This proves current-data migration compatibility; it does not prove a real production session or 24-hour model run."
+  ],
+  "live_api_health_after_rehearsal": "HEALTHY",
+  "maintenance_result": {
+    "details": {
+      "after": {
+        "bytes": 113999872,
+        "exists": true,
+        "integrity": "ok",
+        "migration_heads": [
+          "0100_production_session_waiting_user"
+        ],
+        "path": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\maintenance\\rehearsal-8d3edbca9898438789315342faca482d\\database.sqlite3",
+        "sha256": "7521a80215520384058e8c4caab5dc889c586389d200d916f86ae733a1e1484a"
+      },
+      "before": {
+        "bytes": 113647616,
+        "exists": true,
+        "integrity": "ok",
+        "migration_heads": [
+          "0094_project_target_duration"
+        ],
+        "path": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\maintenance\\rehearsal-8d3edbca9898438789315342faca482d\\database.sqlite3",
+        "sha256": "083ec64cf132e3ae215bb692dfec8b680ee9da6b9d7d2e1a3848d2c3c1e37447"
+      },
+      "expected_heads": [
+        "0100_production_session_waiting_user"
+      ],
+      "rehearsal_root": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\maintenance\\rehearsal-8d3edbca9898438789315342faca482d",
+      "source": {
+        "bytes": 113647616,
+        "exists": true,
+        "integrity": "ok",
+        "migration_heads": [
+          "0094_project_target_duration"
+        ],
+        "path": "F:\\AI_Projects\\h3\\local_drama_studio\\data\\local_drama.sqlite3",
+        "sha256": "1757920670c6de67f6b8606bbd19c19a3cb40b868b4996ee20c9e63b37b6bff9"
+      }
+    },
+    "error": null,
+    "mutated": true,
+    "observed_at": "2026-09-21T03:43:13.961945+00:00",
+    "operation": "db.rehearse-upgrade",
+    "schema_version": "localdrama.maintenance-result.v1",
+    "status": "PASS"
+  },
+  "mutation_scope": "isolated_online_backup_copy_only",
+  "observed_at": "2026-09-21T03:44:51.360294+00:00",
+  "schema_version": "localdrama.live-database-upgrade-rehearsal.v1",
+  "source_after_rehearsal": {
+    "integrity": "ok",
+    "migration_heads": [
+      "0094_project_target_duration"
+    ],
+    "path": "F:\\AI_Projects\\h3\\local_drama_studio\\data\\local_drama.sqlite3",
+    "production_session_tables": {
+      "production_choices": false,
+      "production_session_asset_inputs": false,
+      "production_session_identity_inputs": false,
+      "production_session_items": false,
+      "production_session_job_links": false,
+      "production_sessions": false
+    },
+    "row_counts": {
+      "delivery_packages": 5,
+      "episode_render_versions": 8,
+      "episodes": 256,
+      "jobs": 1822,
+      "media_assets": 533,
+      "media_versions": 533,
+      "projects": 22,
+      "seasons": 22,
+      "shots": 129
+    }
+  },
+  "source_was_live": true,
+  "source_write_pause_requested": false,
+  "status": "PASS",
+  "upgraded_copy_after_rehearsal": {
+    "integrity": "ok",
+    "migration_heads": [
+      "0100_production_session_waiting_user"
+    ],
+    "path": "F:\\AI_Projects\\h3\\local_drama_studio\\work\\maintenance\\rehearsal-8d3edbca9898438789315342faca482d\\database.sqlite3",
+    "production_session_tables": {
+      "production_choices": true,
+      "production_session_asset_inputs": true,
+      "production_session_identity_inputs": true,
+      "production_session_items": true,
+      "production_session_job_links": true,
+      "production_sessions": true
+    },
+    "row_counts": {
+      "delivery_packages": 5,
+      "episode_render_versions": 8,
+      "episodes": 256,
+      "jobs": 1822,
+      "media_assets": 533,
+      "media_versions": 533,
+      "projects": 22,
+      "seasons": 22,
+      "shots": 129
+    }
+  }
+}

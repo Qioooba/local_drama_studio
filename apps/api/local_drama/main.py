@@ -7,11 +7,12 @@ import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
+from starlette.routing import Match
 
 from .api.routes.adaptation_plans import router as adaptation_plans_router
 from .api.routes.adapters import router as adapters_router
@@ -49,6 +50,7 @@ from .api.routes.pipeline import router as pipeline_router
 from .api.routes.platform import router as platform_router
 from .api.routes.post_v2 import router as post_v2_router
 from .api.routes.product_context_v2 import router as product_context_v2_router
+from .api.routes.production_sessions_v2 import router as production_sessions_v2_router
 from .api.routes.profiles import router as profiles_router
 from .api.routes.project_packages import router as project_packages_router
 from .api.routes.projects import router as project_router
@@ -67,6 +69,7 @@ from .api.routes.shot_studio_v2 import router as shot_studio_v2_router
 from .api.routes.story_assets import router as story_assets_router
 from .api.routes.timeline import router as timeline_router
 from .api.routes.variants import router as variants_router
+from .api.routes.video_upscale import router as video_upscale_router
 from .api.routes.visual_labs import router as visual_labs_router
 from .api.routes.workflow_runtime import router as workflow_runtime_router
 from .api.routes.workflows import router as workflows_router
@@ -232,12 +235,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(shot_groups_router, prefix="/api/v1")
     app.include_router(timeline_router, prefix="/api/v1")
     app.include_router(variants_router, prefix="/api/v1")
+    app.include_router(video_upscale_router, prefix="/api/v1")
     app.include_router(visual_labs_router, prefix="/api/v1")
     app.include_router(story_assets_router, prefix="/api/v1")
     app.include_router(asset_bible_router, prefix="/api/v1")
     app.include_router(asset_proposals_router, prefix="/api/v1")
     app.include_router(character_identity_packs_router, prefix="/api/v1")
     app.include_router(product_context_v2_router, prefix="/api/v2")
+    app.include_router(production_sessions_v2_router, prefix="/api/v2")
     app.include_router(model_platform_v2_router, prefix="/api/v2")
     app.include_router(adaptation_plans_router, prefix="/api/v2")
     app.include_router(shot_studio_v2_router, prefix="/api/v2")
@@ -255,13 +260,41 @@ def _mount_frontend(app: FastAPI, settings: Settings) -> None:
     if assets_root.is_dir():
         app.mount("/assets", StaticFiles(directory=assets_root), name="spa-assets")
 
+    @app.api_route("/api", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"], include_in_schema=False)
+    @app.api_route(
+        "/api/{full_path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"],
+        include_in_schema=False,
+    )
+    async def missing_api_route(request: Request, full_path: str = "") -> Response:
+        del full_path
+        allowed_methods: set[str] = set()
+        current_route = request.scope.get("route")
+        for route in app.routes:
+            if route is current_route:
+                continue
+            if getattr(route, "path", None) in {"/api", "/api/{full_path:path}", "/{full_path:path}"}:
+                continue
+            match, _ = route.matches(request.scope)
+            if match is Match.PARTIAL:
+                for method in ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"):
+                    probe_scope = {**request.scope, "method": method}
+                    probe_match, _ = route.matches(probe_scope)
+                    if probe_match is Match.FULL:
+                        allowed_methods.add(method)
+        if allowed_methods:
+            return JSONResponse(
+                status_code=405,
+                content={"detail": "Method Not Allowed"},
+                headers={"Allow": ", ".join(sorted(allowed_methods))},
+            )
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"code": "NOT_FOUND", "message": "接口不存在", "details": {}, "retryable": False}},
+        )
+
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_fallback(full_path: str) -> Response:
-        if full_path == "api" or full_path.startswith("api/"):
-            return JSONResponse(
-                status_code=404,
-                content={"error": {"code": "NOT_FOUND", "message": "接口不存在", "details": {}, "retryable": False}},
-            )
         candidate = (resolved_dist / full_path).resolve()
         if candidate.is_relative_to(resolved_dist) and candidate.is_file() and not candidate.is_symlink():
             return FileResponse(candidate)

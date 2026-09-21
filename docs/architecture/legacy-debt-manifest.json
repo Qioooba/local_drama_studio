@@ -1345,6 +1345,214 @@
         "service": "ComfyGenerationService",
         "owner": "legacy-application",
         "remove_by_slice": 8
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_front_half_actions.py:562:ProductionIdentityHeroPreparationService",
+        "file": "apps/api/local_drama/application/episode_front_half_actions.py",
+        "line": 562,
+        "service": "ProductionIdentityHeroPreparationService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_front_half_actions.py:568:ProductionIdentityInputService",
+        "file": "apps/api/local_drama/application/episode_front_half_actions.py",
+        "line": 568,
+        "service": "ProductionIdentityInputService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_front_half_actions.py:656:ProductionAssetInputService",
+        "file": "apps/api/local_drama/application/episode_front_half_actions.py",
+        "line": 656,
+        "service": "ProductionAssetInputService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_front_half_actions.py:574:ProductionIdentityPreparationService",
+        "file": "apps/api/local_drama/application/episode_front_half_actions.py",
+        "line": 574,
+        "service": "ProductionIdentityPreparationService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_production_runs.py:1398:EpisodeWorkerActionService",
+        "file": "apps/api/local_drama/application/episode_production_runs.py",
+        "line": 1398,
+        "service": "EpisodeWorkerActionService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_production_runs.py:486:ProductionIdentityHeroPreparationService",
+        "file": "apps/api/local_drama/application/episode_production_runs.py",
+        "line": 486,
+        "service": "ProductionIdentityHeroPreparationService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_production_runs.py:487:ProductionIdentityPreparationService",
+        "file": "apps/api/local_drama/application/episode_production_runs.py",
+        "line": 487,
+        "service": "ProductionIdentityPreparationService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_production_runs.py:1543:ProductionIdentityInputService",
+        "file": "apps/api/local_drama/application/episode_production_runs.py",
+        "line": 1543,
+        "service": "ProductionIdentityInputService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/episode_worker_actions.py:1366:ProductionChoiceService",
+        "file": "apps/api/local_drama/application/episode_worker_actions.py",
+        "line": 1366,
+        "service": "ProductionChoiceService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_choices.py:504:ReviewService",
+        "file": "apps/api/local_drama/application/production_choices.py",
+        "line": 504,
+        "service": "ReviewService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_identity_inputs.py:774:ProductionIdentityInputService",
+        "file": "apps/api/local_drama/application/production_identity_inputs.py",
+        "line": 774,
+        "service": "ProductionIdentityInputService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_identity_inputs.py:860:AssetMultiViewService",
+        "file": "apps/api/local_drama/application/production_identity_inputs.py",
+        "line": 860,
+        "service": "AssetMultiViewService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_identity_inputs.py:992:ProductionIdentityGenerationCompletionService",
+        "file": "apps/api/local_drama/application/production_identity_inputs.py",
+        "line": 992,
+        "service": "ProductionIdentityGenerationCompletionService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_identity_inputs.py:1195:CharacterIdentityPackService",
+        "file": "apps/api/local_drama/application/production_identity_inputs.py",
+        "line": 1195,
+        "service": "CharacterIdentityPackService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_identity_inputs.py:1083:MediaService",
+        "file": "apps/api/local_drama/application/production_identity_inputs.py",
+        "line": 1083,
+        "service": "MediaService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_identity_inputs.py:1108:AssetBibleCommandService",
+        "file": "apps/api/local_drama/application/production_identity_inputs.py",
+        "line": 1108,
+        "service": "AssetBibleCommandService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_identity_inputs.py:1104:WorkspaceAssetService",
+        "file": "apps/api/local_drama/application/production_identity_inputs.py",
+        "line": 1104,
+        "service": "WorkspaceAssetService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_session_runner.py:57:ProductionSessionService",
+        "file": "apps/api/local_drama/application/production_session_runner.py",
+        "line": 57,
+        "service": "ProductionSessionService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_session_runner.py:58:EpisodePreparationService",
+        "file": "apps/api/local_drama/application/production_session_runner.py",
+        "line": 58,
+        "service": "EpisodePreparationService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_session_runner.py:59:EpisodeProductionRunService",
+        "file": "apps/api/local_drama/application/production_session_runner.py",
+        "line": 59,
+        "service": "EpisodeProductionRunService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_session_runner.py:60:AutomationWorkflowService",
+        "file": "apps/api/local_drama/application/production_session_runner.py",
+        "line": 60,
+        "service": "AutomationWorkflowService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_session_runner.py:380:JobService",
+        "file": "apps/api/local_drama/application/production_session_runner.py",
+        "line": 380,
+        "service": "JobService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_session_runner.py:423:ProductionAssetInputService",
+        "file": "apps/api/local_drama/application/production_session_runner.py",
+        "line": 423,
+        "service": "ProductionAssetInputService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/production_session_runner.py:148:EpisodeWorkerActionService",
+        "file": "apps/api/local_drama/application/production_session_runner.py",
+        "line": 148,
+        "service": "EpisodeWorkerActionService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:844:ProductionIdentityGenerationCompletionService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 844,
+        "service": "ProductionIdentityGenerationCompletionService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
+      },
+      {
+        "id": "apps/api/local_drama/application/worker.py:745:ProductionChoiceService",
+        "file": "apps/api/local_drama/application/worker.py",
+        "line": 745,
+        "service": "ProductionChoiceService",
+        "owner": "production-sessions-orchestration",
+        "remove_by_slice": 12
       }
     ],
     "routes_without_response_model": [

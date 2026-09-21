@@ -39,6 +39,12 @@ from .episode_front_half_actions import EpisodeFrontHalfActionService
 from .episode_worker_actions import EpisodeWorkerActionService
 from .jobs import JobService
 from .keyframe_references import approved_keyframes_for_shots
+from .production_identity_inputs import (
+    ProductionIdentityHeroPreparationService,
+    ProductionIdentityInputService,
+    ProductionIdentityPreparationService,
+)
+from .production_session_budgets import normalized_budget_configuration
 from .production_spec_resolution import effective_video_profile
 from .queries.generation_preferences import resolve_generation_preference
 from .timeline import preflight_timeline_render
@@ -57,6 +63,7 @@ ACTION_STAGE = {
     "STORY_PARSE": "STORY_ANALYSIS",
     "SCRIPT_BREAKDOWN": "STORY_ANALYSIS",
     "ASSET_IDENTITY": "ASSET_EXTRACTION",
+    "ASSET_HERO_COMPLETION": "ASSET_COMPLETION",
     "ASSET_COMPLETION": "ASSET_COMPLETION",
     "EPISODE_PLAN": "SHOT_PLANNING",
     "KEYFRAME_GENERATION": "SHOT_IMAGE",
@@ -87,6 +94,8 @@ _START_LOCKS_GUARD = threading.Lock()
 def _start_lock(scope: str) -> threading.Lock:
     with _START_LOCKS_GUARD:
         return _START_LOCKS.setdefault(scope, threading.Lock())
+
+
 TERMINAL_JOB_STATES = {"SUCCEEDED", "FAILED", "CANCELLED"}
 PRODUCTION_MODE_POLICIES: dict[str, dict[str, Any]] = {
     "DRAFT": {"target_take_count": 1, "label": "草稿", "intent": "快速验证叙事与节奏", "auto_select_videos": True},
@@ -185,9 +194,7 @@ class EpisodeProductionRunService:
             policy["requested_target_take_count"] = requested
             policy["target_take_count"] = effective
             policy["max_target_take_count"] = MAX_VIDEO_TAKES_PER_SHOT
-            policy["adjustment_reason"] = (
-                "PRODUCT_MAX_VIDEO_TAKES_PER_SHOT" if effective != requested else None
-            )
+            policy["adjustment_reason"] = "PRODUCT_MAX_VIDEO_TAKES_PER_SHOT" if effective != requested else None
             policy["source"] = source
             policies[mode] = policy
         return policies
@@ -208,9 +215,7 @@ class EpisodeProductionRunService:
                     profiles.append(dict(row))
         return self._resolved_mode_policies(profiles)
 
-    def operation_target_take_count(
-        self, episode_id: str, *, operation: str, production_mode: str
-    ) -> int:
+    def operation_target_take_count(self, episode_id: str, *, operation: str, production_mode: str) -> int:
         """Resolve the candidate promise for one normalized creator operation."""
 
         normalized_operation = str(operation or "").strip().upper()
@@ -239,6 +244,7 @@ class EpisodeProductionRunService:
         checkpoint_policy: str = "ON_EXCEPTION",
         min_free_disk_bytes: int = 5 * 1024 * 1024 * 1024,
         include_front_half: bool = False,
+        production_session_id: str | None = None,
         _include_checkpoint_in_fingerprint: bool = True,
     ) -> dict[str, Any]:
         episode = self._episode(episode_id)
@@ -370,54 +376,42 @@ class EpisodeProductionRunService:
             fingerprint_profile_dependencies = []
             for profile in all_resolved_profiles:
                 workflow_version_id = str(profile.get("workflow_version_id") or "").strip()
-                workflow_identity = connection.execute(
-                    "SELECT content_hash FROM workflow_versions WHERE id=?",
-                    (workflow_version_id,),
-                ).fetchone() if workflow_version_id else None
+                workflow_identity = (
+                    connection.execute(
+                        "SELECT content_hash FROM workflow_versions WHERE id=?",
+                        (workflow_version_id,),
+                    ).fetchone()
+                    if workflow_version_id
+                    else None
+                )
                 fingerprint_profile_dependencies.append(
                     {
                         "profile_version_id": str(profile["id"]),
                         "workflow_version_id": workflow_version_id or None,
-                        "workflow_content_hash": (
-                            str(workflow_identity["content_hash"])
-                            if workflow_identity is not None
-                            else None
-                        ),
+                        "workflow_content_hash": (str(workflow_identity["content_hash"]) if workflow_identity is not None else None),
                     }
                 )
             resolved_policy = self._resolved_mode_policies(all_resolved_profiles)[production_mode]
             required_candidate_count = int(resolved_policy["target_take_count"])
-            pending_video_shot_ids = {
-                str(shot["id"])
-                for shot in shots
-                if reusable_video_counts.get(str(shot["id"]), 0) < required_candidate_count
-            }
-            pending_video_shots = [
-                shot for shot in shots if str(shot["id"]) in pending_video_shot_ids
-            ]
-            shot_profile_resolutions = [
-                item for item in shot_profile_resolutions
-                if str(item["shot_id"]) in pending_video_shot_ids
-            ]
-            required_profile_ids = {
-                str(item["profile_version_id"])
-                for item in shot_profile_resolutions
-                if item.get("profile_version_id")
-            }
-            profiles = [
-                profile for profile in all_resolved_profiles
-                if not shots or str(profile["id"]) in required_profile_ids
-            ]
+            pending_video_shot_ids = {str(shot["id"]) for shot in shots if reusable_video_counts.get(str(shot["id"]), 0) < required_candidate_count}
+            pending_video_shots = [shot for shot in shots if str(shot["id"]) in pending_video_shot_ids]
+            shot_profile_resolutions = [item for item in shot_profile_resolutions if str(item["shot_id"]) in pending_video_shot_ids]
+            required_profile_ids = {str(item["profile_version_id"]) for item in shot_profile_resolutions if item.get("profile_version_id")}
+            profiles = [profile for profile in all_resolved_profiles if not shots or str(profile["id"]) in required_profile_ids]
             runtimes = connection.execute("SELECT code,status,transport,base_url FROM local_runtimes ORDER BY code").fetchall()
             models = connection.execute("SELECT id,code,machine_path_ref,status FROM model_artifacts ORDER BY code").fetchall()
             profile_dependencies: list[dict[str, Any]] = []
             for profile in profiles:
                 workflow_version_id = str(profile.get("workflow_version_id") or "").strip()
-                workflow = connection.execute(
-                    """SELECT id,status,content_hash,contract_json
+                workflow = (
+                    connection.execute(
+                        """SELECT id,status,content_hash,contract_json
                     FROM workflow_versions WHERE id=?""",
-                    (workflow_version_id,),
-                ).fetchone() if workflow_version_id else None
+                        (workflow_version_id,),
+                    ).fetchone()
+                    if workflow_version_id
+                    else None
+                )
                 attestation = None
                 if workflow is not None:
                     attestation = connection.execute(
@@ -467,9 +461,45 @@ class EpisodeProductionRunService:
             if not row["current_revision_id"] or missing or str(row["status"]) not in {"READY", "GENERATING", "REVIEW", "APPROVED"}:
                 incomplete_shots.append({"shot_id": str(row["id"]), "shot_code": str(row["code"]), "missing_fields": missing, "status": str(row["status"])})
 
+        if production_session_id and include_front_half and incomplete_shots:
+            with self.database.connect() as connection:
+                applied_shot_ids = {
+                    str(row["id"])
+                    for row in connection.execute(
+                        """SELECT sh.id FROM shots sh
+                           JOIN script_breakdown_scene_applications app
+                             ON app.created_scene_id=sh.scene_id AND app.episode_id=sh.episode_id
+                           JOIN script_breakdown_drafts d ON d.id=app.breakdown_draft_id
+                           WHERE sh.episode_id=? AND sh.archived_at IS NULL
+                             AND d.status='APPLIED'""",
+                        (episode_id,),
+                    ).fetchall()
+                }
+            incomplete_shots = [
+                item for item in incomplete_shots if not (item["shot_id"] in applied_shot_ids and item["status"] == "DRAFT" and not item["missing_fields"])
+            ]
+
+        session_hero_preparation: dict[str, Any] | None = None
+        session_identity_preparation: dict[str, Any] | None = None
+        session_auto_asset_ids: set[str] = set()
+        if production_session_id and include_front_half:
+            session_hero_preparation = ProductionIdentityHeroPreparationService(self.database, self.settings).plan_episode(production_session_id, episode_id)
+            session_identity_preparation = ProductionIdentityPreparationService(self.database, self.settings).plan_episode(production_session_id, episode_id)
+            session_auto_asset_ids = {
+                str(item["asset_id"]) for item in session_hero_preparation["items"] if str(item["status"]) in {"READY", "ACTIVE", "READY_TO_SUBMIT"}
+            }
+
         bound_shot_ids = {str(row["shot_id"]) for row in bindings}
         missing_asset_shots = [str(row["code"]) for row in shots if str(row["id"]) not in bound_shot_ids]
-        invalid_assets = [str(row["code"]) for row in bindings if str(row["status"]) != "ACTIVE" or not row["canonical_media_version_id"] or (row["effective_asset_state_id"] and str(row["effective_state_status"]) != "ACTIVE")]
+        invalid_assets = [
+            str(row["code"])
+            for row in bindings
+            if (
+                str(row["status"]) != "ACTIVE"
+                or (not row["canonical_media_version_id"] and str(row["id"]) not in session_auto_asset_ids)
+                or (row["effective_asset_state_id"] and str(row["effective_state_status"]) != "ACTIVE")
+            )
+        ]
         required_character_refs: list[str] = []
         if recipe is not None:
             try:
@@ -496,13 +526,26 @@ class EpisodeProductionRunService:
             }
             missing = sorted(set(required_character_refs) - available)
             if missing:
-                missing_required_references.append({"shot_id": str(binding["shot_id"]), "asset_id": str(binding["id"]), "asset_code": str(binding["code"]), "effective_asset_state_id": effective_state_id, "missing_reference_kinds": missing})
+                missing_required_references.append(
+                    {
+                        "shot_id": str(binding["shot_id"]),
+                        "asset_id": str(binding["id"]),
+                        "asset_code": str(binding["code"]),
+                        "effective_asset_state_id": effective_state_id,
+                        "missing_reference_kinds": missing,
+                    }
+                )
+        if session_auto_asset_ids:
+            auto_reference_kinds = {"HERO", "FRONT", "LEFT", "RIGHT"}
+            missing_required_references = [
+                item
+                for item in missing_required_references
+                if not (item["asset_id"] in session_auto_asset_ids and set(item["missing_reference_kinds"]).issubset(auto_reference_kinds))
+            ]
         effective_states_by_asset: dict[str, set[str | None]] = {}
         for binding in bindings:
             effective_states_by_asset.setdefault(str(binding["id"]), set()).add(
-                str(binding["effective_asset_state_id"])
-                if binding["effective_asset_state_id"]
-                else None
+                str(binding["effective_asset_state_id"]) if binding["effective_asset_state_id"] else None
             )
         consumed_references = [
             reference
@@ -512,14 +555,10 @@ class EpisodeProductionRunService:
             and str(reference["reference_kind"]).upper() in set(required_character_refs)
             and (
                 reference["asset_state_id"] is None
-                or str(reference["asset_state_id"])
-                in effective_states_by_asset.get(str(reference["story_asset_id"]), set())
+                or str(reference["asset_state_id"]) in effective_states_by_asset.get(str(reference["story_asset_id"]), set())
             )
         ]
-        video_profiles = [
-            row for row in profiles
-            if str(row.get("capability") or "").upper() in VIDEO_GENERATION_CAPABILITIES
-        ]
+        video_profiles = [row for row in profiles if str(row.get("capability") or "").upper() in VIDEO_GENERATION_CAPABILITIES]
         valid_profiles = [row for row in video_profiles if str(row.get("binding_status")) == "EFFECTIVE" and str(row.get("status")) == "PUBLISHED"]
         available_mode_policies = self._resolved_mode_policies(valid_profiles)
         mode_policy = dict(available_mode_policies[production_mode])
@@ -537,27 +576,18 @@ class EpisodeProductionRunService:
             if str(row["status"]) not in {"ACTIVE", "READY", "AVAILABLE", "VERIFIED"} or not path.is_file():
                 continue
             usable_models.append(row)
-            available_model_refs.update(
-                {str(row["id"]), str(row["code"]), str(row["machine_path_ref"]), path.name}
-            )
+            available_model_refs.update({str(row["id"]), str(row["code"]), str(row["machine_path_ref"]), path.name})
         attested_component_names = {
             Path(str(component)).name
             for dependency in profile_dependencies
             for component in (
-                (dependency.get("runtime_layout") or {}).get("resolved_components", {}).values()
-                if isinstance(dependency.get("runtime_layout"), dict)
-                else []
+                (dependency.get("runtime_layout") or {}).get("resolved_components", {}).values() if isinstance(dependency.get("runtime_layout"), dict) else []
             )
         }
         missing_declared_model_refs = sorted(
-            ref
-            for ref in declared_model_refs
-            if ref not in available_model_refs and Path(ref).name not in attested_component_names
+            ref for ref in declared_model_refs if ref not in available_model_refs and Path(ref).name not in attested_component_names
         )
-        unresolved_shot_profiles = [
-            item for item in shot_profile_resolutions
-            if not item.get("profile_version_id") or item.get("blocked_reason")
-        ]
+        unresolved_shot_profiles = [item for item in shot_profile_resolutions if not item.get("profile_version_id") or item.get("blocked_reason")]
         invalid_profile_dependencies = [item for item in profile_dependencies if not item["ready"]]
 
         adapter = AdapterContractRegistry(self.settings).inspect()
@@ -585,10 +615,7 @@ class EpisodeProductionRunService:
         else:
             comfy_message = f"Comfy adapter 已声明，loopback 实时探测可用（登记状态 {comfy_runtime_status}）"
         probe_skipped_reasons = {"access_disabled", "base_url_missing", "runtime_endpoint_rejected"}
-        comfy_probe_contacted = bool(
-            comfy_base_url
-            and str(comfy_probe_evidence.get("reason") or "") not in probe_skipped_reasons
-        )
+        comfy_probe_contacted = bool(comfy_base_url and str(comfy_probe_evidence.get("reason") or "") not in probe_skipped_reasons)
         capacity = CapacitySnapshotService(self.database, self.settings).inspect(project_id)
         gpu_ok = capacity["gpu"].get("source") != "UNAVAILABLE" and bool(capacity["gpu"].get("name") or capacity["gpu"].get("total_bytes"))
         project_root = self.settings.resolve_project_root(str(episode["root_rel"]))
@@ -618,14 +645,41 @@ class EpisodeProductionRunService:
         ffmpeg_ref = self.settings.ffmpeg_path or shutil.which("ffmpeg")
 
         checks = [
-            self._check("SCRIPT_SHOT_PLAN_MISSING", "剧本与镜头计划", bool(shots) and not incomplete_shots, "镜头计划已具备可生产 revision" if shots and not incomplete_shots else "存在缺失或未 production-ready 的镜头", {"shot_count": len(shots), "incomplete_shots": incomplete_shots}),
-            self._check("CRITICAL_ASSETS_MISSING", "关键资产", bool(shots) and not missing_asset_shots and not invalid_assets, "每个镜头的关键资产均有有效 canonical reference" if shots and not missing_asset_shots and not invalid_assets else "镜头未绑定关键资产，或资产缺少 canonical reference", {"binding_count": len(bindings), "missing_asset_shots": missing_asset_shots, "invalid_asset_codes": invalid_assets}),
-            self._check("ASSET_REFERENCE_REQUIREMENTS_MISSING", "生效资产状态与参考图", not missing_required_references, "生效角色状态满足 Director Recipe 的参考图要求" if not missing_required_references else "部分镜头的生效角色状态缺少 Recipe 要求的已验证参考图", {"required_character_refs": required_character_refs, "missing": missing_required_references, "director_recipe_version_id": str(recipe["id"]) if recipe else None, "director_recipe_hash": str(recipe["recipe_hash"]) if recipe else None}),
+            self._check(
+                "SCRIPT_SHOT_PLAN_MISSING",
+                "剧本与镜头计划",
+                bool(shots) and not incomplete_shots,
+                "镜头计划已具备可生产 revision" if shots and not incomplete_shots else "存在缺失或未 production-ready 的镜头",
+                {"shot_count": len(shots), "incomplete_shots": incomplete_shots},
+            ),
+            self._check(
+                "CRITICAL_ASSETS_MISSING",
+                "关键资产",
+                bool(shots) and not missing_asset_shots and not invalid_assets,
+                "每个镜头的关键资产均有有效 canonical reference"
+                if shots and not missing_asset_shots and not invalid_assets
+                else "镜头未绑定关键资产，或资产缺少 canonical reference",
+                {"binding_count": len(bindings), "missing_asset_shots": missing_asset_shots, "invalid_asset_codes": invalid_assets},
+            ),
+            self._check(
+                "ASSET_REFERENCE_REQUIREMENTS_MISSING",
+                "生效资产状态与参考图",
+                not missing_required_references,
+                "生效角色状态满足 Director Recipe 的参考图要求" if not missing_required_references else "部分镜头的生效角色状态缺少 Recipe 要求的已验证参考图",
+                {
+                    "required_character_refs": required_character_refs,
+                    "missing": missing_required_references,
+                    "director_recipe_version_id": str(recipe["id"]) if recipe else None,
+                    "director_recipe_hash": str(recipe["recipe_hash"]) if recipe else None,
+                },
+            ),
             self._check(
                 "PROFILE_CAPABILITY_MISSING",
                 "生成 Profile 能力",
                 not unresolved_shot_profiles and (bool(valid_profiles) or not pending_video_shots),
-                "每个待生产镜头均解析到精确的已发布视频 Profile" if not unresolved_shot_profiles and (valid_profiles or not pending_video_shots) else "部分待生产镜头没有可执行的视频 Profile",
+                "每个待生产镜头均解析到精确的已发布视频 Profile"
+                if not unresolved_shot_profiles and (valid_profiles or not pending_video_shots)
+                else "部分待生产镜头没有可执行的视频 Profile",
                 {
                     "profile_version_ids": [str(row["id"]) for row in valid_profiles],
                     "effective_profile_version_id": str(valid_profiles[0]["id"]) if valid_profiles else None,
@@ -640,7 +694,9 @@ class EpisodeProductionRunService:
                 "PROFILE_WORKFLOW_DEPENDENCIES_MISSING",
                 "当前 Profile / Workflow 依赖",
                 not invalid_profile_dependencies and (bool(profile_dependencies) or not pending_video_shots),
-                "当前逐镜 Profile 的已发布 Workflow 均有匹配的通过验证证据" if not invalid_profile_dependencies and (profile_dependencies or not pending_video_shots) else "当前逐镜 Profile 缺少已发布 Workflow、节点/输入验证或匹配的验证证据",
+                "当前逐镜 Profile 的已发布 Workflow 均有匹配的通过验证证据"
+                if not invalid_profile_dependencies and (profile_dependencies or not pending_video_shots)
+                else "当前逐镜 Profile 缺少已发布 Workflow、节点/输入验证或匹配的验证证据",
                 {
                     "pending_shot_ids": [str(row["id"]) for row in pending_video_shots],
                     "reusable_video_candidate_counts": reusable_video_counts,
@@ -661,19 +717,73 @@ class EpisodeProductionRunService:
                     "matching_policy": "EXACT_ID_CODE_PATH_OR_BASENAME",
                 },
             ),
-            self._check("COMFY_ADAPTER_UNAVAILABLE", "Comfy/Adapter", comfy_ok, comfy_message, {"contract_status": comfy_contract_status, "registered_runtime_status": comfy_runtime_status, "probe_status": comfy_probe_status, "probe": comfy_probe_evidence}),
-            self._check("GPU_CAPACITY_UNAVAILABLE", "GPU/容量", gpu_ok, "本机 GPU 容量信息可用" if gpu_ok else "本地 manifest 未提供 GPU 容量", {"gpu": capacity["gpu"], "gpu_active_count": capacity["gpu_active_count"], "gpu_concurrency_limit": capacity["gpu_concurrency_limit"]}),
-            self._check("DISK_SPACE_LOW", "磁盘", isinstance(free_bytes, int) and free_bytes >= required_free_bytes, "可用磁盘空间满足冻结输出估算与运行阈值" if isinstance(free_bytes, int) and free_bytes >= required_free_bytes else "可用磁盘空间低于冻结输出估算/阈值或无法读取", {"free_bytes": free_bytes, "required_free_bytes": required_free_bytes, "operator_min_free_bytes": min_free_disk_bytes, "estimated_output_bytes": estimated_output_bytes, "disk_bytes_per_take": disk_per_take, "take_count": len(shots) * int(mode_policy["target_take_count"]), "estimate_source": "FROZEN_PROFILE_RESOURCE_POLICY" if disk_per_take is not None else "UNKNOWN"}),
-            self._check("FFMPEG_UNAVAILABLE", "FFmpeg", bool(ffmpeg_ref and Path(ffmpeg_ref).is_file()), "FFmpeg 可执行文件存在" if ffmpeg_ref else "未配置 FFmpeg", {"executable_ref": str(ffmpeg_ref) if ffmpeg_ref else None}),
+            self._check(
+                "COMFY_ADAPTER_UNAVAILABLE",
+                "Comfy/Adapter",
+                comfy_ok,
+                comfy_message,
+                {
+                    "contract_status": comfy_contract_status,
+                    "registered_runtime_status": comfy_runtime_status,
+                    "probe_status": comfy_probe_status,
+                    "probe": comfy_probe_evidence,
+                },
+            ),
+            self._check(
+                "GPU_CAPACITY_UNAVAILABLE",
+                "GPU/容量",
+                gpu_ok,
+                "本机 GPU 容量信息可用" if gpu_ok else "本地 manifest 未提供 GPU 容量",
+                {"gpu": capacity["gpu"], "gpu_active_count": capacity["gpu_active_count"], "gpu_concurrency_limit": capacity["gpu_concurrency_limit"]},
+            ),
+            self._check(
+                "DISK_SPACE_LOW",
+                "磁盘",
+                isinstance(free_bytes, int) and free_bytes >= required_free_bytes,
+                "可用磁盘空间满足冻结输出估算与运行阈值"
+                if isinstance(free_bytes, int) and free_bytes >= required_free_bytes
+                else "可用磁盘空间低于冻结输出估算/阈值或无法读取",
+                {
+                    "free_bytes": free_bytes,
+                    "required_free_bytes": required_free_bytes,
+                    "operator_min_free_bytes": min_free_disk_bytes,
+                    "estimated_output_bytes": estimated_output_bytes,
+                    "disk_bytes_per_take": disk_per_take,
+                    "take_count": len(shots) * int(mode_policy["target_take_count"]),
+                    "estimate_source": "FROZEN_PROFILE_RESOURCE_POLICY" if disk_per_take is not None else "UNKNOWN",
+                },
+            ),
+            self._check(
+                "FFMPEG_UNAVAILABLE",
+                "FFmpeg",
+                bool(ffmpeg_ref and Path(ffmpeg_ref).is_file()),
+                "FFmpeg 可执行文件存在" if ffmpeg_ref else "未配置 FFmpeg",
+                {"executable_ref": str(ffmpeg_ref) if ffmpeg_ref else None},
+            ),
         ]
         if tts_enabled:
+            tts_deferred_for_session = bool(
+                production_session_id and tts_requirements["blockers"]
+            )
             checks.append(
                 self._check(
                     "TTS_CONFIGURATION_MISSING",
                     "当前对白 TTS",
-                    not tts_requirements["blockers"],
-                    "现有有效配音可复用，且待生成对白均有精确可执行音色" if not tts_requirements["blockers"] else "部分确需生成的对白或旁白缺少精确可执行音色",
-                    tts_requirements,
+                    not tts_requirements["blockers"] or tts_deferred_for_session,
+                    (
+                        "现有有效配音可复用，且待生成对白均有精确可执行音色"
+                        if not tts_requirements["blockers"]
+                        else "声音缺口延迟到 AUDIO_SUBTITLE 阶段；画面生产可以先继续"
+                        if tts_deferred_for_session
+                        else "部分确需生成的对白或旁白缺少精确可执行音色"
+                    ),
+                    {
+                        **tts_requirements,
+                        "deferred_to_stage": "AUDIO_SUBTITLE"
+                        if tts_deferred_for_session
+                        else None,
+                        "silent_voice_substitution_allowed": False,
+                    },
                 )
             )
         front_half_snapshot: dict[str, Any] | None = None
@@ -684,7 +794,52 @@ class EpisodeProductionRunService:
             # checks above can pass and the completed run later regresses to a
             # permanently pending asset stage.
             front_service = EpisodeFrontHalfActionService(self.database, self.settings)
-            asset_completion_report, _ = front_service.asset_completion(episode_id)
+            if production_session_id:
+                identity_snapshot = ProductionIdentityInputService(self.database).episode_snapshot(production_session_id, episode_id)
+                if identity_snapshot["ready"]:
+                    asset_completion_report = {
+                        "machine_check": {
+                            "status": "PASS",
+                            "ok": True,
+                            "code": "PRODUCTION_SESSION_IDENTITY_INPUTS_READY",
+                            "detail": "当前会话人物身份输入已冻结，未创建人工批准事实",
+                            "human_approval_created": False,
+                            "identity_snapshot": identity_snapshot,
+                        }
+                    }
+                else:
+                    hero_preparation = session_hero_preparation or {}
+                    preparation = session_identity_preparation or {}
+                    hero_preparable_assets = {
+                        str(item["asset_id"]) for item in hero_preparation.get("items", []) if str(item["status"]) in {"READY", "ACTIVE", "READY_TO_SUBMIT"}
+                    }
+                    remaining_multiview_blockers = [
+                        blocker
+                        for blocker in preparation.get("blockers", [])
+                        if not (
+                            str(blocker.get("code") or "") == "ASSET_MULTI_VIEW_HERO_REQUIRED" and str(blocker.get("asset_id") or "") in hero_preparable_assets
+                        )
+                    ]
+                    preparable = bool(hero_preparation.get("ready") and not remaining_multiview_blockers)
+                    asset_completion_report = {
+                        "machine_check": {
+                            "status": "PASS" if preparable else "NEEDS_HITL",
+                            "ok": preparable,
+                            "code": ("PRODUCTION_SESSION_IDENTITY_PREPARABLE" if preparable else "PRODUCTION_SESSION_IDENTITY_INPUT_REQUIRED"),
+                            "detail": (
+                                "当前会话可先生成缺失 HERO，再通过现有 IMAGE_MULTI_VIEW 能力自动补齐三视图"
+                                if preparable
+                                else "当前会话仍有角色缺少可自动准备的三视图输入"
+                            ),
+                            "human_approval_created": False,
+                            "identity_snapshot": identity_snapshot,
+                            "hero_preparation": hero_preparation,
+                            "preparation": preparation,
+                            "remaining_multiview_blockers": remaining_multiview_blockers,
+                        }
+                    }
+            else:
+                asset_completion_report, _ = front_service.asset_completion(episode_id)
             asset_completion_check = dict(asset_completion_report.get("machine_check") or {})
             asset_completion_ok = str(asset_completion_check.get("status") or "") in {"PASS", "SKIPPED"}
             checks.append(
@@ -692,10 +847,7 @@ class EpisodeProductionRunService:
                     "ASSET_COMPLETION_REQUIRED",
                     "角色三视图身份包与镜头绑定",
                     asset_completion_ok,
-                    str(
-                        asset_completion_check.get("detail")
-                        or "角色资产缺少已批准三视图身份包，或镜头未绑定当前生效版本"
-                    ),
+                    str(asset_completion_check.get("detail") or "角色资产缺少已批准三视图身份包，或镜头未绑定当前生效版本"),
                     asset_completion_check,
                 )
             )
@@ -709,30 +861,50 @@ class EpisodeProductionRunService:
         # gates, not creative inputs.  A retry with the same idempotency key
         # must resolve to the same immutable workflow snapshot even if disk
         # usage changes by a few bytes between requests.
-        tts_identity = {
-            "items": [
-                {
-                    "line_id": item["line_id"],
-                    "shot_id": item["shot_id"],
-                    "text_revision_id": item["text_revision_id"],
-                    "reusable_media_version_id": item["reusable_media_version_id"],
-                    "generation_required": item["generation_required"],
-                    "character_asset_id": item["character_asset_id"],
-                    "voice_profile_version_id": item["voice_profile_version_id"],
-                    "provider_profile_version_id": item["provider_profile_version_id"],
-                }
-                for item in tts_requirements["items"]
-            ],
-            "resolution_policy": tts_requirements["resolution_policy"],
-        } if tts_enabled else None
-        generation_fingerprint_source = {
+        tts_identity = (
+            {
+                "items": [
+                    {
+                        "line_id": item["line_id"],
+                        "shot_id": item["shot_id"],
+                        "text_revision_id": item["text_revision_id"],
+                        "reusable_media_version_id": item["reusable_media_version_id"],
+                        "generation_required": item["generation_required"],
+                        "character_asset_id": item["character_asset_id"],
+                        "voice_profile_version_id": item["voice_profile_version_id"],
+                        "provider_profile_version_id": item["provider_profile_version_id"],
+                    }
+                    for item in tts_requirements["items"]
+                ],
+                "resolution_policy": tts_requirements["resolution_policy"],
+            }
+            if tts_enabled
+            else None
+        )
+        generation_fingerprint_source: dict[str, Any] = {
             "dependency_schema": "episode-generation-inputs.v2",
             "episode_id": episode_id,
             "production_mode": production_mode,
             "mode_policy": mode_policy,
             "shots": [{"id": str(row["id"]), "revision_id": row["current_revision_id"]} for row in shots],
-            "assets": [{"shot_id": str(row["shot_id"]), "id": str(row["id"]), "canonical_media_version_id": row["canonical_media_version_id"], "status": str(row["status"])} for row in bindings],
-            "asset_states": [{"shot_id": str(row["shot_id"]), "asset_id": str(row["id"]), "state_id": row["effective_asset_state_id"], "state_status": row["effective_state_status"]} for row in bindings],
+            "assets": [
+                {
+                    "shot_id": str(row["shot_id"]),
+                    "id": str(row["id"]),
+                    "canonical_media_version_id": row["canonical_media_version_id"],
+                    "status": str(row["status"]),
+                }
+                for row in bindings
+            ],
+            "asset_states": [
+                {
+                    "shot_id": str(row["shot_id"]),
+                    "asset_id": str(row["id"]),
+                    "state_id": row["effective_asset_state_id"],
+                    "state_status": row["effective_state_status"],
+                }
+                for row in bindings
+            ],
             "asset_references": [
                 {
                     "asset_id": str(row["story_asset_id"]),
@@ -753,11 +925,12 @@ class EpisodeProductionRunService:
                     ),
                 )
             ],
-            "asset_reference_requirements": {"required": required_character_refs, "missing": missing_required_references, "recipe_hash": str(recipe["recipe_hash"]) if recipe else None},
-            "profiles": [
-                {"id": str(row["id"]), "capability": str(row["capability"])}
-                for row in all_resolved_profiles
-            ],
+            "asset_reference_requirements": {
+                "required": required_character_refs,
+                "missing": missing_required_references,
+                "recipe_hash": str(recipe["recipe_hash"]) if recipe else None,
+            },
+            "profiles": [{"id": str(row["id"]), "capability": str(row["capability"])} for row in all_resolved_profiles],
             "shot_profile_resolutions": fingerprint_shot_profile_resolutions,
             "profile_dependencies": fingerprint_profile_dependencies,
         }
@@ -765,9 +938,10 @@ class EpisodeProductionRunService:
             generation_fingerprint_source["checkpoint_policy"] = checkpoint_policy
         if include_front_half:
             generation_fingerprint_source["front_half"] = front_half_snapshot
-        generation_fingerprint = hashlib.sha256(
-            _canonical(generation_fingerprint_source).encode("utf-8")
-        ).hexdigest()
+            if production_session_id:
+                generation_fingerprint_source["production_session_id"] = production_session_id
+                generation_fingerprint_source["production_identity"] = asset_completion_check.get("identity_snapshot")
+        generation_fingerprint = hashlib.sha256(_canonical(generation_fingerprint_source).encode("utf-8")).hexdigest()
         compose_fingerprint = hashlib.sha256(
             _canonical(
                 {
@@ -801,6 +975,7 @@ class EpisodeProductionRunService:
             "checkpoint_policy": checkpoint_policy,
             "include_front_half": include_front_half,
             "front_half_snapshot": front_half_snapshot,
+            "production_session_id": production_session_id,
             "front_half_only": False,
             "would_create_jobs": False,
             "runtime_contacted": comfy_probe_contacted,
@@ -869,8 +1044,10 @@ class EpisodeProductionRunService:
 
     def _workflow_for_snapshot(self, episode: dict[str, Any], preflight: dict[str, Any], *, actor: str) -> dict[str, Any]:
         episode_id = str(episode["id"])
+        production_session_id = str(preflight.get("production_session_id") or "")
+        session_suffix = f"_S{production_session_id.replace('-', '')[:8]}" if production_session_id else ""
         # A new plan revision must never reuse a frozen, validation-only plan.
-        code = f"EPISODE_RUN_V2_{episode_id.replace('-', '')[:16]}_{preflight['input_fingerprint'][:12]}"
+        code = f"EPISODE_RUN_V2_{episode_id.replace('-', '')[:16]}_{preflight['input_fingerprint'][:12]}{session_suffix}"
         workflows = self.automation.list_workflows(str(episode["project_id"]), include_archived=True)["items"]
         prior = next((item for item in workflows if item["code"] == code), None)
         if prior:
@@ -883,6 +1060,14 @@ class EpisodeProductionRunService:
             # ASSET_COMPLETION must not be skipped between identity decisions
             # and episode-plan validation.
             actions.extend(FRONT_HALF_ACTIONS)
+            if production_session_id:
+                # HERO generation and multi-view generation are separate async
+                # waves.  A dedicated task lets the normal workflow dependency
+                # graph wait for real HERO artifacts before submitting views.
+                actions.insert(
+                    actions.index("ASSET_COMPLETION"),
+                    "ASSET_HERO_COMPLETION",
+                )
         else:
             # Compatibility for existing frozen workflows created before the
             # front-half vertical slice.
@@ -894,9 +1079,62 @@ class EpisodeProductionRunService:
             actions.extend(BACK_HALF_ACTIONS)
             if preflight.get("tts_enabled", True):
                 actions.extend(["TTS_BATCH", "TTS_FINALIZE", "SUBTITLE"])
-            actions.extend(["TIMELINE_ASSEMBLY", "RENDER", "DELIVERY"])
+            actions.extend(["TIMELINE_ASSEMBLY", "RENDER"])
+            # A production session deliberately stops at a verified preview.
+            # Formal delivery requires an explicit human approval for the
+            # latest episode render, so placing DELIVERY in the unattended
+            # graph would make every otherwise successful session pause before
+            # it can reach the review inbox.  Keep DELIVERY in the ordinary
+            # episode workflow for backwards compatibility; the session review
+            # flow can use the existing reviewed-render delivery command after
+            # a person has approved the preview.
+            if not production_session_id:
+                actions.append("DELIVERY")
         production_mode = str(preflight.get("production_mode") or "BALANCED")
         mode_policy = dict(preflight.get("mode_policy") or PRODUCTION_MODE_POLICIES[production_mode])
+        dispatch_job_limit: int | None = None
+        generation_wave_counts: dict[str, int] = {}
+        if production_session_id and not front_half_only:
+            with self.database.connect() as connection:
+                session_row = connection.execute(
+                    "SELECT configuration_json FROM production_sessions WHERE id=?",
+                    (production_session_id,),
+                ).fetchone()
+                shot_count = int(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM shots WHERE episode_id=? AND archived_at IS NULL",
+                        (episode_id,),
+                    ).fetchone()[0]
+                )
+            try:
+                raw_session_configuration = json.loads(str(session_row["configuration_json"] or "{}")) if session_row is not None else {}
+            except (TypeError, ValueError, json.JSONDecodeError):
+                raw_session_configuration = {}
+            session_configuration = raw_session_configuration if isinstance(raw_session_configuration, dict) else {}
+            budget = normalized_budget_configuration(session_configuration)
+            parallel_episodes = max(1, int(session_configuration.get("max_parallel_episodes") or 1))
+            candidate_count = max(1, int(mode_policy.get("target_take_count") or 1))
+            per_episode_queue_share = max(1, budget["max_queued_gpu_jobs"] // parallel_episodes)
+            dispatch_job_limit = max(
+                1,
+                min(
+                    per_episode_queue_share,
+                    budget["dispatch_shots_per_tick"] * candidate_count,
+                ),
+            )
+            total_generation_jobs = max(1, shot_count * candidate_count)
+            wave_count = max(
+                1,
+                (total_generation_jobs + dispatch_job_limit - 1) // dispatch_job_limit,
+            )
+            generation_wave_counts = {
+                "KEYFRAME_GENERATION": wave_count,
+                "VIDEO_GENERATION": wave_count,
+            }
+            expanded_actions: list[str] = []
+            for action in actions:
+                expanded_actions.extend([action] * generation_wave_counts.get(action, 1))
+            actions = expanded_actions
         checkpoint_policy = self._checkpoint_policy(str(preflight.get("checkpoint_policy") or "ON_EXCEPTION"))
         items = []
         frozen_video_profiles = {
@@ -904,7 +1142,9 @@ class EpisodeProductionRunService:
             for item in preflight.get("shot_profile_resolutions", [])
             if item.get("shot_id") and item.get("profile_version_id")
         }
+        generation_wave_positions: dict[str, int] = {}
         for action in actions:
+            item_key = f"{episode['code']}:{action}"
             audio_strategy = "EXTERNAL_TTS" if preflight.get("tts_enabled", True) else "SILENT"
             payload: dict[str, Any] = {
                 "action": action,
@@ -916,12 +1156,24 @@ class EpisodeProductionRunService:
                 "front_half_managed": include_front_half,
                 "audio_strategy": audio_strategy,
             }
+            if production_session_id:
+                payload["production_session_id"] = production_session_id
+            if action in generation_wave_counts:
+                wave_index = generation_wave_positions.get(action, 0) + 1
+                generation_wave_positions[action] = wave_index
+                payload["dispatch_job_limit"] = dispatch_job_limit
+                payload["dispatch_wave_index"] = wave_index
+                payload["dispatch_wave_count"] = generation_wave_counts[action]
+                if generation_wave_counts[action] > 1:
+                    item_key = f"{item_key}:WAVE_{wave_index:04d}"
             if action == "VIDEO_GENERATION":
                 payload["expected_profile_version_ids"] = frozen_video_profiles
-            items.append({
-                "key": f"{episode['code']}:{action}",
-                "payload": payload,
-            })
+            items.append(
+                {
+                    "key": item_key,
+                    "payload": payload,
+                }
+            )
         task_cap = len(items) + 1
         disk_check = next((item for item in preflight["checks"] if item.get("code") == "DISK_SPACE_LOW"), None)
         if disk_check is None:
@@ -930,12 +1182,35 @@ class EpisodeProductionRunService:
         if front_half_only:
             required_free_bytes = max(required_free_bytes, FRONT_HALF_REPORT_BUDGET_BYTES)
         return self.automation.create_workflow(
-            str(episode["project_id"]), code=code, title=f"{episode['code']} 整集生产",
-            mode="BATCH_AUTOMATED", nodes=[{"id": "episode-production", "type": "EPISODE_PRODUCTION_TASK", "metadata": {"episode_id": episode_id, "input_fingerprint": preflight["input_fingerprint"], "production_mode": production_mode, "mode_policy": mode_policy, "checkpoint_policy": checkpoint_policy, "include_front_half": include_front_half, "front_half_only": front_half_only, "audio_strategy": "EXTERNAL_TTS" if preflight.get("tts_enabled", True) else "SILENT"}}],
+            str(episode["project_id"]),
+            code=code,
+            title=f"{episode['code']} 整集生产",
+            mode="BATCH_AUTOMATED",
+            nodes=[
+                {
+                    "id": "episode-production",
+                    "type": "EPISODE_PRODUCTION_TASK",
+                    "metadata": {
+                        "episode_id": episode_id,
+                        "input_fingerprint": preflight["input_fingerprint"],
+                        "production_mode": production_mode,
+                        "mode_policy": mode_policy,
+                        "checkpoint_policy": checkpoint_policy,
+                        "include_front_half": include_front_half,
+                        "front_half_only": front_half_only,
+                        "audio_strategy": "EXTERNAL_TTS" if preflight.get("tts_enabled", True) else "SILENT",
+                        "production_session_id": production_session_id or None,
+                    },
+                }
+            ],
             batch_items=items,
             conditions=[{"field": "machine_check.status", "operator": "IN", "value": ["FAIL", "FAILED", "BLOCKED", "NEEDS_HITL"], "action": "PAUSE_HITL"}],
-            max_iterations=task_cap, max_tasks=task_cap, max_disk_bytes=max(1, required_free_bytes),
-            human_gate="ON_CONDITION", repeat_batch=False, actor=actor,
+            max_iterations=task_cap,
+            max_tasks=task_cap,
+            max_disk_bytes=max(1, required_free_bytes),
+            human_gate="ON_CONDITION",
+            repeat_batch=False,
+            actor=actor,
         )
 
     def _workflow_for_operation(
@@ -943,15 +1218,15 @@ class EpisodeProductionRunService:
         episode: dict[str, Any],
         impact: dict[str, Any],
         *,
+        production_session_id: str | None = None,
         actor: str,
     ) -> dict[str, Any]:
         episode_id = str(episode["id"])
         operation = str(impact["operation"])
         plan_hash = str(impact["plan_hash"])
-        code = f"EPISODE_OP_V1_{episode_id.replace('-', '')[:12]}_{operation[:8]}_{plan_hash[:12]}"
-        workflows = self.automation.list_workflows(
-            str(episode["project_id"]), include_archived=True
-        )["items"]
+        session_suffix = f"_S{production_session_id.replace('-', '')[:8]}" if production_session_id else ""
+        code = f"EPISODE_OP_V1_{episode_id.replace('-', '')[:12]}_{operation[:8]}_{plan_hash[:12]}{session_suffix}"
+        workflows = self.automation.list_workflows(str(episode["project_id"]), include_archived=True)["items"]
         prior = next((item for item in workflows if item["code"] == code), None)
         if prior:
             return cast(dict[str, Any], prior)
@@ -965,15 +1240,45 @@ class EpisodeProductionRunService:
                     "当前没有可重新合成的时间线，请按影响预览处理依赖",
                     {"operation": operation, "blockers": sets.get("blocked_by_dependency", [])},
                 )
-            action = "RENDER"
-            payload = {
-                "action": action,
-                "episode_id": episode_id,
-                "operation": operation,
-                "operation_plan_hash": plan_hash,
-                "timeline_revision_id": str(compose[0]["timeline_revision_id"]),
-                "force_rerender": True,
-            }
+            if production_session_id:
+                items = [
+                    {
+                        "key": f"{episode['code']}:{operation}:TIMELINE_ASSEMBLY",
+                        "payload": {
+                            "action": "TIMELINE_ASSEMBLY",
+                            "episode_id": episode_id,
+                            "operation": operation,
+                            "operation_plan_hash": plan_hash,
+                            "production_session_id": production_session_id,
+                            "audio_strategy": "EXTERNAL_TTS" if bool(impact.get("tts_enabled", True)) else "SILENT",
+                        },
+                    },
+                    {
+                        "key": f"{episode['code']}:{operation}:RENDER",
+                        "payload": {
+                            "action": "RENDER",
+                            "episode_id": episode_id,
+                            "operation": operation,
+                            "operation_plan_hash": plan_hash,
+                            "production_session_id": production_session_id,
+                            "force_rerender": True,
+                        },
+                    },
+                ]
+            else:
+                items = [
+                    {
+                        "key": f"{episode['code']}:{operation}:RENDER",
+                        "payload": {
+                            "action": "RENDER",
+                            "episode_id": episode_id,
+                            "operation": operation,
+                            "operation_plan_hash": plan_hash,
+                            "timeline_revision_id": str(compose[0]["timeline_revision_id"]),
+                            "force_rerender": True,
+                        },
+                    }
+                ]
         else:
             executable = (
                 list(sets.get("retry_original") or [])
@@ -983,18 +1288,15 @@ class EpisodeProductionRunService:
                     *list(sets.get("needs_generation") or []),
                 ]
             )
-            target_shot_ids = list(
-                dict.fromkeys(str(item["shot_id"]) for item in executable if item.get("shot_id"))
-            )
+            target_shot_ids = list(dict.fromkeys(str(item["shot_id"]) for item in executable if item.get("shot_id")))
             if not target_shot_ids:
                 raise DomainRuleError(
                     "EPISODE_OPERATION_NOTHING_TO_DO",
                     "当前影响预览中没有可提交的镜头任务",
                     {"operation": operation, "blockers": sets.get("blocked_by_dependency", [])},
                 )
-            action = "VIDEO_GENERATION"
             payload = {
-                "action": action,
+                "action": "VIDEO_GENERATION",
                 "episode_id": episode_id,
                 "operation": operation,
                 "operation_plan_hash": plan_hash,
@@ -1005,42 +1307,42 @@ class EpisodeProductionRunService:
                 "target_shot_ids": target_shot_ids,
                 "force_new_take": operation == "NEW_TAKE",
                 "retry_original_only": operation == "RETRY_ORIGINAL",
-                "expected_profile_version_ids": dict(
-                    impact.get("expected_profile_version_ids") or {}
-                ),
+                "expected_profile_version_ids": dict(impact.get("expected_profile_version_ids") or {}),
                 "expected_input_fingerprints": {
-                    shot_id: fingerprint
-                    for shot_id, fingerprint in dict(
-                        impact.get("expected_input_fingerprints") or {}
-                    ).items()
-                    if shot_id in target_shot_ids
+                    shot_id: fingerprint for shot_id, fingerprint in dict(impact.get("expected_input_fingerprints") or {}).items() if shot_id in target_shot_ids
                 },
             }
-
-        item = {"key": f"{episode['code']}:{operation}:{action}", "payload": payload}
+            if production_session_id:
+                payload["production_session_id"] = production_session_id
+            items = [{"key": f"{episode['code']}:{operation}:VIDEO_GENERATION", "payload": payload}]
         return self.automation.create_workflow(
             str(episode["project_id"]),
             code=code,
             title=f"{episode['code']} {operation}",
             mode="BATCH_AUTOMATED",
-            nodes=[{
-                "id": "episode-operation",
-                "type": "EPISODE_PRODUCTION_TASK",
-                "metadata": {
-                    "episode_id": episode_id,
-                    "operation": operation,
-                    "operation_plan_hash": plan_hash,
-                },
-            }],
-            batch_items=[item],
-            conditions=[{
-                "field": "machine_check.status",
-                "operator": "IN",
-                "value": ["FAIL", "FAILED", "BLOCKED", "NEEDS_HITL"],
-                "action": "PAUSE_HITL",
-            }],
-            max_iterations=2,
-            max_tasks=2,
+            nodes=[
+                {
+                    "id": "episode-operation",
+                    "type": "EPISODE_PRODUCTION_TASK",
+                    "metadata": {
+                        "episode_id": episode_id,
+                        "operation": operation,
+                        "operation_plan_hash": plan_hash,
+                        "production_session_id": production_session_id,
+                    },
+                }
+            ],
+            batch_items=items,
+            conditions=[
+                {
+                    "field": "machine_check.status",
+                    "operator": "IN",
+                    "value": ["FAIL", "FAILED", "BLOCKED", "NEEDS_HITL"],
+                    "action": "PAUSE_HITL",
+                }
+            ],
+            max_iterations=len(items) + 1,
+            max_tasks=len(items) + 1,
             max_disk_bytes=2 * 1024 * 1024 * 1024,
             human_gate="ON_CONDITION",
             repeat_batch=False,
@@ -1059,6 +1361,7 @@ class EpisodeProductionRunService:
         tts_enabled: bool,
         production_mode: str,
         checkpoint_policy: str,
+        production_session_id: str | None = None,
         idempotency_key: str,
         actor: str,
     ) -> dict[str, Any]:
@@ -1074,9 +1377,7 @@ class EpisodeProductionRunService:
             )
         episode = self._episode(episode_id)
         with self.database.connect() as connection:
-            revision_row = connection.execute(
-                "SELECT revision FROM episodes WHERE id=?", (episode_id,)
-            ).fetchone()
+            revision_row = connection.execute("SELECT revision FROM episodes WHERE id=?", (episode_id,)).fetchone()
         actual_revision = int(revision_row["revision"]) if revision_row is not None else 0
         if actual_revision != expected_episode_revision:
             raise DomainRuleError(
@@ -1087,9 +1388,7 @@ class EpisodeProductionRunService:
                     "actual_episode_revision": actual_revision,
                 },
             )
-        resolved_take_count = self.operation_target_take_count(
-            episode_id, operation=operation, production_mode=production_mode
-        )
+        resolved_take_count = self.operation_target_take_count(episode_id, operation=operation, production_mode=production_mode)
         if target_take_count != resolved_take_count:
             raise DomainRuleError(
                 "EPISODE_OPERATION_PLAN_STALE",
@@ -1099,9 +1398,7 @@ class EpisodeProductionRunService:
                     "actual_target_take_count": resolved_take_count,
                 },
             )
-        impact = EpisodeWorkerActionService(
-            self.database, self.settings
-        ).operation_impact(
+        impact = EpisodeWorkerActionService(self.database, self.settings).operation_impact(
             episode_id,
             operation=operation,
             target_shot_ids=target_shot_ids,
@@ -1109,6 +1406,7 @@ class EpisodeProductionRunService:
             tts_enabled=tts_enabled,
             production_mode=production_mode,
             checkpoint_policy=checkpoint_policy,
+            production_session_id=production_session_id,
         )
         if not hmac.compare_digest(str(impact["plan_hash"]), expected_plan_hash):
             raise DomainRuleError(
@@ -1119,7 +1417,12 @@ class EpisodeProductionRunService:
                     "actual_plan_hash": str(impact["plan_hash"]),
                 },
             )
-        workflow = self._workflow_for_operation(episode, impact, actor=actor)
+        workflow = self._workflow_for_operation(
+            episode,
+            impact,
+            production_session_id=production_session_id,
+            actor=actor,
+        )
         run = self.automation.start_run(
             str(workflow["id"]),
             plan_hash=str(workflow["plan_hash"]),
@@ -1143,29 +1446,33 @@ class EpisodeProductionRunService:
         target_take_count: int = 1,
         expected_plan_hash: str | None = None,
         expected_episode_revision: int | None = None,
+        production_session_id: str | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]:
         key = idempotency_key.strip()
         if not key or len(key) > 200:
             raise DomainRuleError("IDEMPOTENCY_KEY_REQUIRED", "整集启动必须提供有效 Idempotency-Key")
         scope = f"episode-production-start:{episode_id}"
-        normalized_shot_ids = tuple(
-            dict.fromkeys(str(item).strip() for item in target_shot_ids if str(item).strip())
-        )
+        normalized_shot_ids = tuple(dict.fromkeys(str(item).strip() for item in target_shot_ids if str(item).strip()))
         normalized_operation = str(operation or "").strip().upper() or None
-        payload_hash = hashlib.sha256(_canonical({
-            "episode_id": episode_id,
-            "tts_enabled": tts_enabled,
-            "production_mode": production_mode,
-            "checkpoint_policy": checkpoint_policy,
-            "min_free_disk_bytes": min_free_disk_bytes,
-            "front_half_only": front_half_only,
-            "operation": normalized_operation,
-            "target_shot_ids": normalized_shot_ids,
-            "target_take_count": target_take_count,
-            "expected_plan_hash": expected_plan_hash,
-            "expected_episode_revision": expected_episode_revision,
-        }).encode("utf-8")).hexdigest()
+        payload_hash = hashlib.sha256(
+            _canonical(
+                {
+                    "episode_id": episode_id,
+                    "tts_enabled": tts_enabled,
+                    "production_mode": production_mode,
+                    "checkpoint_policy": checkpoint_policy,
+                    "min_free_disk_bytes": min_free_disk_bytes,
+                    "front_half_only": front_half_only,
+                    "operation": normalized_operation,
+                    "target_shot_ids": normalized_shot_ids,
+                    "target_take_count": target_take_count,
+                    "expected_plan_hash": expected_plan_hash,
+                    "expected_episode_revision": expected_episode_revision,
+                    "production_session_id": production_session_id,
+                }
+            ).encode("utf-8")
+        ).hexdigest()
         with _start_lock(scope):
             with self.database.connect() as connection:
                 prior = connection.execute(
@@ -1198,6 +1505,7 @@ class EpisodeProductionRunService:
                     tts_enabled=tts_enabled,
                     production_mode=production_mode,
                     checkpoint_policy=checkpoint_policy,
+                    production_session_id=production_session_id,
                     idempotency_key=key,
                     actor=actor,
                 )
@@ -1210,6 +1518,7 @@ class EpisodeProductionRunService:
                     checkpoint_policy=checkpoint_policy,
                     min_free_disk_bytes=min_free_disk_bytes,
                     front_half_only=front_half_only,
+                    production_session_id=production_session_id,
                     actor=actor,
                 )
             with self.database.transaction() as connection:
@@ -1230,8 +1539,15 @@ class EpisodeProductionRunService:
         checkpoint_policy: str = "ON_EXCEPTION",
         min_free_disk_bytes: int = 5 * 1024 * 1024 * 1024,
         front_half_only: bool = False,
+        production_session_id: str | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]:
+        if production_session_id and not front_half_only:
+            ProductionIdentityInputService(self.database).ensure_episode_inputs(
+                production_session_id,
+                episode_id,
+                actor="production-session-runner",
+            )
         preflight = (
             self.front_half_preflight(
                 episode_id,
@@ -1246,12 +1562,15 @@ class EpisodeProductionRunService:
                 checkpoint_policy=checkpoint_policy,
                 min_free_disk_bytes=min_free_disk_bytes,
                 include_front_half=True,
+                production_session_id=production_session_id,
             )
         )
         if preflight["status"] != "PASS":
             code = "EPISODE_FRONT_HALF_PREFLIGHT_BLOCKED" if front_half_only else "EPISODE_PRODUCTION_PREFLIGHT_BLOCKED"
             message = "前半链路 preflight 未通过" if front_half_only else "整集生产 preflight 未通过"
-            raise DomainRuleError(code, message, {"episode_id": episode_id, "blocker_codes": [item["code"] for item in preflight["blockers"]], "preflight": preflight})
+            raise DomainRuleError(
+                code, message, {"episode_id": episode_id, "blocker_codes": [item["code"] for item in preflight["blockers"]], "preflight": preflight}
+            )
         workflow = self._workflow_for_snapshot(preflight["episode"], preflight, actor=actor)
         run = self.automation.start_run(str(workflow["id"]), plan_hash=str(workflow["plan_hash"]), idempotency_key=idempotency_key, actor=actor)
         return self._view(run, include_jobs=True)
@@ -1284,26 +1603,45 @@ class EpisodeProductionRunService:
     def _view(self, run: dict[str, Any], *, include_jobs: bool = False) -> dict[str, Any]:
         episode_id = self._episode_id_for_run(run)
         with self.database.connect() as connection:
-            story_analysis_done = int(connection.execute(
-                """SELECT EXISTS(SELECT 1 FROM audit_events WHERE action='SCRIPT_BREAKDOWN_APPLIED'
+            story_analysis_done = int(
+                connection.execute(
+                    """SELECT EXISTS(SELECT 1 FROM audit_events WHERE action='SCRIPT_BREAKDOWN_APPLIED'
                 AND json_extract(metadata_redacted_json,'$.episode_id')=?)""",
-                (episode_id,),
-            ).fetchone()[0])
+                    (episode_id,),
+                ).fetchone()[0]
+            )
             shot_count = int(connection.execute("SELECT COUNT(*) FROM shots WHERE episode_id=? AND archived_at IS NULL", (episode_id,)).fetchone()[0])
-            plan_ready = int(connection.execute("SELECT COUNT(*) FROM shots WHERE episode_id=? AND archived_at IS NULL AND current_revision_id IS NOT NULL AND status IN ('READY','GENERATING','REVIEW','APPROVED')", (episode_id,)).fetchone()[0])
-            asset_ready = int(connection.execute("SELECT COUNT(DISTINCT s.id) FROM shots s JOIN shot_asset_bindings sab ON sab.shot_id=s.id JOIN story_assets sa ON sa.id=sab.asset_id WHERE s.episode_id=? AND s.archived_at IS NULL AND sa.status='ACTIVE' AND sa.canonical_media_version_id IS NOT NULL", (episode_id,)).fetchone()[0])
+            plan_ready = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM shots WHERE episode_id=? AND archived_at IS NULL AND current_revision_id IS NOT NULL AND status IN ('READY','GENERATING','REVIEW','APPROVED')",
+                    (episode_id,),
+                ).fetchone()[0]
+            )
+            asset_ready = int(
+                connection.execute(
+                    "SELECT COUNT(DISTINCT s.id) FROM shots s JOIN shot_asset_bindings sab ON sab.shot_id=s.id JOIN story_assets sa ON sa.id=sab.asset_id WHERE s.episode_id=? AND s.archived_at IS NULL AND sa.status='ACTIVE' AND sa.canonical_media_version_id IS NOT NULL",
+                    (episode_id,),
+                ).fetchone()[0]
+            )
             keyframe_shots = connection.execute(
                 """SELECT s.id FROM shots s
                 WHERE s.episode_id=? AND s.archived_at IS NULL""",
                 (episode_id,),
             ).fetchall()
-            keyframes = len(approved_keyframes_for_shots(
-                connection,
-                (str(row["id"]) for row in keyframe_shots),
-                project_id=str(run["project_id"]),
-            ))
+            keyframes = len(
+                approved_keyframes_for_shots(
+                    connection,
+                    (str(row["id"]) for row in keyframe_shots),
+                    project_id=str(run["project_id"]),
+                )
+            )
             audio_total = int(connection.execute("SELECT COUNT(*) FROM dialogue_lines WHERE episode_id=?", (episode_id,)).fetchone()[0])
-            audio_done = int(connection.execute("SELECT COUNT(DISTINCT dl.id) FROM dialogue_lines dl JOIN dialogue_candidate_selections dcs ON dcs.dialogue_line_id=dl.id WHERE dl.episode_id=?", (episode_id,)).fetchone()[0])
+            audio_done = int(
+                connection.execute(
+                    "SELECT COUNT(DISTINCT dl.id) FROM dialogue_lines dl JOIN dialogue_candidate_selections dcs ON dcs.dialogue_line_id=dl.id WHERE dl.episode_id=?",
+                    (episode_id,),
+                ).fetchone()[0]
+            )
             current_timeline = connection.execute(
                 "SELECT id FROM timeline_revisions WHERE episode_id=? ORDER BY revision_no DESC LIMIT 1",
                 (episode_id,),
@@ -1312,12 +1650,7 @@ class EpisodeProductionRunService:
         compose_done = 0
         if current_timeline is not None:
             try:
-                compose_done = int(
-                    preflight_timeline_render(
-                        self.database, self.settings, str(current_timeline["id"])
-                    )["existing_render"]
-                    is not None
-                )
+                compose_done = int(preflight_timeline_render(self.database, self.settings, str(current_timeline["id"]))["existing_render"] is not None)
             except DomainRuleError:
                 # An incomplete/stale current timeline is not a completed
                 # render. Historical render rows remain auditable.
@@ -1329,15 +1662,9 @@ class EpisodeProductionRunService:
             limit=max(shot_count, 1),
             states=set(),
         )["items"]
-        videos = sum(
-            1 for item in production_items
-            if next(stage for stage in item["stages"] if stage["stage_code"] == "VIDEO")["state"] == "READY"
-        )
+        videos = sum(1 for item in production_items if next(stage for stage in item["stages"] if stage["stage_code"] == "VIDEO")["state"] == "READY")
         qc_passed = sum(
-            1 for item in production_items
-            if next(
-                slot for slot in item["material_slots"] if slot["kind"] == "VIDEO"
-            )["machine_qc_state"] == "PASS"
+            1 for item in production_items if next(slot for slot in item["material_slots"] if slot["kind"] == "VIDEO")["machine_qc_state"] == "PASS"
         )
 
         tasks_by_stage: dict[str, list[dict[str, Any]]] = {code: [] for code, _, _ in STAGE_DEFINITIONS}
@@ -1346,10 +1673,7 @@ class EpisodeProductionRunService:
             stage_code = ACTION_STAGE.get(action)
             if stage_code:
                 tasks_by_stage[stage_code].append(task)
-        has_front_half_tasks = any(
-            str(task.get("item", {}).get("payload", {}).get("action", "")) == "STORY_PARSE"
-            for task in run["tasks"]
-        )
+        has_front_half_tasks = any(str(task.get("item", {}).get("payload", {}).get("action", "")) == "STORY_PARSE" for task in run["tasks"])
         front_completion: dict[str, int] = {}
         if has_front_half_tasks:
             front_service = EpisodeFrontHalfActionService(self.database, self.settings)
@@ -1360,15 +1684,11 @@ class EpisodeProductionRunService:
                 "ASSET_COMPLETION": front_service.asset_completion(episode_id)[0],
                 "EPISODE_PLAN": front_service.episode_plan(episode_id)[0],
             }
-            front_completion = {
-                action: int(str(report.get("machine_check", {}).get("status")) in {"PASS", "SKIPPED"})
-                for action, report in reports.items()
-            }
+            front_completion = {action: int(str(report.get("machine_check", {}).get("status")) in {"PASS", "SKIPPED"}) for action, report in reports.items()}
 
         facts = {
             "STORY_ANALYSIS": (
-                min(front_completion["STORY_PARSE"], front_completion["SCRIPT_BREAKDOWN"])
-                if has_front_half_tasks else story_analysis_done,
+                min(front_completion["STORY_PARSE"], front_completion["SCRIPT_BREAKDOWN"]) if has_front_half_tasks else story_analysis_done,
                 1,
             ),
             "ASSET_EXTRACTION": (front_completion["ASSET_IDENTITY"] if has_front_half_tasks else story_analysis_done, 1),
@@ -1387,17 +1707,33 @@ class EpisodeProductionRunService:
             failed = sum(1 for item in stage_tasks if item.get("job_state") in {"FAILED", "NEEDS_ATTENTION", "ORPHANED"})
             hitl = sum(1 for item in stage_tasks if item.get("status") == "BLOCKED_HITL")
             stage_view: dict[str, Any] = {
-                "ordinal": index, "code": code, "label": label,
+                "ordinal": index,
+                "code": code,
+                "label": label,
                 "background_stages": list(background_stages),
                 "status": self._state(completed_count, total, running, failed, hitl, str(run["status"])),
-                "completed": completed_count, "total": total,
+                "completed": completed_count,
+                "total": total,
                 "remaining_count": max(total - completed_count, 0),
-                "running_jobs": running, "failed": failed, "failed_jobs": failed,
-                "needs_human_decision": hitl, "hitl_jobs": hitl,
-                "estimated_remaining_seconds": None, "estimate_status": "NOT_AVAILABLE",
+                "running_jobs": running,
+                "failed": failed,
+                "failed_jobs": failed,
+                "needs_human_decision": hitl,
+                "hitl_jobs": hitl,
+                "estimated_remaining_seconds": None,
+                "estimate_status": "NOT_AVAILABLE",
             }
             if include_jobs:
-                stage_view["jobs"] = [{"task_id": item["id"], "job_id": item.get("job_id"), "job_state": item.get("job_state"), "item_key": item["item_key"], "status": item["status"]} for item in stage_tasks]
+                stage_view["jobs"] = [
+                    {
+                        "task_id": item["id"],
+                        "job_id": item.get("job_id"),
+                        "job_state": item.get("job_state"),
+                        "item_key": item["item_key"],
+                        "status": item["status"],
+                    }
+                    for item in stage_tasks
+                ]
                 issues: list[dict[str, Any]] = []
                 for task in stage_tasks:
                     context = task.get("machine_context", {})
@@ -1424,7 +1760,8 @@ class EpisodeProductionRunService:
             stages.append(stage_view)
         recoverable_jobs = [
             {"task_id": item["id"], "job_id": item.get("job_id"), "job_state": item.get("job_state")}
-            for item in run["tasks"] if item.get("job_state") in {"ORPHANED", "NEEDS_ATTENTION"}
+            for item in run["tasks"]
+            if item.get("job_state") in {"ORPHANED", "NEEDS_ATTENTION"}
         ]
         workflow_metadata = self.automation.get_workflow(str(run["workflow_id"]))["definition"]["nodes"][0]["metadata"]
         return {
@@ -1451,7 +1788,8 @@ class EpisodeProductionRunService:
                 "recoverable_jobs": recoverable_jobs,
             },
             "local_only": True,
-            "queue_reused": True, "idempotent_replay": bool(run.get("idempotent_replay", False)),
+            "queue_reused": True,
+            "idempotent_replay": bool(run.get("idempotent_replay", False)),
         }
 
     def get(self, run_id: str, *, include_jobs: bool = False) -> dict[str, Any]:
@@ -1519,7 +1857,8 @@ class EpisodeProductionRunService:
             row = connection.execute(
                 """SELECT a.sandbox_rel_path FROM artifacts a JOIN job_attempts ja ON ja.id=a.job_attempt_id
                 WHERE ja.job_id=? AND ja.state='SUCCEEDED' AND a.status='VERIFIED'
-                AND a.kind='AUTOMATION_TASK_REPORT' ORDER BY a.created_at DESC,a.id DESC LIMIT 1""", (job_id,),
+                AND a.kind='AUTOMATION_TASK_REPORT' ORDER BY a.created_at DESC,a.id DESC LIMIT 1""",
+                (job_id,),
             ).fetchone()
         if row is None:
             return None
@@ -1552,6 +1891,7 @@ class EpisodeProductionRunService:
         checkpoint_policy = str(metadata.get("checkpoint_policy") or "ON_EXCEPTION")
         include_front_half = bool(metadata.get("include_front_half", False))
         front_half_only = bool(metadata.get("front_half_only", False))
+        production_session_id = str(metadata.get("production_session_id") or "") or None
         current_preflight = (
             self.front_half_preflight(
                 episode_id,
@@ -1560,18 +1900,20 @@ class EpisodeProductionRunService:
             )
             if front_half_only
             else self.preflight(
-                episode_id, tts_enabled=tts_enabled, production_mode=production_mode,
-                checkpoint_policy=checkpoint_policy, min_free_disk_bytes=1,
+                episode_id,
+                tts_enabled=tts_enabled,
+                production_mode=production_mode,
+                checkpoint_policy=checkpoint_policy,
+                min_free_disk_bytes=1,
                 include_front_half=include_front_half,
+                production_session_id=production_session_id,
                 _include_checkpoint_in_fingerprint=has_checkpoint_snapshot,
             )
         )
         current_fingerprint = str(current_preflight["input_fingerprint"])
         lease_reconcile = JobService(self.database, self.settings).reconcile(actor="episode-run-recovery")
         lease_requeued = {
-            str(item.get("job_id"))
-            for item in lease_reconcile.get("items", [])
-            if isinstance(item, dict) and str(item.get("job_state")) == "QUEUED"
+            str(item.get("job_id")) for item in lease_reconcile.get("items", []) if isinstance(item, dict) and str(item.get("job_state")) == "QUEUED"
         }
         refreshed: list[str] = []
         requeued: list[str] = []
@@ -1589,7 +1931,8 @@ class EpisodeProductionRunService:
                 """SELECT t.*,j.state AS job_state,j.last_error_code,
                 (SELECT provider_job_id FROM job_attempts a WHERE a.job_id=j.id ORDER BY attempt_no DESC LIMIT 1) provider_job_id
                 FROM automation_workflow_run_tasks t JOIN jobs j ON j.id=t.job_id
-                WHERE t.run_id=? ORDER BY t.ordinal""", (run_id,),
+                WHERE t.run_id=? ORDER BY t.ordinal""",
+                (run_id,),
             ).fetchall()
             for task in tasks:
                 item = json.loads(str(task["item_json"] or "{}"))
@@ -1612,12 +1955,19 @@ class EpisodeProductionRunService:
                     snapshot = json.loads(str(snapshot_row["input_snapshot_json"] or "{}")) if snapshot_row else {}
                     snapshot["recovery_input_fingerprint"] = current_fingerprint
                     snapshot["recovery_previous_input_fingerprint"] = task_fingerprint
-                    connection.execute("UPDATE automation_workflow_run_tasks SET item_json=?,updated_at=?,revision=revision+1 WHERE id=?", (_canonical(item), _now(), task["id"]))
-                    connection.execute("UPDATE jobs SET input_snapshot_json=?,updated_at=?,revision=revision+1 WHERE id=?", (_canonical(snapshot), _now(), task["job_id"]))
+                    connection.execute(
+                        "UPDATE automation_workflow_run_tasks SET item_json=?,updated_at=?,revision=revision+1 WHERE id=?",
+                        (_canonical(item), _now(), task["id"]),
+                    )
+                    connection.execute(
+                        "UPDATE jobs SET input_snapshot_json=?,updated_at=?,revision=revision+1 WHERE id=?", (_canonical(snapshot), _now(), task["job_id"])
+                    )
                     refreshed.append(str(task["id"]))
                 if (
-                    str(run_row["status"]) == "RUNNING" and job_state in {"ORPHANED", "NEEDS_ATTENTION"}
-                    and str(task["last_error_code"] or "") == "WORKER_LEASE_EXPIRED" and not task["provider_job_id"]
+                    str(run_row["status"]) == "RUNNING"
+                    and job_state in {"ORPHANED", "NEEDS_ATTENTION"}
+                    and str(task["last_error_code"] or "") == "WORKER_LEASE_EXPIRED"
+                    and not task["provider_job_id"]
                 ):
                     connection.execute(
                         """UPDATE jobs SET state='QUEUED',next_run_at=?,last_error_code=NULL,last_error_detail_redacted=NULL,
@@ -1626,7 +1976,12 @@ class EpisodeProductionRunService:
                     )
                     requeued.append(str(task["job_id"]))
             latest = tasks[-1] if tasks else None
-            if latest and str(run_row["status"]) == "RUNNING" and str(latest["job_state"]) == "SUCCEEDED" and int(latest["ordinal"]) == int(run_row["task_count"]):
+            if (
+                latest
+                and str(run_row["status"]) == "RUNNING"
+                and str(latest["job_state"]) == "SUCCEEDED"
+                and int(latest["ordinal"]) == int(run_row["task_count"])
+            ):
                 latest_item = json.loads(str(latest["item_json"] or "{}"))
                 latest_payload = latest_item.get("payload", {}) if isinstance(latest_item, dict) else {}
                 latest_fingerprint = str(latest_payload.get("input_fingerprint") or old_fingerprint)
@@ -1675,7 +2030,14 @@ class EpisodeProductionRunService:
                     task_machine = json.loads(str(latest["machine_context_json"] or "{}"))
                     history = task_machine.setdefault("recovery_rebuilds", [])
                     if isinstance(history, list):
-                        history.append({"source_job_id": str(latest["job_id"]), "replacement_job_id": str(replacement["id"]), "previous_input_fingerprint": latest_fingerprint, "input_fingerprint": current_fingerprint})
+                        history.append(
+                            {
+                                "source_job_id": str(latest["job_id"]),
+                                "replacement_job_id": str(replacement["id"]),
+                                "previous_input_fingerprint": latest_fingerprint,
+                                "input_fingerprint": current_fingerprint,
+                            }
+                        )
                     connection.execute(
                         "UPDATE automation_workflow_run_tasks SET item_json=?,machine_context_json=?,job_id=?,updated_at=?,revision=revision+1 WHERE id=?",
                         (_canonical(latest_item), _canonical(task_machine), replacement["id"], _now(), latest["id"]),
@@ -1686,12 +2048,31 @@ class EpisodeProductionRunService:
                     advance_job_id = str(latest["job_id"])
             machine = json.loads(str(run_row["machine_context_json"] or "{}"))
             machine["recovery"] = {
-                "input_fingerprint": current_fingerprint, "previous_input_fingerprint": old_fingerprint,
-                "refreshed_task_ids": refreshed, "stale_completed_task_ids": stale_completed,
-                "rebuilt_task_ids": rebuilt, "rebuild_job_ids": rebuild_jobs,
+                "input_fingerprint": current_fingerprint,
+                "previous_input_fingerprint": old_fingerprint,
+                "refreshed_task_ids": refreshed,
+                "stale_completed_task_ids": stale_completed,
+                "rebuilt_task_ids": rebuilt,
+                "rebuild_job_ids": rebuild_jobs,
             }
-            connection.execute("UPDATE automation_workflow_runs SET machine_context_json=?,updated_at=?,revision=revision+1 WHERE id=?", (_canonical(machine), _now(), run_id))
-            self.automation._event(connection, run_id, "RECOVERY_RECONCILED", {"requeued_job_ids": requeued, "skipped_task_ids": skipped, "refreshed_task_ids": refreshed, "stale_completed_task_ids": stale_completed, "rebuilt_task_ids": rebuilt, "rebuild_job_ids": rebuild_jobs, "current_input_fingerprint": current_fingerprint}, actor)
+            connection.execute(
+                "UPDATE automation_workflow_runs SET machine_context_json=?,updated_at=?,revision=revision+1 WHERE id=?", (_canonical(machine), _now(), run_id)
+            )
+            self.automation._event(
+                connection,
+                run_id,
+                "RECOVERY_RECONCILED",
+                {
+                    "requeued_job_ids": requeued,
+                    "skipped_task_ids": skipped,
+                    "refreshed_task_ids": refreshed,
+                    "stale_completed_task_ids": stale_completed,
+                    "rebuilt_task_ids": rebuilt,
+                    "rebuild_job_ids": rebuild_jobs,
+                    "current_input_fingerprint": current_fingerprint,
+                },
+                actor,
+            )
         advanced = False
         missing_report = False
         completion_deferred_by_pause: str | None = None
@@ -1706,8 +2087,11 @@ class EpisodeProductionRunService:
                 status = str(machine_check.get("status", "PASS"))
                 try:
                     self.automation.step_run(
-                        run_id, machine_context={"status": status, "machine_check": machine_check},
-                        produced_bytes=produced_bytes, expected_completed_job_id=advance_job_id, actor=actor,
+                        run_id,
+                        machine_context={"status": status, "machine_check": machine_check},
+                        produced_bytes=produced_bytes,
+                        expected_completed_job_id=advance_job_id,
+                        actor=actor,
                     )
                     advanced = True
                 except DomainRuleError as error:
@@ -1726,4 +2110,20 @@ class EpisodeProductionRunService:
                     else:
                         raise
         result = self._view(self.automation.get_run(run_id), include_jobs=True)
-        return {"run": result, "recovery": {"lease_reconcile": lease_reconcile, "requeued_job_ids": requeued, "skipped_task_ids": skipped, "refreshed_task_ids": refreshed, "stale_completed_task_ids": stale_completed, "rebuilt_task_ids": rebuilt, "rebuild_job_ids": rebuild_jobs, "advanced_completed_job": advanced, "missing_completed_report": missing_report, "completion_deferred_by_pause_job_id": completion_deferred_by_pause, "completion_skipped_terminal_run_job_id": completion_skipped_terminal_run, "input_fingerprint": current_fingerprint}}
+        return {
+            "run": result,
+            "recovery": {
+                "lease_reconcile": lease_reconcile,
+                "requeued_job_ids": requeued,
+                "skipped_task_ids": skipped,
+                "refreshed_task_ids": refreshed,
+                "stale_completed_task_ids": stale_completed,
+                "rebuilt_task_ids": rebuilt,
+                "rebuild_job_ids": rebuild_jobs,
+                "advanced_completed_job": advanced,
+                "missing_completed_report": missing_report,
+                "completion_deferred_by_pause_job_id": completion_deferred_by_pause,
+                "completion_skipped_terminal_run_job_id": completion_skipped_terminal_run,
+                "input_fingerprint": current_fingerprint,
+            },
+        }

@@ -35,6 +35,12 @@ function compositionFromPlan(plan: Plan | null | undefined): CompositionPolicy {
   return fit === "COVER" || fit === "CROP" ? fit : "LETTERBOX";
 }
 
+function crossOrientationFromPlan(plan: Plan | null | undefined): boolean {
+  const generation = plan?.plan?.generation;
+  const upscale = generation && typeof generation === "object" ? (generation as Record<string, unknown>).upscale : null;
+  return Boolean(upscale && typeof upscale === "object" && (upscale as Record<string, unknown>).allow_cross_orientation);
+}
+
 function productionResolutionLabel(resolved: { width: number; height: number; title: string }): string {
   const pixels = `${resolved.width}x${resolved.height}`;
   if (["480x854", "854x480"].includes(pixels)) return "480P";
@@ -45,7 +51,7 @@ function productionResolutionLabel(resolved: { width: number; height: number; ti
   return resolved.title.replace(/^(横屏|竖屏)\s*/, "");
 }
 
-function canonicalPlan(selection: ProjectFormatSelection, compositionPolicy: CompositionPolicy) {
+function canonicalPlan(selection: ProjectFormatSelection, compositionPolicy: CompositionPolicy, allowCrossOrientation: boolean) {
   const resolved = resolveProjectFormat(selection);
   return {
     schema_version: "localdrama.production-plan.v2",
@@ -60,6 +66,7 @@ function canonicalPlan(selection: ProjectFormatSelection, compositionPolicy: Com
       upscale: {
         enabled: true,
         required: true,
+        allow_cross_orientation: allowCrossOrientation,
         stage: "COMPOSE_QC",
         executor: "builtin:ffmpeg",
         target: "PRESENTATION_SPEC",
@@ -95,6 +102,7 @@ export function ProductionSpecEditor({ projectId, configuration }: { projectId: 
   const planVersion = configuration?.production_plan?.version_id ?? "new";
   const [selection, setSelection] = useState<ProjectFormatSelection>(() => selectionFromPlan(configuration?.production_plan));
   const [compositionPolicy, setCompositionPolicy] = useState<CompositionPolicy>(() => compositionFromPlan(configuration?.production_plan));
+  const [allowCrossOrientation, setAllowCrossOrientation] = useState(() => crossOrientationFromPlan(configuration?.production_plan));
   const [initializedVersion, setInitializedVersion] = useState(planVersion);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -102,6 +110,7 @@ export function ProductionSpecEditor({ projectId, configuration }: { projectId: 
     if (initializedVersion !== planVersion) {
       setSelection(selectionFromPlan(configuration?.production_plan));
       setCompositionPolicy(compositionFromPlan(configuration?.production_plan));
+      setAllowCrossOrientation(crossOrientationFromPlan(configuration?.production_plan));
       setInitializedVersion(planVersion);
     }
   }, [configuration?.production_plan, initializedVersion, planVersion]);
@@ -116,7 +125,7 @@ export function ProductionSpecEditor({ projectId, configuration }: { projectId: 
       // aspect ratio that may change between revisions.
       code: "project-production-plan",
       title: `${resolved.ratio} ${resolved.width}×${resolved.height} 生产规格`,
-      plan: canonicalPlan(selection, compositionPolicy),
+      plan: canonicalPlan(selection, compositionPolicy, allowCrossOrientation),
     }),
     onSuccess: async () => {
       setNotice(`生产规格已保存：${resolved.width} × ${resolved.height} · ${selection.fps} fps；请在镜头页确认代理规格与 COMPOSE_QC 解析结果。`);
@@ -140,6 +149,11 @@ export function ProductionSpecEditor({ projectId, configuration }: { projectId: 
         <option value="CROP">CROP · 居中裁切</option>
       </select>
       <span className="muted">仅在 VIDEO 代理画幅与交付画幅不一致时生效；策略会写入 ProductionSpec 快照。</span>
+    </label>
+    <label className="checkbox-label production-spec-cross-orientation">
+      <input type="checkbox" checked={allowCrossOrientation} onChange={(event) => setAllowCrossOrientation(event.target.checked)} />
+      明确允许横屏素材与竖屏交付（或反向）混用
+      <span className="muted">默认禁止。只有确认接受大面积黑边或裁切时才开启；正常情况应更换同方向的 VIDEO workflow。</span>
     </label>
     <div className={`production-spec-resolution production-spec-resolution--${summary.tone}`} aria-live="polite">
       <strong>{summary.status}</strong><span>{summary.text}</span>

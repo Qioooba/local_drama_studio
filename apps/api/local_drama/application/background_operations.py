@@ -16,6 +16,7 @@ from typing import Any
 from local_drama.application.episode_render_approval import require_latest_episode_render_approval
 from local_drama.application.jobs import JobService
 from local_drama.application.timeline import TimelineService
+from local_drama.application.video_upscale.delivery_effects import resolve_delivery_effect_application
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -128,16 +129,19 @@ class BackgroundOperationService:
         brand_kit_id: str | None = None,
         watermark_profile_id: str | None = None,
         compliance_policy_id: str | None = None,
+        *,
+        allow_inactive_target: bool = False,
     ) -> dict[str, Any]:
         with self.database.connect() as connection:
             render = connection.execute(
-                """SELECT erv.id, erv.episode_id, erv.sha256, erv.revision, erv.integrity_status, s.project_id
+                """SELECT erv.id, erv.episode_id, erv.sha256, erv.revision, erv.integrity_status,
+                erv.render_kind,erv.parent_render_version_id,erv.input_snapshot_json,s.project_id
                 FROM episode_render_versions erv JOIN episodes e ON e.id=erv.episode_id
                 JOIN seasons s ON s.id=e.season_id WHERE erv.id=?""",
                 (episode_render_version_id,),
             ).fetchone()
             target = connection.execute(
-                """SELECT dtv.id, dtv.revision, dtv.status, dt.project_id, dt.transport
+                """SELECT dtv.id, dtv.revision, dtv.status,dtv.target_spec_json,dt.project_id, dt.transport
                 FROM delivery_target_versions dtv JOIN delivery_targets dt ON dt.id=dtv.delivery_target_id
                 WHERE dtv.id=?""",
                 (target_version_id,),
@@ -152,10 +156,43 @@ class BackgroundOperationService:
             raise DomainRuleError("EPISODE_RENDER_INTEGRITY_FAILED", "整集渲染尚未通过完整性校验")
         if str(target["transport"]) != "LOCAL_FILESYSTEM":
             raise DomainRuleError("REMOTE_TRANSPORT_DISABLED", "LOCAL_ONLY 首版只允许本地文件交付")
-        if str(target["status"]) != "ACTIVE":
+        if str(target["status"]) != "ACTIVE" and not allow_inactive_target:
             raise DomainRuleError("DELIVERY_TARGET_VERSION_INACTIVE", "只能使用当前 ACTIVE 的交付目标版本创建新候选")
         with self.database.connect() as connection:
-            approval = require_latest_episode_render_approval(connection, dict(render))
+            approval = require_latest_episode_render_approval(
+                connection,
+                dict(render),
+                target_version_id=target_version_id,
+            )
+            if watermark_profile_id == "NONE":
+                watermark = None
+            elif watermark_profile_id:
+                watermark = connection.execute(
+                    "SELECT * FROM watermark_profiles WHERE id=? AND project_id=? AND status='ACTIVE'",
+                    (watermark_profile_id, render["project_id"]),
+                ).fetchone()
+                if watermark is None:
+                    raise DomainRuleError("WATERMARK_PROFILE_NOT_ACTIVE", "水印版本不存在、项目不匹配或已 RETIRED")
+            else:
+                watermark = connection.execute(
+                    "SELECT * FROM watermark_profiles WHERE project_id=? AND status='ACTIVE' ORDER BY updated_at DESC LIMIT 1",
+                    (render["project_id"],),
+                ).fetchone()
+        watermark_snapshot = (
+            {
+                "id": str(watermark["id"]),
+                "code": str(watermark["code"]),
+                "version_no": int(watermark["version_no"]),
+                "config": json.loads(str(watermark["config_json"])),
+            }
+            if watermark is not None
+            else None
+        )
+        effect_application = resolve_delivery_effect_application(
+            input_snapshot=json.loads(str(render["input_snapshot_json"] or "{}")),
+            target_spec=json.loads(str(target["target_spec_json"] or "{}")),
+            watermark_snapshot=watermark_snapshot,
+        )
         inputs = {
             "episode_render_version_id": episode_render_version_id,
             "render_sha256": str(render["sha256"]),
@@ -164,8 +201,10 @@ class BackgroundOperationService:
             "target_revision": int(target["revision"]),
             "approval_id": str(approval["id"]),
             "brand_kit_id": brand_kit_id,
-            "watermark_profile_id": watermark_profile_id,
+            "watermark_profile_id": str(watermark["id"]) if watermark is not None else "NONE",
             "compliance_policy_id": compliance_policy_id,
+            "effect_application": effect_application,
+            "allow_inactive_target": allow_inactive_target,
         }
         return {"project_id": str(render["project_id"]), "fingerprint": _fingerprint(inputs), "inputs": inputs}
 
@@ -229,18 +268,34 @@ class BackgroundOperationService:
         elif job["type"] == "DELIVERY_BUILD":
             with self.database.connect() as connection:
                 row = connection.execute(
-                    """SELECT id FROM delivery_packages
-                    WHERE episode_render_version_id=? AND target_version_id=?
-                    AND brand_kit_id IS ? AND watermark_profile_id IS ? AND compliance_policy_id IS ?
-                    ORDER BY created_at DESC, id DESC LIMIT 1""",
-                    (
-                        snapshot["episode_render_version_id"],
-                        snapshot["target_version_id"],
-                        snapshot.get("brand_kit_id"),
-                        snapshot.get("watermark_profile_id"),
-                        snapshot.get("compliance_policy_id"),
-                    ),
+                    "SELECT id FROM delivery_packages WHERE id=?",
+                    (job_id,),
                 ).fetchone()
+                # Current workers use the immutable Job id as the delivery
+                # operation id, which is the strongest result correlation and
+                # avoids confusing explicit "NONE" control sentinels with SQL
+                # NULL.  Keep the frozen-input lookup for packages produced by
+                # older workers that generated an independent package id.
+                if row is None:
+                    control_ids = tuple(
+                        None if snapshot.get(key) in {None, "NONE"} else snapshot.get(key)
+                        for key in (
+                            "brand_kit_id",
+                            "watermark_profile_id",
+                            "compliance_policy_id",
+                        )
+                    )
+                    row = connection.execute(
+                        """SELECT id FROM delivery_packages
+                        WHERE episode_render_version_id=? AND target_version_id=?
+                        AND brand_kit_id IS ? AND watermark_profile_id IS ? AND compliance_policy_id IS ?
+                        ORDER BY created_at DESC, id DESC LIMIT 1""",
+                        (
+                            snapshot["episode_render_version_id"],
+                            snapshot["target_version_id"],
+                            *control_ids,
+                        ),
+                    ).fetchone()
             if row is not None:
                 response.update(result_type="DELIVERY", result=self.timeline.get_delivery_package(str(row["id"])))
         elif job["type"] == "EPISODE_COMPOSE":

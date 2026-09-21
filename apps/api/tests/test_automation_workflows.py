@@ -208,3 +208,47 @@ def test_each_automation_task_has_durable_job_lineage_and_bounded_dependency(wor
         ).fetchone()
     assert dependency is not None and dependency["depends_on_job_id"] == first_job["id"]
     assert second_job["id"] in str(event["event_json"])
+
+
+def test_finite_run_waits_for_final_job_success_before_reporting_succeeded(workspace, database) -> None:
+    project_id = _project(workspace, database)
+    service = AutomationWorkflowService(database)
+    workflow = service.create_workflow(
+        project_id,
+        code="finite-job-truth",
+        title="有限任务完成语义",
+        mode="BATCH_AUTOMATED",
+        nodes=[{"id": "only", "type": "LOCAL_TASK"}],
+        batch_items=[{"key": "only", "payload": {"action": "TEST"}}],
+        conditions=[],
+        max_iterations=2,
+        max_tasks=2,
+        max_disk_bytes=1_000,
+        human_gate="NONE",
+        repeat_batch=False,
+    )
+
+    run = service.start_run(
+        str(workflow["id"]),
+        plan_hash=str(workflow["plan_hash"]),
+        idempotency_key="finite-job-truth",
+    )
+
+    assert run["status"] == "RUNNING"
+    assert run["tasks"][0]["status"] == "QUEUED"
+    assert run["tasks"][0]["job_state"] == "QUEUED"
+    unchanged = service.step_run(str(run["id"]))
+    assert unchanged["status"] == "RUNNING"
+    job_id = str(run["tasks"][0]["job_id"])
+    with database.transaction() as connection:
+        connection.execute("UPDATE jobs SET state='SUCCEEDED' WHERE id=?", (job_id,))
+
+    completed = service.step_run(
+        str(run["id"]),
+        expected_completed_job_id=job_id,
+    )
+
+    assert completed["status"] == "SUCCEEDED"
+    assert completed["tasks"][0]["status"] == "SUCCEEDED"
+    assert completed["tasks"][0]["job_state"] == "SUCCEEDED"
+    assert completed["completed_at"] is not None

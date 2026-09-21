@@ -72,6 +72,7 @@ describe("EpisodeProductionWorkspace", () => {
   it("shows one staged episode view and only attention-level shot detail", async () => {
     mount();
     expect(await screen.findByRole("heading", { name: "EP01 · 第一集" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "无人值守生成本集" }).getAttribute("href")).toBe("/projects/p1/factory?episode=e1");
     expect(screen.getByText("主角在废墟醒来并寻找出口。")).toBeTruthy();
     expect(screen.getByText("林默")).toBeTruthy();
     expect(screen.getByText("方案与设定")).toBeTruthy();

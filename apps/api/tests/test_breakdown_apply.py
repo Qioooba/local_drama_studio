@@ -246,9 +246,55 @@ def test_apply_binds_existing_character_scene_and_prop_by_name_or_alias(workspac
         rows = connection.execute(
             "SELECT asset_id,role_in_shot FROM shot_asset_bindings ORDER BY role_in_shot,asset_id"
         ).fetchall()
+        proposals = connection.execute(
+            """SELECT kind,name,suggested_asset_id FROM story_asset_proposals
+               WHERE breakdown_draft_id=? ORDER BY kind,name""",
+            (draft_id,),
+        ).fetchall()
     assert {(str(row["asset_id"]), str(row["role_in_shot"])) for row in rows} == {
         (str(character["id"]), "main"), (str(scene["id"]), "location"), (str(prop["id"]), "prop"),
     }
+    assert {
+        (str(row["kind"]), str(row["name"]), str(row["suggested_asset_id"]))
+        for row in proposals
+    } == {
+        ("CHARACTER", "阿舟", str(character["id"])),
+        ("SCENE", "旧仓库", str(scene["id"])),
+        ("PROP", "灯盏", str(prop["id"])),
+    }
+
+
+def test_apply_does_not_bind_every_scene_character_to_a_single_person_shot(workspace, database) -> None:
+    draft = {
+        "scenes": [{
+            "scene_no": 1,
+            "title": "河边",
+            "summary": "林舟走向母亲",
+            "characters": ["林舟", "母亲"],
+            "shots": [{
+                "shot_no": 1,
+                "visual": "雨后旧街",
+                "action": "林舟独自弯腰捡起怀表",
+                "dialogue": "",
+                "duration_seconds": 4,
+            }],
+        }],
+    }
+    project, episode, draft_id = _persisted_draft(workspace, database, draft=draft)
+    assets = StoryAssetService(database, workspace)
+    lin = assets.create_asset(str(project["id"]), "CHARACTER", "CHAR_LIN", "林舟")
+    mother = assets.create_asset(str(project["id"]), "CHARACTER", "CHAR_MOTHER", "母亲")
+
+    BreakdownApplyService(database, workspace).apply_draft(draft_id, str(episode["id"]))
+    with database.connect() as connection:
+        character_ids = {
+            str(row[0]) for row in connection.execute(
+                """SELECT b.asset_id FROM shot_asset_bindings b JOIN story_assets a ON a.id=b.asset_id
+                WHERE a.kind='CHARACTER'"""
+            ).fetchall()
+        }
+    assert character_ids == {str(lin["id"])}
+    assert str(mother["id"]) not in character_ids
 
 
 def test_human_scene_revision_rejects_stale_root_revision(workspace, database) -> None:

@@ -67,7 +67,14 @@ def _insert_image_profile(database, *, status: str = "DRAFT", capability: str = 
     return version_id
 
 
-def _insert_published_t2i_workflow(database, *, capability: str = "SDXL_T2I_CANDIDATE", include_first_frame: bool = False) -> str:
+def _insert_published_t2i_workflow(
+    database,
+    *,
+    capability: str = "SDXL_T2I_CANDIDATE",
+    include_first_frame: bool = False,
+    width: int | None = None,
+    height: int | None = None,
+) -> str:
     workflow_id = str(uuid.uuid4())
     now = "2026-08-23T00:00:00+00:00"
     with database.transaction() as connection:
@@ -86,7 +93,11 @@ def _insert_published_t2i_workflow(database, *, capability: str = "SDXL_T2I_CAND
                 workflow_id,
                 parent_id,
                 "4" * 64,
-                json.dumps({"capability": capability, "input_slots": {}}),
+                json.dumps({
+                    "capability": capability,
+                    "input_slots": {},
+                    "authoring_parameters": {"width": width, "height": height} if width and height else {},
+                }),
                 json.dumps({
                     "PROMPT": {"node_id": "2", "input": "text"},
                     "SEED": {"node_id": "4", "input": "seed"},
@@ -129,6 +140,25 @@ def test_multi_view_probe_uses_explicit_turnaround_prompt(workspace, database) -
     assert "exactly three separate full-body views" in prompt
     assert "front view, left side profile, and back view" in prompt
     assert "no extra person" in prompt
+
+
+def test_landscape_workflow_uses_landscape_evidence_prompt(workspace, database) -> None:
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="landscape_probe", title="Landscape probe", episode_count=1, aspect_ratio="16:9",
+        fps_num=24, fps_den=1, target_duration_ms=60_000, allow_unconfigured_capabilities=True,
+    )
+    profile_id = _insert_image_profile(database)
+    workflow_id = _insert_published_t2i_workflow(
+        database, capability="IMAGE_CONCEPT", width=864, height=480,
+    )
+    profiles = ProfileService(database, workspace.manifest_path)
+    profiles.validate_contract_version(profile_id)
+    profiles.validate_compatibility(profile_id)
+
+    plan = T2IProbePlanService(database).plan(str(project["id"]), profile_id, workflow_id)
+
+    assert plan["status"] == "READY"
+    assert "landscape" in plan["snapshot"]["semantic_inputs"]["PROMPT"]
 
 
 @pytest.mark.parametrize("count", [1, 2, 3])

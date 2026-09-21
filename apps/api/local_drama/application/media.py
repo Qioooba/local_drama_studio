@@ -134,6 +134,8 @@ class MediaService:
                 [ffprobe, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=30,
                 check=False,
             )
@@ -390,6 +392,99 @@ class MediaService:
                     (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
                     VALUES (?, 'producer', 'KEYFRAME_CANDIDATE_CREATED', 'media_version', ?, ?, ?)""",
                     (actor, version_id, "从真实图片版本创建镜头关键帧候选", _json({"source_media_version_id": source_media_version_id, "shot_id": shot_id})),
+                )
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
+        version = self.get_version(version_id)
+        return {"duplicate": False, **version, "media_version_id": str(version["id"])}
+
+    def create_project_keyframe_candidate(
+        self,
+        source_media_version_id: str,
+        project_id: str,
+        *,
+        purpose: str = "PROFILE_EVIDENCE_KEYFRAME",
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Create an immutable project-owned KEYFRAME without creating a story shot."""
+        source = self.get_version(source_media_version_id)
+        if source["media_kind"] != "IMAGE" or source["integrity_status"] != "VERIFIED":
+            raise DomainRuleError("KEYFRAME_SOURCE_INVALID", "关键帧候选必须来自 VERIFIED 图片版本")
+        if str(source["project_id"]) != project_id:
+            raise DomainRuleError("KEYFRAME_PROJECT_MISMATCH", "关键帧源图片必须属于当前项目")
+        self.verify_content_integrity(source_media_version_id)
+        with self.database.connect() as connection:
+            existing = connection.execute(
+                """SELECT mv.id FROM media_versions mv JOIN media_assets ma ON ma.id=mv.media_asset_id
+                WHERE mv.parent_version_id=? AND ma.owner_type='PROJECT' AND ma.owner_id=?
+                AND ma.purpose=? AND mv.stage='KEYFRAME' ORDER BY mv.created_at LIMIT 1""",
+                (source_media_version_id, project_id, purpose),
+            ).fetchone()
+        if existing is not None:
+            version = self.get_version(str(existing["id"]))
+            return {"duplicate": True, **version, "media_version_id": str(version["id"])}
+
+        _, source_path = self.content_path(source_media_version_id)
+        project_root = self._project_root(project_id)
+        rel_path, destination = self._copy_into_project(
+            project_root,
+            source_path,
+            str(source["source_name"] or source_path.name),
+        )
+        digest, size = _hash_file(destination)
+        asset_id = str(uuid.uuid4())
+        version_id = str(uuid.uuid4())
+        now = _utc_now()
+        try:
+            with self.database.transaction() as connection:
+                connection.execute(
+                    """INSERT INTO media_assets
+                    (id, project_id, owner_type, owner_id, purpose, media_kind, version_counter, metadata_json,
+                    created_at, updated_at, created_by, revision, schema_version)
+                    VALUES (?, ?, 'PROJECT', ?, ?, 'IMAGE', 1, ?, ?, ?, ?, 1, 'v2')""",
+                    (
+                        asset_id,
+                        project_id,
+                        project_id,
+                        purpose,
+                        _json({"source_media_version_id": source_media_version_id}),
+                        now,
+                        now,
+                        actor,
+                    ),
+                )
+                connection.execute(
+                    """INSERT INTO media_versions
+                    (id, media_asset_id, version_no, take_no, stage, rel_path, mime_type, byte_size, sha256,
+                    parent_version_id, source_name, import_source, probe_json, integrity_status,
+                    created_at, updated_at, created_by, revision, schema_version)
+                    VALUES (?, ?, 1, 1, 'KEYFRAME', ?, ?, ?, ?, ?, ?, 'DERIVED', ?, 'VERIFIED', ?, ?, ?, 1, 'v2')""",
+                    (
+                        version_id,
+                        asset_id,
+                        rel_path,
+                        source["mime_type"],
+                        size,
+                        digest,
+                        source_media_version_id,
+                        source["source_name"],
+                        _json(source["probe"]),
+                        now,
+                        now,
+                        actor,
+                    ),
+                )
+                connection.execute(
+                    """INSERT INTO audit_events
+                    (actor, role_context, action, subject_type, subject_id, summary, metadata_redacted_json)
+                    VALUES (?, 'producer', 'PROJECT_KEYFRAME_CANDIDATE_CREATED', 'media_version', ?, ?, ?)""",
+                    (
+                        actor,
+                        version_id,
+                        "从真实图片版本创建项目级验证关键帧候选",
+                        _json({"source_media_version_id": source_media_version_id, "project_id": project_id, "purpose": purpose}),
+                    ),
                 )
         except Exception:
             destination.unlink(missing_ok=True)

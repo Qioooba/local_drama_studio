@@ -180,6 +180,7 @@ class EpisodeProductionPrepareFact(StrictModel):
     episode_id: str
     shot_count: int = Field(ge=0)
     job_id: str | None = None
+    job_ownership: Literal["OWNED", "REUSED"] | None = None
     draft_id: str | None = None
 
 

@@ -23,6 +23,14 @@ class GlobalModelCompatibilityReportResponse(BaseModel):
     report: dict[str, Any]
 
 
+class ModelLibraryRootResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    saved: bool
+    copied: Literal[False]
+
+
 class ModelCompatibilityRequest(BaseModel):
     model_artifact_id: str = Field(min_length=1)
     # The operator must be explicit about the profile capability being

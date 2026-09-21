@@ -30,6 +30,14 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _file_sha256(path: Any) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 TEMPLATES: tuple[dict[str, Any], ...] = (
     {
         "code": "image_asset",
@@ -94,6 +102,19 @@ TEMPLATES: tuple[dict[str, Any], ...] = (
             {"id": "audio_mix", "label": "音轨混音", "required": True},
             {"id": "subtitles", "label": "字幕与安全区", "required": True},
             {"id": "delivery_ready", "label": "本地交付可复核", "required": True},
+        ],
+    },
+    {
+        "code": "episode_upscale",
+        "version_no": 1,
+        "subject_type": "EPISODE_RENDER_VERSION",
+        "items": [
+            {"id": "fine_lines_text", "label": "细线、文字与字幕无明显伪影", "required": True},
+            {"id": "faces_identity", "label": "人物脸部与身份稳定", "required": True},
+            {"id": "flicker_texture", "label": "动态细节无明显闪烁或纹理跳变", "required": True},
+            {"id": "audio_sync", "label": "声音同步且音轨完整", "required": True},
+            {"id": "head_tail_complete", "label": "首尾画面和声音完整", "required": True},
+            {"id": "geometry_crop", "label": "画幅、留边与裁切符合目标", "required": True},
         ],
     },
 )
@@ -454,6 +475,13 @@ class ReviewService:
             raise DomainRuleError("EPISODE_RENDER_NOT_FOUND", "整集渲染版本不存在")
         if template is None:
             raise DomainRuleError("REVIEW_TEMPLATE_NOT_FOUND", "整集渲染审核模板不存在")
+        expected_template_code = "episode_upscale" if str(render["render_kind"]) == "SUPER_RESOLUTION" else "episode_render"
+        if str(template["code"]) != expected_template_code:
+            raise DomainRuleError(
+                "REVIEW_TEMPLATE_MISMATCH",
+                "整集渲染审核模板与版本类型不匹配",
+                {"expected_code": expected_template_code, "submitted_code": str(template["code"])},
+            )
         if int(render["revision"]) != expected_subject_revision:
             raise DomainRuleError(
                 "REVIEW_STALE",
@@ -462,6 +490,16 @@ class ReviewService:
             )
         if str(render["integrity_status"]) != "VERIFIED":
             raise DomainRuleError("EPISODE_RENDER_NOT_VERIFIED", "只有完整性 VERIFIED 的整集渲染可以审核")
+        if decision == "APPROVED" and str(render["render_kind"]) == "SUPER_RESOLUTION":
+            with self.database.connect() as connection:
+                machine = connection.execute(
+                    """SELECT status FROM machine_check_runs
+                    WHERE subject_type='EPISODE_RENDER_VERSION' AND subject_id=?
+                    ORDER BY created_at DESC,id DESC LIMIT 1""",
+                    (render_id,),
+                ).fetchone()
+            if machine is None or str(machine["status"]) != "PASS":
+                raise DomainRuleError("UPSCALE_QC_FAILED", "超分成片必须先通过同一版本的机器 QC 才能批准")
         if self.settings is None:
             raise DomainRuleError("MEDIA_SERVICE_UNAVAILABLE", "本地设置未配置")
         project_root = self.settings.resolve_project_root(str(render["root_rel"]))
@@ -472,7 +510,7 @@ class ReviewService:
             require_file=True,
             code="EPISODE_RENDER_FILE_MISSING",
         )
-        digest = hashlib.sha256(render_path.read_bytes()).hexdigest()
+        digest = _file_sha256(render_path)
         if not hmac.compare_digest(digest, str(render["sha256"])):
             raise DomainRuleError("EPISODE_RENDER_INTEGRITY_FAILED", "整集渲染文件 hash 与登记值不一致")
         required = {str(item["id"]) for item in json.loads(template["items_json"]) if item.get("required", True)}
@@ -511,6 +549,410 @@ class ReviewService:
             "decision": decision,
             "is_stale": False,
             "subject_revision": expected_subject_revision,
+        }
+
+    def _episode_render_batch_item_snapshot(
+        self,
+        connection: Any,
+        project_id: str,
+        item: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Validate one upscale review and freeze every fact used by approval."""
+        render_id = str(item.get("render_id") or "")
+        render = connection.execute(
+            """SELECT erv.*,p.id AS project_id,p.root_rel,e.code AS episode_code
+            FROM episode_render_versions erv
+            JOIN episodes e ON e.id=erv.episode_id
+            JOIN seasons s ON s.id=e.season_id
+            JOIN projects p ON p.id=s.project_id
+            WHERE erv.id=?""",
+            (render_id,),
+        ).fetchone()
+        if render is None:
+            raise DomainRuleError("EPISODE_RENDER_NOT_FOUND", "整集渲染版本不存在", {"render_id": render_id})
+        if str(render["project_id"]) != project_id:
+            raise DomainRuleError(
+                "EPISODE_RENDER_REVIEW_BATCH_PROJECT_MISMATCH",
+                "批量审核项必须属于当前项目",
+                {"render_id": render_id, "expected_project_id": project_id},
+            )
+        if str(render["render_kind"]) != "SUPER_RESOLUTION":
+            raise DomainRuleError(
+                "EPISODE_RENDER_REVIEW_BATCH_KIND_INVALID",
+                "整剧超分批量审核只接受 AI 超分成片",
+                {"render_id": render_id, "render_kind": str(render["render_kind"])},
+            )
+        expected_revision = int(item.get("expected_subject_revision") or 0)
+        if int(render["revision"]) != expected_revision:
+            raise DomainRuleError(
+                "REVIEW_STALE",
+                "审核基于旧的整集渲染 revision",
+                {
+                    "render_id": render_id,
+                    "current_revision": int(render["revision"]),
+                    "submitted_revision": expected_revision,
+                },
+            )
+        if str(render["integrity_status"]) != "VERIFIED":
+            raise DomainRuleError(
+                "EPISODE_RENDER_NOT_VERIFIED",
+                "只有完整性 VERIFIED 的超分成片可以审核",
+                {"render_id": render_id},
+            )
+
+        current_root = connection.execute(
+            """SELECT id,revision,sha256 FROM episode_render_versions
+            WHERE episode_id=? AND render_kind='COMPOSE'
+            ORDER BY created_at DESC,id DESC LIMIT 1""",
+            (render["episode_id"],),
+        ).fetchone()
+        if current_root is None or str(render["parent_render_version_id"] or "") != str(current_root["id"]):
+            raise DomainRuleError(
+                "UPSCALE_SOURCE_STALE",
+                "超分结果的合成根已经更新，请重新处理后再审核",
+                {
+                    "render_id": render_id,
+                    "parent_render_version_id": render["parent_render_version_id"],
+                    "current_root_compose_render_id": str(current_root["id"]) if current_root else None,
+                },
+            )
+
+        template = connection.execute(
+            """SELECT * FROM review_templates
+            WHERE code='episode_upscale' AND subject_type='EPISODE_RENDER_VERSION'
+            ORDER BY version_no DESC,id DESC LIMIT 1"""
+        ).fetchone()
+        if template is None:
+            raise DomainRuleError("REVIEW_TEMPLATE_NOT_FOUND", "超分成片审核模板不存在")
+        submitted_template_id = str(item.get("template_version_id") or "")
+        if submitted_template_id != str(template["id"]):
+            raise DomainRuleError(
+                "REVIEW_BATCH_TEMPLATE_MISMATCH",
+                "每集必须使用当前 episode_upscale 审核模板",
+                {
+                    "render_id": render_id,
+                    "expected_template_version_id": str(template["id"]),
+                    "submitted_template_version_id": submitted_template_id,
+                },
+            )
+        template_items = json.loads(str(template["items_json"] or "[]"))
+        allowed_ids = {str(template_item["id"]) for template_item in template_items}
+        required_ids = {
+            str(template_item["id"])
+            for template_item in template_items
+            if template_item.get("required", True)
+        }
+        normalized_checks: list[dict[str, Any]] = []
+        submitted_ids: set[str] = set()
+        for raw_check in item.get("checks") or []:
+            item_id = str(raw_check.get("item_id") or "")
+            if item_id in submitted_ids:
+                raise DomainRuleError(
+                    "REVIEW_CHECK_DUPLICATE",
+                    "同一分集的审核检查项不能重复",
+                    {"render_id": render_id, "item_id": item_id},
+                )
+            if item_id not in allowed_ids:
+                raise DomainRuleError(
+                    "REVIEW_CHECK_UNKNOWN",
+                    "提交了当前模板中不存在的审核检查项",
+                    {"render_id": render_id, "item_id": item_id},
+                )
+            submitted_ids.add(item_id)
+            normalized_checks.append(
+                {
+                    "item_id": item_id,
+                    "result": str(raw_check.get("result") or ""),
+                    "comment": raw_check.get("comment"),
+                }
+            )
+        missing = sorted(required_ids - submitted_ids)
+        if missing:
+            raise DomainRuleError(
+                "REVIEW_CHECKS_INCOMPLETE",
+                "每一集都必须独立完成全部必填检查项",
+                {"render_id": render_id, "missing": missing},
+            )
+        decision = str(item.get("decision") or "")
+        if decision not in {"APPROVED", "REJECTED", "NEEDS_CHANGES"}:
+            raise DomainRuleError("INVALID_REVIEW_DECISION", "审核决定无效", {"render_id": render_id})
+        comment = item.get("comment")
+        if decision == "REJECTED" and not str(comment or "").strip():
+            raise DomainRuleError(
+                "REVIEW_COMMENT_REQUIRED",
+                "拒绝审核必须逐集填写原因",
+                {"render_id": render_id},
+            )
+        failed = sorted(check["item_id"] for check in normalized_checks if check["result"] != "PASS")
+        if decision == "APPROVED" and failed:
+            raise DomainRuleError(
+                "REVIEW_CHECK_FAILED",
+                "该集存在未通过检查项，不能批准",
+                {"render_id": render_id, "failed": failed},
+            )
+
+        machine = connection.execute(
+            """SELECT id,status,policy_version FROM machine_check_runs
+            WHERE subject_type='EPISODE_RENDER_VERSION' AND subject_id=?
+            ORDER BY created_at DESC,id DESC LIMIT 1""",
+            (render_id,),
+        ).fetchone()
+        if decision == "APPROVED" and (machine is None or str(machine["status"]) != "PASS"):
+            raise DomainRuleError(
+                "UPSCALE_QC_FAILED",
+                "每集超分成片必须先通过同一版本的机器 QC 才能批准",
+                {"render_id": render_id},
+            )
+        if self.settings is None:
+            raise DomainRuleError("MEDIA_SERVICE_UNAVAILABLE", "本地设置未配置")
+        project_root = self.settings.resolve_project_root(str(render["root_rel"]))
+        render_path = controlled_path(
+            project_root,
+            str(render["rel_path"]),
+            must_exist=True,
+            require_file=True,
+            code="EPISODE_RENDER_FILE_MISSING",
+        )
+        file_sha256 = _file_sha256(render_path)
+        if not hmac.compare_digest(file_sha256, str(render["sha256"])):
+            raise DomainRuleError(
+                "EPISODE_RENDER_INTEGRITY_FAILED",
+                "整集渲染文件 hash 与登记值不一致",
+                {"render_id": render_id},
+            )
+        previous = connection.execute(
+            """SELECT id,decision,is_stale,subject_revision FROM review_decisions
+            WHERE subject_type='EPISODE_RENDER_VERSION' AND subject_id=?
+            ORDER BY created_at DESC,id DESC LIMIT 1""",
+            (render_id,),
+        ).fetchone()
+        return {
+            "render_id": render_id,
+            "episode_id": str(render["episode_id"]),
+            "episode_code": str(render["episode_code"]),
+            "render_revision": int(render["revision"]),
+            "render_sha256": file_sha256,
+            "root_compose_render_id": str(current_root["id"]),
+            "root_compose_revision": int(current_root["revision"]),
+            "root_compose_sha256": str(current_root["sha256"]),
+            "machine_check_run_id": str(machine["id"]) if machine else None,
+            "machine_check_status": str(machine["status"]) if machine else None,
+            "machine_check_policy_version": str(machine["policy_version"]) if machine else None,
+            "template_version_id": str(template["id"]),
+            "template_version_no": int(template["version_no"]),
+            "template_items_sha256": hashlib.sha256(str(template["items_json"]).encode("utf-8")).hexdigest(),
+            "previous_review_id": str(previous["id"]) if previous else None,
+            "decision": decision,
+            "checks": sorted(normalized_checks, key=lambda check: check["item_id"]),
+            "comment": comment,
+        }
+
+    def episode_render_batch_review_plan(
+        self,
+        project_id: str,
+        items: list[dict[str, Any]],
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Create a short-lived immutable plan for per-episode upscale reviews."""
+        if not items:
+            raise DomainRuleError("EMPTY_REVIEW_BATCH", "批量审核不能为空")
+        with self.database.connect() as connection:
+            if connection.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone() is None:
+                raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
+            planned_items: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for item in items:
+                render_id = str(item.get("render_id") or "")
+                if render_id in seen:
+                    raise DomainRuleError(
+                        "DUPLICATE_REVIEW_BATCH_ITEM",
+                        "批量审核不能重复选择同一超分成片",
+                        {"render_id": render_id},
+                    )
+                seen.add(render_id)
+                planned_items.append(self._episode_render_batch_item_snapshot(connection, project_id, item))
+        snapshot = {
+            "schema_version": "localdrama.episode-upscale-review-batch-plan.v1",
+            "kind": "EPISODE_UPSCALE_REVIEW",
+            "project_id": project_id,
+            "items": planned_items,
+        }
+        plan_hash = hashlib.sha256(_json(snapshot).encode("utf-8")).hexdigest()
+        plan_token = secrets.token_urlsafe(32)
+        plan_id = str(uuid.uuid4())
+        expires_at = (datetime.now(UTC) + timedelta(minutes=15)).isoformat()
+        now = _utc_now()
+        stored_plan = {**snapshot, "plan_hash": plan_hash}
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO review_batch_plans
+                (id,token_hash,project_id,plan_json,expires_at,status,created_at,updated_at,created_by,revision,schema_version)
+                VALUES (?,?,?,?,?,'READY',?,?,?,1,'episode-upscale-review-batch.v1')""",
+                (plan_id, _token_hash(plan_token), project_id, _json(stored_plan), expires_at, now, now, actor),
+            )
+        return {
+            "plan_id": plan_id,
+            "plan_token": plan_token,
+            "plan_hash": plan_hash,
+            "expires_at": expires_at,
+            "status": "READY",
+            "items": planned_items,
+            "would_create_review_count": len(planned_items),
+            "mutated_reviews": False,
+        }
+
+    def episode_render_batch_review_commit(
+        self,
+        plan_token: str,
+        plan_hash: str,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Revalidate and insert all planned reviews in one SQLite transaction."""
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            plan_row = connection.execute(
+                "SELECT * FROM review_batch_plans WHERE token_hash=?",
+                (_token_hash(plan_token),),
+            ).fetchone()
+            if (
+                plan_row is None
+                or str(plan_row["status"]) != "READY"
+                or datetime.fromisoformat(str(plan_row["expires_at"])) <= datetime.now(UTC)
+            ):
+                raise DomainRuleError(
+                    "EPISODE_RENDER_REVIEW_BATCH_TOKEN_INVALID",
+                    "超分成片批量审核计划无效、过期或已使用",
+                )
+            stored = json.loads(str(plan_row["plan_json"]))
+            if stored.get("kind") != "EPISODE_UPSCALE_REVIEW":
+                raise DomainRuleError(
+                    "EPISODE_RENDER_REVIEW_BATCH_TOKEN_INVALID",
+                    "该计划令牌不属于超分成片批量审核",
+                )
+            stored_hash = str(stored.get("plan_hash") or "")
+            unsigned_snapshot = {key: value for key, value in stored.items() if key != "plan_hash"}
+            recalculated_hash = hashlib.sha256(_json(unsigned_snapshot).encode("utf-8")).hexdigest()
+            if not hmac.compare_digest(stored_hash, recalculated_hash) or not hmac.compare_digest(stored_hash, plan_hash):
+                raise DomainRuleError(
+                    "EPISODE_RENDER_REVIEW_BATCH_STALE",
+                    "超分成片批量审核计划内容不匹配，请重新检查",
+                )
+
+            refreshed_items: list[dict[str, Any]] = []
+            for frozen in stored["items"]:
+                request_item = {
+                    "render_id": frozen["render_id"],
+                    "template_version_id": frozen["template_version_id"],
+                    "decision": frozen["decision"],
+                    "expected_subject_revision": frozen["render_revision"],
+                    "checks": frozen["checks"],
+                    "comment": frozen.get("comment"),
+                }
+                try:
+                    refreshed = self._episode_render_batch_item_snapshot(
+                        connection,
+                        str(stored["project_id"]),
+                        request_item,
+                    )
+                except DomainRuleError as error:
+                    raise DomainRuleError(
+                        "EPISODE_RENDER_REVIEW_BATCH_STALE",
+                        "批量预检后至少一集的版本、来源、QC、模板或文件发生变化，未写入任何审核",
+                        {"render_id": frozen["render_id"], "cause_code": error.code},
+                    ) from error
+                if refreshed != frozen:
+                    raise DomainRuleError(
+                        "EPISODE_RENDER_REVIEW_BATCH_STALE",
+                        "批量预检后至少一集的审核依据发生变化，未写入任何审核",
+                        {"render_id": frozen["render_id"]},
+                    )
+                refreshed_items.append(refreshed)
+
+            results: list[dict[str, Any]] = []
+            for item in refreshed_items:
+                review_id = str(uuid.uuid4())
+                connection.execute(
+                    """INSERT INTO review_decisions
+                    (id,subject_type,subject_id,review_template_version_id,decision,comment,
+                     supersedes_decision_id,subject_revision,is_stale,created_at,updated_at,created_by,revision,schema_version)
+                    VALUES (?,'EPISODE_RENDER_VERSION',?,?,?,?,?, ?,0,?,?,?,1,'episode-upscale-review-batch.v1')""",
+                    (
+                        review_id,
+                        item["render_id"],
+                        item["template_version_id"],
+                        item["decision"],
+                        item.get("comment"),
+                        item.get("previous_review_id"),
+                        item["render_revision"],
+                        now,
+                        now,
+                        actor,
+                    ),
+                )
+                for check in item["checks"]:
+                    connection.execute(
+                        """INSERT INTO review_checks
+                        (id,review_decision_id,item_id,result,comment) VALUES (?,?,?,?,?)""",
+                        (
+                            str(uuid.uuid4()),
+                            review_id,
+                            check["item_id"],
+                            check["result"],
+                            check.get("comment"),
+                        ),
+                    )
+                connection.execute(
+                    """INSERT INTO audit_events
+                    (actor,role_context,action,subject_type,subject_id,before_revision,after_revision,summary,metadata_redacted_json)
+                    VALUES (?,'reviewer','EPISODE_RENDER_REVIEW_SUBMITTED','episode_render_version',?,?,?,?,?)""",
+                    (
+                        actor,
+                        item["render_id"],
+                        item["render_revision"],
+                        item["render_revision"],
+                        f"超分成片批量审核 {item['decision']}",
+                        _json(
+                            {
+                                "review_id": review_id,
+                                "template_version_id": item["template_version_id"],
+                                "batch_plan_id": str(plan_row["id"]),
+                            }
+                        ),
+                    ),
+                )
+                results.append(
+                    {
+                        "id": review_id,
+                        "subject_type": "EPISODE_RENDER_VERSION",
+                        "subject_id": item["render_id"],
+                        "decision": item["decision"],
+                        "is_stale": False,
+                        "subject_revision": item["render_revision"],
+                    }
+                )
+            connection.execute(
+                """UPDATE review_batch_plans
+                SET status='COMMITTED',updated_at=?,revision=revision+1 WHERE id=? AND status='READY'""",
+                (now, plan_row["id"]),
+            )
+            connection.execute(
+                """INSERT INTO audit_events
+                (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json)
+                VALUES (?,'reviewer','EPISODE_RENDER_REVIEW_BATCH_COMMITTED','review_batch_plan',?,?,?)""",
+                (
+                    actor,
+                    str(plan_row["id"]),
+                    f"原子提交 {len(results)} 集超分成片审核",
+                    _json({"project_id": stored["project_id"], "review_count": len(results), "plan_hash": stored_hash}),
+                ),
+            )
+        return {
+            "plan_id": str(plan_row["id"]),
+            "plan_hash": stored_hash,
+            "status": "COMMITTED",
+            "items": results,
+            "review_count": len(results),
+            "atomic": True,
         }
 
     def _approval_impact(self, connection: Any, media: dict[str, Any]) -> dict[str, Any]:

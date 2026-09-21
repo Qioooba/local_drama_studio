@@ -156,3 +156,101 @@ def test_cancel_is_cooperative_and_invalid_progress_is_rejected(workspace, datab
     assert jobs.cancel(str(job["id"]))["state"] == "CANCEL_REQUESTED"
     result = jobs.complete(str(claim["attempt"]["id"]), str(claim["attempt"]["lease_token"]), "cancel-worker", success=False, error_code="CANCELLED_BY_USER")
     assert result["job_state"] == "CANCELLED"
+
+
+def test_pause_then_immediate_resume_waits_for_old_attempt_to_settle(workspace, database) -> None:
+    project = _project(workspace, database, "scheduler_pause_resume_fence")
+    jobs = JobService(database, workspace)
+    job = _job(jobs, str(project["id"]), "pause-resume-fence")
+    claim = jobs.claim("old-worker", ["CPU"])
+    assert claim is not None
+    attempt = claim["attempt"]
+    jobs.heartbeat(str(attempt["id"]), str(attempt["lease_token"]), "old-worker")
+
+    assert jobs.pause(str(job["id"]))["state"] == "PAUSED"
+    resume_pending = jobs.resume(str(job["id"]))
+    assert resume_pending["state"] == "PAUSED"
+    with database.connect() as connection:
+        assert connection.execute(
+            "SELECT next_run_at FROM jobs WHERE id=?", (job["id"],)
+        ).fetchone()["next_run_at"] is not None
+    assert jobs.claim("new-worker", ["CPU"]) is None
+
+    # A second pause cancels the pending resume without touching the old
+    # attempt; requesting resume again restores the durable intent.
+    assert jobs.pause(str(job["id"]))["state"] == "PAUSED"
+    with database.connect() as connection:
+        assert connection.execute(
+            "SELECT next_run_at FROM jobs WHERE id=?", (job["id"],)
+        ).fetchone()["next_run_at"] is None
+    assert jobs.resume(str(job["id"]))["state"] == "PAUSED"
+
+    old_result = jobs.complete(
+        str(attempt["id"]),
+        str(attempt["lease_token"]),
+        "old-worker",
+        success=False,
+        error_code="JOB_CANCELLED",
+    )
+    assert old_result["attempt_state"] == "CANCELLED"
+    assert old_result["job_state"] == "QUEUED"
+    replacement = jobs.claim("new-worker", ["CPU"])
+    assert replacement is not None
+    assert replacement["job"]["id"] == job["id"]
+    assert replacement["attempt"]["attempt_no"] == 2
+
+
+def test_cancel_paused_running_job_stays_cooperative_until_attempt_exits(workspace, database) -> None:
+    project = _project(workspace, database, "scheduler_paused_cancel_fence")
+    jobs = JobService(database, workspace)
+    job = _job(jobs, str(project["id"]), "paused-cancel-fence")
+    claim = jobs.claim("cancel-worker", ["CPU"])
+    assert claim is not None
+    attempt = claim["attempt"]
+    jobs.heartbeat(str(attempt["id"]), str(attempt["lease_token"]), "cancel-worker")
+
+    assert jobs.pause(str(job["id"]))["state"] == "PAUSED"
+    assert jobs.cancel(str(job["id"]))["state"] == "CANCEL_REQUESTED"
+    heartbeat = jobs.heartbeat(
+        str(attempt["id"]),
+        str(attempt["lease_token"]),
+        "cancel-worker",
+    )
+    assert heartbeat["cancel_requested"] is True
+    result = jobs.complete(
+        str(attempt["id"]),
+        str(attempt["lease_token"]),
+        "cancel-worker",
+        success=False,
+        error_code="JOB_CANCELLED",
+    )
+    assert result["job_state"] == "CANCELLED"
+
+
+def test_resource_exhaustion_waits_for_explicit_operator_retry(workspace, database) -> None:
+    project = _project(workspace, database, "scheduler_needs_attention")
+    jobs = JobService(database, workspace)
+    job = _job(jobs, str(project["id"]), "disk-full", max_attempts=3)
+    claim = jobs.claim("resource-worker", ["CPU"])
+    assert claim is not None
+    attempt = claim["attempt"]
+
+    result = jobs.complete(
+        str(attempt["id"]),
+        str(attempt["lease_token"]),
+        "resource-worker",
+        success=False,
+        error_code="DISK_FULL",
+        error_detail_redacted="本地输出空间不足",
+        needs_attention=True,
+    )
+    assert result["attempt_state"] == "NEEDS_ATTENTION"
+    assert result["job_state"] == "NEEDS_ATTENTION"
+    assert result["next_run_at"] is None
+    assert jobs.claim("unexpected-auto-retry", ["CPU"]) is None
+
+    retried = jobs.retry(str(job["id"]))
+    assert retried["state"] == "QUEUED"
+    replacement = jobs.claim("resource-worker", ["CPU"])
+    assert replacement is not None
+    assert replacement["attempt"]["attempt_no"] == 2

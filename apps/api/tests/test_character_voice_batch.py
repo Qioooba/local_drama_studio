@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from local_drama.application.dialogue import DialogueService
+from local_drama.application.jobs import JobService
 from local_drama.application.projects import ProjectService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.main import create_app
@@ -388,6 +389,29 @@ def test_episode_tts_batch_validation_and_idempotency(workspace, database) -> No
         with database.connect() as connection:
             jobs = connection.execute("SELECT COUNT(*) FROM jobs WHERE type='TTS_GENERATION' AND project_id=?", (project_id,)).fetchone()[0]
             assert jobs == 1
+
+        session_batch = DialogueService(
+            database,
+            workspace,
+            jobs=JobService(database, workspace),
+        ).submit_episode_tts_batch(
+            episode_id,
+            idempotency_key_prefix="ep-session",
+            emotion="警觉",
+            speech_rate=0.95,
+            production_session_id="production-session-budget",
+        )
+        session_job_id = session_batch["submitted"][0]["job_id"]
+        with database.connect() as connection:
+            session_snapshot = json.loads(
+                str(
+                    connection.execute(
+                        "SELECT input_snapshot_json FROM jobs WHERE id=?",
+                        (session_job_id,),
+                    ).fetchone()[0]
+                )
+            )
+        assert session_snapshot["production_session_id"] == "production-session-budget"
 
         # Rebinding the character changes the payload: same key now conflicts on rerun.
         voice_b = _create_voice(client, project_id, "voice-b", "Voice B", "sapi:VoiceB")

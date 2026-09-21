@@ -78,12 +78,7 @@ class ShotKeyframeGenerationBatchService:
 
     @staticmethod
     def _action_endpoint(fields: dict[str, Any]) -> str:
-        action = str(
-            fields.get("subject_action")
-            or fields.get("action")
-            or (fields.get("performance") or {}).get("body_action")
-            or ""
-        ).strip()
+        action = str(fields.get("subject_action") or fields.get("action") or (fields.get("performance") or {}).get("body_action") or "").strip()
         if not action:
             return ""
         transition_parts = re.split(r"(?:切至|转至|随后|继而|最后|最终|镜头转向)", action)
@@ -96,12 +91,7 @@ class ShotKeyframeGenerationBatchService:
 
     @staticmethod
     def _action_segments(fields: dict[str, Any]) -> list[str]:
-        action = str(
-            fields.get("subject_action")
-            or fields.get("action")
-            or (fields.get("performance") or {}).get("body_action")
-            or ""
-        ).strip()
+        action = str(fields.get("subject_action") or fields.get("action") or (fields.get("performance") or {}).get("body_action") or "").strip()
         if not action:
             return []
         segments = re.split(r"(?:切至|转至|随后|继而|最后|最终|镜头转向)|[。！？!?；;]+", action)
@@ -138,8 +128,7 @@ class ShotKeyframeGenerationBatchService:
         # in PromptBundle for audit; only the role-specific drawable moment
         # is sent to the image workflow.
         parts.append(
-            "只呈现一个连续瞬间和一个空间位置；不要呈现其他时序、后续或前序动作、场景切换；"
-            "单镜头、满画幅竖屏、单帧电影画面，无文字无水印"
+            "只呈现一个连续瞬间和一个空间位置；不要呈现其他时序、后续或前序动作、场景切换；单镜头、服从项目画幅方向并铺满画面、单帧电影画面，无文字无水印"
         )
         return "；".join(parts)[:3000]
 
@@ -154,7 +143,9 @@ class ShotKeyframeGenerationBatchService:
     ) -> str:
         if normalize_frame_reframe_mode(reframe_mode) == "SINGLE_MOMENT":
             return cls._single_moment_prompt(fields, shot_code, role)
-        base = compose_shot_prompt(fields, shot_code=shot_code)
+        # Spoken text belongs to TTS/subtitles. Sending it to an image model
+        # encourages accidental on-image text even when captions are banned.
+        base = compose_shot_prompt(fields, shot_code=shot_code, include_dialogue=False)
         if role == "END_FRAME":
             endpoint = ShotKeyframeGenerationBatchService._action_endpoint(fields)
             endpoint_focus = f"画面只呈现动作终点：{endpoint}；" if endpoint else ""
@@ -168,7 +159,8 @@ class ShotKeyframeGenerationBatchService:
     @staticmethod
     def _capability_for_shot(connection: Any, shot_id: str) -> str:
         kinds = {
-            str(row[0]) for row in connection.execute(
+            str(row[0])
+            for row in connection.execute(
                 """SELECT DISTINCT a.kind FROM shot_asset_bindings b
                 JOIN story_assets a ON a.id=b.asset_id
                 WHERE b.shot_id=? AND a.status='ACTIVE'""",
@@ -264,6 +256,7 @@ class ShotKeyframeGenerationBatchService:
         candidate_count: int = 2,
         profile_version_id: str | None = None,
         prompt_bundle: dict[str, Any] | None = None,
+        production_session_id: str | None = None,
     ) -> dict[str, Any]:
         if frame_strategy not in {"FIRST_ONLY", "FIRST_AND_LAST"}:
             raise DomainRuleError("SHOT_KEYFRAME_STRATEGY_INVALID", "镜头帧策略必须是只生成首帧或同时生成首尾帧")
@@ -306,17 +299,19 @@ class ShotKeyframeGenerationBatchService:
                     issues.append({"code": "SHOT_NOT_FOUND", "shot_id": target["shot_id"], "message": "镜头不存在或不属于当前分集"})
                     continue
                 fields = json.loads(str(row["fields_json"] or "{}"))
-                fields, dialogue_facts = fields_with_current_dialogue(
-                    connection, str(row["id"]), fields
-                )
+                fields, dialogue_facts = fields_with_current_dialogue(connection, str(row["id"]), fields)
                 # A shot code is an identifier, not creative content.  Keep it
                 # in the emitted prompt, but do not let it satisfy the
                 # no-prompt guard by itself.
-                prompt_base = compose_shot_prompt(fields, shot_code=None)
+                prompt_base = compose_shot_prompt(fields, shot_code=None, include_dialogue=False)
                 capability = self._capability_for_shot(connection, str(row["id"]))
                 resolution = resolver.resolve(project_id=project_id, episode_id=episode_id, shot_id=str(row["id"]), capability=capability)
                 selected_profile_id = profile_version_id or resolution.get("profile_version_id")
-                profile = connection.execute("SELECT * FROM execution_profile_versions WHERE id=?", (selected_profile_id,)).fetchone() if selected_profile_id else None
+                profile = (
+                    connection.execute("SELECT * FROM execution_profile_versions WHERE id=?", (selected_profile_id,)).fetchone()
+                    if selected_profile_id
+                    else None
+                )
                 # AUTO profile resolution predates Workflow App Contracts and
                 # may keep returning an older IMAGE_CONCEPT profile even after
                 # the operator has explicitly bound a different single-frame
@@ -325,11 +320,13 @@ class ShotKeyframeGenerationBatchService:
                 # preserve an explicit project/episode/shot selection and let
                 # the normal readiness checks fail closed when no route exists.
                 if profile_version_id is None and str(resolution.get("source") or "") == "AUTO":
-                    identity_reference_count = int(connection.execute(
-                        """SELECT COUNT(*) FROM shot_asset_bindings b JOIN story_assets a ON a.id=b.asset_id
+                    identity_reference_count = int(
+                        connection.execute(
+                            """SELECT COUNT(*) FROM shot_asset_bindings b JOIN story_assets a ON a.id=b.asset_id
                         WHERE b.shot_id=? AND a.kind='CHARACTER' AND b.identity_pack_version_id IS NOT NULL""",
-                        (row["id"],),
-                    ).fetchone()[0])
+                            (row["id"],),
+                        ).fetchone()[0]
+                    )
                     bound_profile = latest_bound_profile_for_capability(
                         connection,
                         route_capability=SHOT_KEYFRAME_SINGLE_FRAME,
@@ -351,9 +348,11 @@ class ShotKeyframeGenerationBatchService:
                         capability="IMAGE_CONCEPT",
                     )
                     generic_profile_id = generic_resolution.get("profile_version_id")
-                    generic_profile = connection.execute(
-                        "SELECT * FROM execution_profile_versions WHERE id=?", (generic_profile_id,)
-                    ).fetchone() if generic_profile_id else None
+                    generic_profile = (
+                        connection.execute("SELECT * FROM execution_profile_versions WHERE id=?", (generic_profile_id,)).fetchone()
+                        if generic_profile_id
+                        else None
+                    )
                     if self._supports_keyframe_semantics(connection, generic_profile):
                         selected_profile_id = generic_profile_id
                         profile = generic_profile
@@ -370,9 +369,7 @@ class ShotKeyframeGenerationBatchService:
                         {
                             "code": "DIALOGUE_SPEAKER_CONFIRMATION_REQUIRED",
                             "message": "对白说话人尚未确认",
-                            "dialogue_line_ids": dialogue_facts[
-                                "unresolved_speaker_line_ids"
-                            ],
+                            "dialogue_line_ids": dialogue_facts["unresolved_speaker_line_ids"],
                         }
                     )
                 if int(row["revision"]) != target["expected_revision"]:
@@ -386,10 +383,12 @@ class ShotKeyframeGenerationBatchService:
                 if profile is None or str(profile["status"]) != "PUBLISHED" or not compatible_profile:
                     shot_blockers.append({"code": "SHOT_KEYFRAME_PROFILE_REQUIRED", "message": f"当前镜头没有可执行的 {capability} 图片配置"})
                 elif workflow_route["status"] != "READY" and not workflow_route.get("blockers"):
-                    shot_blockers.append({
-                        "code": "SHOT_KEYFRAME_WORKFLOW_BINDINGS_REQUIRED",
-                        "message": "当前图片配置未绑定关键帧生成所需的提示词与随机种子",
-                    })
+                    shot_blockers.append(
+                        {
+                            "code": "SHOT_KEYFRAME_WORKFLOW_BINDINGS_REQUIRED",
+                            "message": "当前图片配置未绑定关键帧生成所需的提示词与随机种子",
+                        }
+                    )
                 shot_blockers.extend(workflow_route.get("blockers", []))
                 missing_refs = connection.execute(
                     """SELECT a.id,a.name FROM shot_asset_bindings b JOIN story_assets a ON a.id=b.asset_id
@@ -399,20 +398,43 @@ class ShotKeyframeGenerationBatchService:
                     (row["id"],),
                 ).fetchall()
                 if missing_refs:
-                    shot_blockers.append({"code": "SHOT_ASSET_HERO_REQUIRED", "message": "绑定资产缺少主参考", "assets": [str(item["name"]) for item in missing_refs]})
+                    shot_blockers.append(
+                        {"code": "SHOT_ASSET_HERO_REQUIRED", "message": "绑定资产缺少主参考", "assets": [str(item["name"]) for item in missing_refs]}
+                    )
                 identity_inputs: dict[str, Any] = {"snapshot_hash": None, "references": [], "prompt": ""}
                 try:
-                    identity_inputs = shot_identity_references(connection, project_id, str(row["id"]), workflow_bindings)
+                    identity_inputs = shot_identity_references(
+                        connection,
+                        project_id,
+                        str(row["id"]),
+                        workflow_bindings,
+                        production_session_id=production_session_id,
+                    )
                     reference_roles = {ref["role"] for ref in identity_inputs["references"]}
                     declared_slots = json.loads(str(profile["input_contract_json"] or "{}")) if profile is not None else {}
                     profile_slots = declared_slots.get("input_slots", {})
                     for reference_role in reference_roles:
                         if reference_role not in profile_slots:
-                            shot_blockers.append({"code": "SHOT_IDENTITY_PROFILE_INPUT_REQUIRED", "message": f"图片配置没有声明 {reference_role} 媒体输入槽，请在能力配置中更新输入契约"})
+                            shot_blockers.append(
+                                {
+                                    "code": "SHOT_IDENTITY_PROFILE_INPUT_REQUIRED",
+                                    "message": f"图片配置没有声明 {reference_role} 媒体输入槽，请在能力配置中更新输入契约",
+                                }
+                            )
                     contract_inputs = workflow_route.get("contract", {}).get("inputs", {})
                     for reference_role, spec in contract_inputs.items():
-                        if str(reference_role).startswith("REFERENCE_IMAGE") and isinstance(spec, dict) and spec.get("required", True) and reference_role not in reference_roles:
-                            shot_blockers.append({"code": "SHOT_IDENTITY_REFERENCE_INPUT_REQUIRED", "message": f"当前工作流要求 {reference_role}，镜头没有对应人物身份包；请选择匹配人数的工作流或绑定人物身份包"})
+                        if (
+                            str(reference_role).startswith("REFERENCE_IMAGE")
+                            and isinstance(spec, dict)
+                            and spec.get("required", True)
+                            and reference_role not in reference_roles
+                        ):
+                            shot_blockers.append(
+                                {
+                                    "code": "SHOT_IDENTITY_REFERENCE_INPUT_REQUIRED",
+                                    "message": f"当前工作流要求 {reference_role}，镜头没有对应人物身份包；请选择匹配人数的工作流或绑定人物身份包",
+                                }
+                            )
                 except DomainRuleError as error:
                     shot_blockers.append({"code": error.code, "message": error.message, **(error.details or {})})
                 for role in roles:
@@ -454,8 +476,11 @@ class ShotKeyframeGenerationBatchService:
                         else:
                             item_prompt_bundle = self._blocked_prompt_bundle()
                         item = {
-                            "shot_id": str(row["id"]), "shot_code": str(row["code"]), "shot_revision": int(row["revision"]),
-                            "frame_role": role, "candidate_index": candidate_index,
+                            "shot_id": str(row["id"]),
+                            "shot_code": str(row["code"]),
+                            "shot_revision": int(row["revision"]),
+                            "frame_role": role,
+                            "candidate_index": candidate_index,
                             "capability": capability,
                             "profile_version_id": str(profile["id"]) if profile is not None else None,
                             "shot_keyframe_route": workflow_route.get("facts", {}),
@@ -463,15 +488,12 @@ class ShotKeyframeGenerationBatchService:
                             "identity_inputs": identity_inputs,
                             "prompt": str(item_prompt_bundle["final_prompt"]),
                             "prompt_bundle": item_prompt_bundle,
-                            "status": "BLOCKED" if item_blockers else "READY", "blockers": item_blockers,
+                            "status": "BLOCKED" if item_blockers else "READY",
+                            "blockers": item_blockers,
                         }
                         item["semantic_inputs"] = {
                             "PROMPT": str(item_prompt_bundle["final_prompt"]),
-                            **(
-                                {"NEGATIVE_PROMPT": str(item_prompt_bundle["negative_prompt"])}
-                                if "NEGATIVE_PROMPT" in workflow_bindings
-                                else {}
-                            ),
+                            **({"NEGATIVE_PROMPT": str(item_prompt_bundle["negative_prompt"])} if "NEGATIVE_PROMPT" in workflow_bindings else {}),
                             # The plan is read-only and does not yet have the
                             # submit idempotency key used to derive each
                             # candidate's explicit seed.  Preserve the
@@ -497,12 +519,36 @@ class ShotKeyframeGenerationBatchService:
                 "seed_policy": "EXPLICIT_SUBMIT_SEED" if "SEED" in representative_bindings else None,
             }
             authority = {
-                "episode_id": episode_id, "project_id": project_id, "targets": normalized,
-                "frame_strategy": frame_strategy, "candidate_count": candidate_count,
+                "episode_id": episode_id,
+                "project_id": project_id,
+                "targets": normalized,
+                "frame_strategy": frame_strategy,
+                "candidate_count": candidate_count,
                 "prompt_bundle": prompt_bundle,
                 "execution_contract": execution_contract,
-                "items": [{key: item[key] for key in ("shot_id", "shot_revision", "frame_role", "candidate_index", "capability", "profile_version_id", "shot_keyframe_route", "identity_inputs", "semantic_inputs", "prompt", "prompt_bundle", "status")} for item in items],
+                "items": [
+                    {
+                        key: item[key]
+                        for key in (
+                            "shot_id",
+                            "shot_revision",
+                            "frame_role",
+                            "candidate_index",
+                            "capability",
+                            "profile_version_id",
+                            "shot_keyframe_route",
+                            "identity_inputs",
+                            "semantic_inputs",
+                            "prompt",
+                            "prompt_bundle",
+                            "status",
+                        )
+                    }
+                    for item in items
+                ],
             }
+            if production_session_id:
+                authority["production_session_id"] = production_session_id
         ready = sum(item["status"] == "READY" for item in items)
         unique_issues: list[dict[str, Any]] = []
         seen_issues: set[str] = set()
@@ -518,16 +564,32 @@ class ShotKeyframeGenerationBatchService:
             seen_issues.add(signature)
             unique_issues.append(issue)
         return {
-            **authority, "plan_hash": _digest(authority), "valid": ready > 0,
-            "issues": unique_issues, "items": items,
+            **authority,
+            "plan_hash": _digest(authority),
+            "valid": ready > 0,
+            "issues": unique_issues,
+            "items": items,
             "summary": {"shots": len(normalized), "jobs": ready, "blocked": sum(item["status"] == "BLOCKED" for item in items)},
-            "runtime_contacted": False, "network_contacted": False, "mutated": False,
+            "runtime_contacted": False,
+            "network_contacted": False,
+            "mutated": False,
         }
 
-    def submit(self, episode_id: str, *, targets: list[dict[str, Any]], frame_strategy: str, candidate_count: int,
-               expected_plan_hash: str, idempotency_key: str, profile_version_id: str | None = None,
-               prompt_bundle: dict[str, Any] | None = None,
-               actor: str = "local-user") -> dict[str, Any]:
+    def submit(
+        self,
+        episode_id: str,
+        *,
+        targets: list[dict[str, Any]],
+        frame_strategy: str,
+        candidate_count: int,
+        expected_plan_hash: str,
+        idempotency_key: str,
+        profile_version_id: str | None = None,
+        prompt_bundle: dict[str, Any] | None = None,
+        production_session_id: str | None = None,
+        max_jobs: int | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
         if not idempotency_key.strip():
             raise DomainRuleError("IDEMPOTENCY_KEY_REQUIRED", "提交关键帧批次需要幂等键")
         with self.database.connect() as connection:
@@ -546,79 +608,135 @@ class ShotKeyframeGenerationBatchService:
             candidate_count=candidate_count,
             profile_version_id=profile_version_id,
             prompt_bundle=prompt_bundle,
+            production_session_id=production_session_id,
         )
         if not hmac.compare_digest(str(plan["plan_hash"]), expected_plan_hash):
             raise DomainRuleError("SHOT_KEYFRAME_PLAN_STALE", "镜头、资产或生成配置已变化，请重新检查")
         if not plan["valid"]:
             raise DomainRuleError("SHOT_KEYFRAME_BATCH_BLOCKED", "关键帧批次存在阻塞", {"issues": plan["issues"]})
         ready = [item for item in plan["items"] if item["status"] == "READY"]
+        if max_jobs is not None:
+            if isinstance(max_jobs, bool) or int(max_jobs) < 1:
+                raise DomainRuleError(
+                    "SHOT_KEYFRAME_DISPATCH_LIMIT_INVALID",
+                    "关键帧单轮任务上限必须是正整数",
+                )
+            ready = ready[: int(max_jobs)]
         batch_id, now = str(uuid.uuid4()), _now()
         with self.database.transaction() as connection:
             connection.execute(
                 """INSERT INTO shot_keyframe_generation_batches
                 (id,project_id,episode_id,frame_strategy,candidate_count,status,plan_hash,idempotency_key,selected_shot_count,queued_count,created_at,updated_at,created_by,revision,schema_version,input_snapshot_json)
                 VALUES (?,?,?,?,?,'QUEUING',?,?,?,0,?,?,?,1,'v1',?)""",
-                (batch_id, plan["project_id"], episode_id, frame_strategy, candidate_count, expected_plan_hash, idempotency_key, plan["summary"]["shots"], now, now, actor, _canonical({
-                    "schema_version": PROMPT_BUNDLE_SCHEMA_VERSION,
-                    "targets": targets,
-                    "frame_strategy": frame_strategy,
-                    "candidate_count": candidate_count,
-                    "prompt_bundle_request": prompt_bundle or {},
-                    "prompt_bundles": [item["prompt_bundle"] for item in ready],
-                    "semantic_inputs": [item["semantic_inputs"] for item in ready],
-                    "shot_keyframe_routes": [item["shot_keyframe_route"] for item in ready],
-                })),
+                (
+                    batch_id,
+                    plan["project_id"],
+                    episode_id,
+                    frame_strategy,
+                    candidate_count,
+                    expected_plan_hash,
+                    idempotency_key,
+                    plan["summary"]["shots"],
+                    now,
+                    now,
+                    actor,
+                    _canonical(
+                        {
+                            "schema_version": PROMPT_BUNDLE_SCHEMA_VERSION,
+                            "targets": targets,
+                            "frame_strategy": frame_strategy,
+                            "candidate_count": candidate_count,
+                            "prompt_bundle_request": prompt_bundle or {},
+                            "production_session_id": production_session_id,
+                            "max_jobs": max_jobs,
+                            "prompt_bundles": [item["prompt_bundle"] for item in ready],
+                            "semantic_inputs": [item["semantic_inputs"] for item in ready],
+                            "shot_keyframe_routes": [item["shot_keyframe_route"] for item in ready],
+                        }
+                    ),
+                ),
             )
             for item in ready:
                 connection.execute(
                     """INSERT INTO shot_keyframe_generation_batch_items
                     (id,batch_id,shot_id,shot_revision,frame_role,candidate_index,profile_version_id,status,prompt_snapshot,input_snapshot_json,created_at,updated_at,revision,schema_version)
                     VALUES (?,?,?,?,?,?,?,'PLANNED',?,?,?,?,1,'v1')""",
-                    (str(uuid.uuid4()), batch_id, item["shot_id"], item["shot_revision"], item["frame_role"], item["candidate_index"], item["profile_version_id"], item["prompt"], _canonical({
-                        "schema_version": PROMPT_BUNDLE_SCHEMA_VERSION,
-                        "shot_id": item["shot_id"],
-                        "shot_code": item["shot_code"],
-                        "shot_revision": item["shot_revision"],
-                        "frame_role": item["frame_role"],
-                        "candidate_index": item["candidate_index"],
-                        "profile_version_id": item["profile_version_id"],
-                        "prompt_bundle": item["prompt_bundle"],
-                        "semantic_inputs": item["semantic_inputs"],
-                        "shot_keyframe_route": item["shot_keyframe_route"],
-                        "identity_inputs": item["identity_inputs"],
-                    }), now, now),
+                    (
+                        str(uuid.uuid4()),
+                        batch_id,
+                        item["shot_id"],
+                        item["shot_revision"],
+                        item["frame_role"],
+                        item["candidate_index"],
+                        item["profile_version_id"],
+                        item["prompt"],
+                        _canonical(
+                            {
+                                "schema_version": PROMPT_BUNDLE_SCHEMA_VERSION,
+                                "shot_id": item["shot_id"],
+                                "shot_code": item["shot_code"],
+                                "shot_revision": item["shot_revision"],
+                                "frame_role": item["frame_role"],
+                                "candidate_index": item["candidate_index"],
+                                "profile_version_id": item["profile_version_id"],
+                                "prompt_bundle": item["prompt_bundle"],
+                                "semantic_inputs": item["semantic_inputs"],
+                                "shot_keyframe_route": item["shot_keyframe_route"],
+                                "identity_inputs": item["identity_inputs"],
+                            }
+                        ),
+                        now,
+                        now,
+                    ),
                 )
         queued = 0
         for item in ready:
             try:
                 intent = self.generation.create_shot_intent(
-                    item["shot_id"], purpose="T2I", creative_goal=item["prompt"],
+                    item["shot_id"],
+                    purpose="T2I",
+                    creative_goal=item["prompt"],
                     idempotency_key=f"{idempotency_key}:intent:{item['shot_id']}:{item['frame_role']}:{item['candidate_index']}",
                 )
-                seed = self._seed(
-                    item["shot_id"], item["frame_role"], item["candidate_index"], idempotency_key
-                )
+                seed = self._seed(item["shot_id"], item["frame_role"], item["candidate_index"], idempotency_key)
                 variant = VariantPlan(
-                    variant_type="BASE", parent_variant_id=None,
-                    branch_reason=f"SHOT_{item['frame_role']}_CANDIDATE_{item['candidate_index']}", prompt_revision_id=None,
-                    profile_version_id=item["profile_version_id"], parameter_set={**item["semantic_inputs"], "SEED": seed},
-                    seed_policy="EXPLICIT", explicit_seed=seed,
-                    bindings=tuple(VariantInput(ref["role"], ref["media_version_id"], 0, None)
-                                   for ref in item["identity_inputs"]["references"]),
+                    variant_type="BASE",
+                    parent_variant_id=None,
+                    branch_reason=f"SHOT_{item['frame_role']}_CANDIDATE_{item['candidate_index']}",
+                    prompt_revision_id=None,
+                    profile_version_id=item["profile_version_id"],
+                    parameter_set={**item["semantic_inputs"], "SEED": seed},
+                    seed_policy="EXPLICIT",
+                    explicit_seed=seed,
+                    bindings=tuple(VariantInput(ref["role"], ref["media_version_id"], 0, None) for ref in item["identity_inputs"]["references"]),
                     prompt_bundle=item["prompt_bundle"],
                     expected_identity_pack_snapshot_hash=item["identity_inputs"]["snapshot_hash"],
+                    production_session_id=production_session_id,
                 )
                 checked = self.generation.preflight_shot_base_variant(item["shot_id"], str(intent["id"]), variant, item["shot_revision"], "SHOT_IMAGE")
                 submitted = self.generation.submit_shot_base_variant(
-                    item["shot_id"], str(intent["id"]), variant, expected_shot_revision=item["shot_revision"],
-                    stage_code="SHOT_IMAGE", plan_hash=str(checked["plan_hash"]),
+                    item["shot_id"],
+                    str(intent["id"]),
+                    variant,
+                    expected_shot_revision=item["shot_revision"],
+                    stage_code="SHOT_IMAGE",
+                    plan_hash=str(checked["plan_hash"]),
                     idempotency_key=f"{idempotency_key}:job:{item['shot_id']}:{item['frame_role']}:{item['candidate_index']}",
                 )
                 with self.database.transaction() as connection:
                     connection.execute(
                         """UPDATE shot_keyframe_generation_batch_items SET status='QUEUED',intent_id=?,variant_id=?,job_id=?,updated_at=?,revision=revision+1
                         WHERE batch_id=? AND shot_id=? AND frame_role=? AND candidate_index=?""",
-                        (intent["id"], submitted["variant"]["id"], submitted["job"]["id"], _now(), batch_id, item["shot_id"], item["frame_role"], item["candidate_index"]),
+                        (
+                            intent["id"],
+                            submitted["variant"]["id"],
+                            submitted["job"]["id"],
+                            _now(),
+                            batch_id,
+                            item["shot_id"],
+                            item["frame_role"],
+                            item["candidate_index"],
+                        ),
                     )
                 queued += 1
             except DomainRuleError as error:
@@ -674,24 +792,53 @@ class ShotKeyframeGenerationBatchService:
                 item_snapshot = json.loads(str(row["input_snapshot_json"] or "{}"))
             except (KeyError, TypeError, json.JSONDecodeError):
                 item_snapshot = {}
-            items.append({
-                "id": str(row["id"]), "shot_id": str(row["shot_id"]), "shot_code": str(row["shot_code"]),
-                "frame_role": str(row["frame_role"]), "candidate_index": int(row["candidate_index"]), "status": status,
-                "job_id": str(row["job_id"]) if row["job_id"] else None, "job_state": job_state or None,
-                "media_version_id": str(row["media_version_id"]) if row["media_version_id"] else None,
-                "prompt_bundle": item_snapshot.get("prompt_bundle") if isinstance(item_snapshot, dict) else None,
-                "error": ({"code": row["error_code"] or row["last_error_code"], "message": row["error_detail_redacted"] or row["last_error_detail_redacted"]} if row["error_code"] or row["last_error_code"] else None),
-            })
+            items.append(
+                {
+                    "id": str(row["id"]),
+                    "shot_id": str(row["shot_id"]),
+                    "shot_code": str(row["shot_code"]),
+                    "frame_role": str(row["frame_role"]),
+                    "candidate_index": int(row["candidate_index"]),
+                    "status": status,
+                    "job_id": str(row["job_id"]) if row["job_id"] else None,
+                    "job_state": job_state or None,
+                    "media_version_id": str(row["media_version_id"]) if row["media_version_id"] else None,
+                    "prompt_bundle": item_snapshot.get("prompt_bundle") if isinstance(item_snapshot, dict) else None,
+                    "error": (
+                        {"code": row["error_code"] or row["last_error_code"], "message": row["error_detail_redacted"] or row["last_error_detail_redacted"]}
+                        if row["error_code"] or row["last_error_code"]
+                        else None
+                    ),
+                }
+            )
         success = sum(item["status"] == "SUCCEEDED" for item in items)
         failed = sum(item["status"] in {"FAILED", "CANCELLED"} for item in items)
         active = len(items) - success - failed
-        status = "SUCCEEDED" if items and success == len(items) else "PARTIAL_FAILED" if failed and success else "FAILED" if failed == len(items) and items else "RUNNING" if any(item["status"] == "RUNNING" for item in items) else "QUEUED"
+        status = (
+            "SUCCEEDED"
+            if items and success == len(items)
+            else "PARTIAL_FAILED"
+            if failed and success
+            else "FAILED"
+            if failed == len(items) and items
+            else "RUNNING"
+            if any(item["status"] == "RUNNING" for item in items)
+            else "QUEUED"
+        )
         return {
-            "id": str(batch["id"]), "project_id": str(batch["project_id"]), "episode_id": str(batch["episode_id"]),
-            "frame_strategy": str(batch["frame_strategy"]), "candidate_count": int(batch["candidate_count"]),
-            "status": status, "plan_hash": str(batch["plan_hash"]), "created_at": str(batch["created_at"]),
-            "prompt_bundle": batch_snapshot.get("prompt_bundles", [None])[0] if isinstance(batch_snapshot, dict) and batch_snapshot.get("prompt_bundles") else None,
-            "summary": {"total": len(items), "succeeded": success, "failed": failed, "active": active}, "items": items,
+            "id": str(batch["id"]),
+            "project_id": str(batch["project_id"]),
+            "episode_id": str(batch["episode_id"]),
+            "frame_strategy": str(batch["frame_strategy"]),
+            "candidate_count": int(batch["candidate_count"]),
+            "status": status,
+            "plan_hash": str(batch["plan_hash"]),
+            "created_at": str(batch["created_at"]),
+            "prompt_bundle": batch_snapshot.get("prompt_bundles", [None])[0]
+            if isinstance(batch_snapshot, dict) and batch_snapshot.get("prompt_bundles")
+            else None,
+            "summary": {"total": len(items), "succeeded": success, "failed": failed, "active": active},
+            "items": items,
         }
 
 
@@ -714,8 +861,11 @@ class ShotKeyframeGenerationCompletionService:
         for artifact in artifacts:
             try:
                 promoted = self.media.promote_job_artifact(
-                    str(artifact["id"]), purpose="KEYFRAME_END" if item["frame_role"] == "END_FRAME" else "KEYFRAME",
-                    media_kind="IMAGE", stage="KEYFRAME", actor="shot-keyframe-worker",
+                    str(artifact["id"]),
+                    purpose="KEYFRAME_END" if item["frame_role"] == "END_FRAME" else "KEYFRAME",
+                    media_kind="IMAGE",
+                    stage="KEYFRAME",
+                    actor="shot-keyframe-worker",
                 )
                 break
             except DomainRuleError:

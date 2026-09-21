@@ -4,6 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from local_drama.application.configuration import ConfigurationService
@@ -13,6 +14,7 @@ from local_drama.application.media import MediaService
 from local_drama.application.projects import ProjectService
 from local_drama.application.timeline import TimelineService
 from local_drama.application.worker import LocalMediaWorker
+from local_drama.domain.errors import DomainRuleError
 from local_drama.main import create_app
 
 
@@ -510,7 +512,7 @@ def test_optional_post_process_failure_does_not_register_or_overwrite_input(work
     assert MediaService(database, workspace).verify_content_integrity(video_id)["sha256"] == original_sha
 
 
-def test_brand_watermark_and_compliance_versions_bind_delivery_without_auto_review(workspace, database) -> None:
+def test_brand_watermark_and_compliance_versions_bind_delivery_without_auto_review(workspace, database, monkeypatch) -> None:
     project = _project(workspace, database)
     project_id = str(project["id"])
     project_service = ProjectService(database, workspace.projects_root)
@@ -546,7 +548,47 @@ def test_brand_watermark_and_compliance_versions_bind_delivery_without_auto_revi
         assert item["controls"]["brand_kit"]["version_no"] == 1
         assert item["controls"]["watermark_profile"]["version_no"] == 1
         assert item["controls"]["compliance_policy"]["version_no"] == 2
+        assert item["controls"]["effect_application"]["watermark"]["action"] == "APPLY"
         assert any(str(file["rel_path"]).endswith(".watermark.txt") for file in item["files"])
+        with database.transaction() as connection:
+            frozen = json.loads(
+                str(
+                    connection.execute(
+                        "SELECT input_snapshot_json FROM episode_render_versions WHERE id=?",
+                        (render.json()["render"]["id"],),
+                    ).fetchone()[0]
+                )
+            )
+            frozen["applied_effects"] = {
+                "subtitle_burned": False,
+                "watermark_profile_snapshot": item["controls"]["watermark_profile"],
+                "evidence_source": "APPROVED_DELIVERY_PACKAGE",
+            }
+            connection.execute(
+                "UPDATE episode_render_versions SET input_snapshot_json=? WHERE id=?",
+                (json.dumps(frozen), render.json()["render"]["id"]),
+            )
+
+        def fail_duplicate_watermark(*args, **kwargs):
+            raise AssertionError("identical inherited watermark must not be encoded a second time")
+
+        monkeypatch.setattr(TimelineService, "_run_ffmpeg", fail_duplicate_watermark)
+        reused = TimelineService(database, workspace).build_delivery(
+            str(render.json()["render"]["id"]),
+            str(target["version_id"]),
+            watermark_profile_id=str(watermark.json()["watermark_profile"]["id"]),
+            compliance_policy_id=str(passing_policy.json()["compliance_policy"]["id"]),
+        )
+        assert reused["controls"]["effect_application"]["watermark"]["action"] == "REUSE"
+        assert not any(str(file["rel_path"]).endswith(".watermark.txt") for file in reused["files"])
+        with pytest.raises(DomainRuleError) as remove_watermark:
+            TimelineService(database, workspace).build_delivery(
+                str(render.json()["render"]["id"]),
+                str(target["version_id"]),
+                watermark_profile_id="NONE",
+                compliance_policy_id="NONE",
+            )
+        assert remove_watermark.value.code == "DELIVERY_BURNED_WATERMARK_CONFLICT"
         controls = client.get(f"/api/v1/projects/{project_id}/brand-controls")
         assert controls.status_code == 200
         assert controls.json()["watermark_profiles"][0]["status"] == "ACTIVE"
@@ -687,6 +729,8 @@ def test_delivery_manifest_history_verify_and_withdraw_preserve_files(workspace,
 def test_delivery_both_materializes_frozen_subtitle_sidecar_and_verifies_contract(workspace, database) -> None:
     project = _project(workspace, database)
     project_id = str(project["id"])
+    with database.transaction() as connection:
+        connection.execute("UPDATE projects SET subtitle_mode='BOTH', subtitle_language='zh-CN' WHERE id=?", (project_id,))
     project_service = ProjectService(database, workspace.projects_root)
     season = project_service.list_seasons(project_id)[0]
     episode = project_service.list_episodes(str(season["id"]))[0]
@@ -760,3 +804,50 @@ def test_delivery_sidecar_fails_closed_without_frozen_subtitle(workspace, databa
         blocked = client.post("/api/v1/delivery-packages", json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"]})
         assert blocked.status_code == 422, blocked.text
         assert blocked.json()["error"]["code"] == "DELIVERY_SUBTITLE_REQUIRED"
+
+
+def test_delivery_burn_in_fails_closed_when_render_only_freezes_subtitle_revision(workspace, database) -> None:
+    project = _project(workspace, database)
+    project_id = str(project["id"])
+    projects = ProjectService(database, workspace.projects_root)
+    episode = projects.list_episodes(str(projects.list_seasons(project_id)[0]["id"]))[0]
+    source = MediaService(database, workspace).import_file(
+        project_id, _video(workspace), purpose="SHOT_VIDEO", media_kind="VIDEO",
+    )
+    script_path = workspace.work_root / "delivery-burn-contract-script.txt"
+    script_path.write_text("只冻结、不烧录。", encoding="utf-8")
+    script = DocumentImportService(database, workspace).import_document(project_id, script_path)
+    with TestClient(create_app(workspace)) as client:
+        subtitle = client.post(
+            f"/api/v1/episodes/{episode['id']}/subtitle-revisions",
+            json={
+                "format": "SRT",
+                "authority": {"text_authority": "SCRIPT", "source_document_version_id": script["source_document_version_id"]},
+                "cues": [{"start_us": 0, "end_us": 1_000_000, "text": "只冻结、不烧录。"}],
+            },
+        ).json()["subtitle"]
+        timeline = client.post(
+            f"/api/v1/episodes/{episode['id']}/timeline-revisions",
+            json={
+                "items": [{"track_type": "VIDEO", "media_version_id": source["media_version_id"], "start_us": 0, "end_us": 1_000_000, "parameters": {}}],
+                "input_snapshot": {"source": "delivery-burn-contract", "subtitle_revision_id": subtitle["id"]},
+            },
+        ).json()["timeline"]
+        render = client.post(f"/api/v1/timeline-revisions/{timeline['id']}:render").json()["render"]
+        assert render["input_snapshot"]["subtitle_burned_in"] is False
+        _approve_render_v2(client, render, comment="验证烧录字幕交付门禁")
+        target = ConfigurationService(database).create_delivery_target(
+            project_id,
+            "burn-contract",
+            "Burn contract",
+            "LOCAL_FILESYSTEM",
+            {"path_rel": "06_delivery/burn-contract", "subtitles": "BURN_IN"},
+        )
+
+        blocked = client.post(
+            "/api/v1/delivery-packages",
+            json={"episode_render_version_id": render["id"], "target_version_id": target["version_id"]},
+        )
+
+        assert blocked.status_code == 422, blocked.text
+        assert blocked.json()["error"]["code"] == "DELIVERY_BURNED_SUBTITLE_REQUIRED"

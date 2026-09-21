@@ -94,3 +94,40 @@ def test_media_catalogue_is_project_scoped_searchable_and_uploads_without_client
     assert video_catalogue.json()["items"] == []
     assert legacy_thumbnail.status_code == 422
     assert legacy_thumbnail.json()["error"]["code"] == "MEDIA_KIND_MIME_MISMATCH"
+
+
+def test_shot_keyframe_path_import_canonicalizes_asset_purpose(workspace, database) -> None:
+    project = _project(workspace, database, "shot_keyframe_path_import")
+    projects = ProjectService(database, workspace.projects_root)
+    season = projects.list_seasons(str(project["id"]))[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    shot = projects.create_shot(str(episode["id"]), "SHOT-001", 1_000)
+    source = workspace.work_root / "shot-keyframe-path-import.png"
+    subprocess.run(
+        [workspace.ffmpeg_path, "-f", "lavfi", "-i", "color=c=yellow:s=16x16:d=1", "-frames:v", "1", "-y", str(source)],
+        check=True,
+        capture_output=True,
+    )
+
+    with TestClient(create_app(workspace)) as client:
+        response = client.post(
+            "/api/v1/media:import",
+            json={
+                "project_id": str(project["id"]),
+                "source_path": str(source),
+                "purpose": "T2I",
+                "owner_type": "SHOT",
+                "owner_id": str(shot["id"]),
+                "media_kind": "IMAGE",
+                "stage": "KEYFRAME",
+            },
+        )
+
+    assert response.status_code == 201, response.text
+    media_version_id = response.json()["media"]["media_version_id"]
+    with database.connect() as connection:
+        purpose = connection.execute(
+            "SELECT ma.purpose FROM media_assets ma JOIN media_versions mv ON mv.media_asset_id=ma.id WHERE mv.id=?",
+            (media_version_id,),
+        ).fetchone()[0]
+    assert purpose == "KEYFRAME"

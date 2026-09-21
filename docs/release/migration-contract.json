@@ -1,7 +1,7 @@
 {
   "schema_version": "localdrama.release-migration-contract.v1",
   "expected_heads": [
-    "0094_project_target_duration"
+    "0100_production_session_waiting_user"
   ],
   "upgrade_command": ".venv\\\\Scripts\\\\python.exe -m alembic upgrade heads",
   "rollback_policy": "restore_verified_pre_migration_backup_with_matching_code",
@@ -422,6 +422,52 @@
       "facts": [
         "projects.target_duration_ms",
         "project_default_duration_compatibility_backfill"
+      ]
+    },
+    {
+      "revision": "0095_video_upscale_delivery",
+      "facts": [
+        "versioned_video_upscale_presets_and_plans",
+        "recoverable_video_upscale_batches_runs_and_chunks",
+        "explicit_episode_delivery_selection"
+      ]
+    },
+    {
+      "revision": "0096_production_sessions",
+      "facts": [
+        "durable_single_episode_and_whole_drama_production_intent",
+        "per_episode_stage_progress_and_job_lineage",
+        "machine_temporary_choices_separate_from_human_review"
+      ]
+    },
+    {
+      "revision": "0097_video_upscale_previews",
+      "facts": [
+        "immutable_video_upscale_sample_range_and_inputs",
+        "preview_output_integrity_without_episode_render_registration"
+      ]
+    },
+    {
+      "revision": "0098_production_session_identity_inputs",
+      "facts": [
+        "session_scoped_temporary_character_identity_inputs",
+        "verified_three_view_draft_snapshot_without_human_approval",
+        "cross_session_identity_isolation_and_slot_change_invalidation"
+      ]
+    },
+    {
+      "revision": "0099_production_session_asset_inputs",
+      "facts": [
+        "session_scoped_machine_temporary_asset_identity_inputs",
+        "provisional_story_asset_without_proposal_acceptance",
+        "exact_episode_shot_binding_with_human_decision_preserved"
+      ]
+    },
+    {
+      "revision": "0100_production_session_waiting_user",
+      "facts": [
+        "explicit_waiting_user_state_for_exhausted_blocked_sessions",
+        "no_busy_reconciliation_while_human_intervention_is_required"
       ]
     }
   ]

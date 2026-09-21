@@ -49,6 +49,7 @@ def _draft_payload(workspace_fact: dict[str, object], *, key: str) -> dict[str, 
         "include_dialogue": True,
         "include_music_and_sfx": True,
         "include_subtitles": True,
+        "include_source_audio": False,
         "expected_latest_revision_id": workspace_fact["latest_revision"]["id"] if workspace_fact["latest_revision"] else None,
         "expected_upstream_fingerprint": workspace_fact["upstream_fingerprint"],
         "idempotency_key": key,
@@ -92,6 +93,8 @@ def test_edit_workspace_v2_creates_idempotent_draft_and_freezes_new_revision(wor
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE action IN ('TIMELINE_DRAFT_CREATED_V2','TIMELINE_FROZEN_V2')").fetchone()[0] == 2
         assert connection.execute("SELECT COUNT(*) FROM outbox_events WHERE type='TimelineRevisionChanged' AND project_id=?", (project["id"],)).fetchone()[0] == 2
+        snapshot = connection.execute("SELECT input_snapshot_json FROM timeline_revisions WHERE id=?", (draft["id"],)).fetchone()[0]
+        assert '"include_source_audio":false' in str(snapshot).replace(" ", "")
 
 
 def test_edit_workspace_v2_rejects_stale_upstream_and_revision_conflicts(workspace, database) -> None:

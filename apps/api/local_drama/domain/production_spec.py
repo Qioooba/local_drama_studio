@@ -133,6 +133,7 @@ def canonical_production_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
     normalized_upscale = {
         "enabled": bool(upscale.get("enabled", upscale.get("required", False))),
         "required": bool(upscale.get("required", upscale.get("enabled", False))),
+        "allow_cross_orientation": bool(upscale.get("allow_cross_orientation", False)),
         "stage": str(upscale.get("stage") or "COMPOSE_QC"),
         "executor": str(upscale.get("executor") or "builtin:ffmpeg"),
         "target": str(upscale.get("target") or "PRESENTATION_SPEC"),
@@ -226,6 +227,7 @@ def _upscale_path(plan: Mapping[str, Any]) -> dict[str, Any] | None:
     result = {
         "enabled": True,
         "required": bool(upscale.get("required", True)),
+        "allow_cross_orientation": bool(upscale.get("allow_cross_orientation", False)),
         "stage": "COMPOSE_QC",
         "executor": "builtin:ffmpeg",
         "target": "PRESENTATION_SPEC",
@@ -332,6 +334,19 @@ def resolve_production_spec(
     upscale = _upscale_path(canonical_plan)
     delivery_ratio = delivery["width"] / delivery["height"]
     actual_ratio = actual_width / actual_height
+    cross_orientation = (actual_width > actual_height) != (delivery["width"] > delivery["height"])
+    if cross_orientation and (upscale is None or not bool(upscale.get("allow_cross_orientation", False))):
+        return {
+            "schema_version": PRODUCTION_SPEC_SNAPSHOT_VERSION,
+            "status": "BLOCKED",
+            "delivery": delivery,
+            "generation": {"mode": "BLOCKED", "semantic_inputs": semantic_inputs, "actual": actual, "upscale": None, "workflow_roles": sorted(roles)},
+            "blockers": [{
+                "code": "PRODUCTION_CROSS_ORIENTATION_CONFIRMATION_REQUIRED",
+                "message": f"当前 workflow 为 {actual_width}×{actual_height}，交付为 {delivery['width']}×{delivery['height']}，横竖屏方向相反；请更换同方向 workflow，或显式确认允许大面积加边/裁切",
+            }],
+            "warnings": [],
+        }
     if abs(delivery_ratio - actual_ratio) > 0.0001 and (upscale is None or "fit" not in upscale):
         return {
             "schema_version": PRODUCTION_SPEC_SNAPSHOT_VERSION,

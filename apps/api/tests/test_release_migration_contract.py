@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from scripts import release_audit
 
 from local_drama.application.project_packages import PACKAGE_SCHEMA, STATE_SCHEMA
 
@@ -80,6 +82,12 @@ def test_release_migration_contract_matches_graph_and_package_authority() -> Non
         "0092_shot_keyframe_generation_batches",
         "0093_shot_prompt_bundle_snapshots",
         "0094_project_target_duration",
+        "0095_video_upscale_delivery",
+        "0096_production_sessions",
+        "0097_video_upscale_previews",
+        "0098_production_session_identity_inputs",
+        "0099_production_session_asset_inputs",
+        "0100_production_session_waiting_user",
     ]
     graph = {revision.revision for revision in scripts.walk_revisions()}
     assert set(revisions).issubset(graph)
@@ -89,6 +97,7 @@ def test_release_runbooks_use_contract_instead_of_stale_current_head() -> None:
     install = (ROOT / "docs" / "release" / "install-upgrade-rollback.md").read_text(encoding="utf-8")
     go_no_go = (ROOT / "docs" / "release" / "go-no-go.md").read_text(encoding="utf-8")
     rehearsal = (ROOT / "scripts" / "release_rehearsal.py").read_text(encoding="utf-8")
+    audit = (ROOT / "scripts" / "release_audit.py").read_text(encoding="utf-8")
     assert "migration-contract.json.expected_heads" in install
     assert "恢复库 migration revision 等于备份时记录的 revision" in install
     assert "0048_asset_proposals" in go_no_go
@@ -96,3 +105,68 @@ def test_release_runbooks_use_contract_instead_of_stale_current_head() -> None:
     assert "历史冻结决策（2026-08-17）" in go_no_go
     assert 'default=ROOT / "docs" / "evidence" / "g10" / "upgrade-rollback-rehearsal-0039' not in rehearsal
     assert 'f"upgrade-rollback-rehearsal-{head_label}-{date_label}.json"' in rehearsal
+    assert "0041_character_voice_bindings" not in audit
+    assert "0031_project_asset_grants" not in audit
+    assert "0039_automation_task_jobs" not in audit
+    assert "MIGRATION_CONTRACT_PATH" in audit
+    assert 'f"release-readiness-{date_label}.json"' in audit
+
+
+def test_release_audit_accepts_only_rehearsal_for_contract_heads(tmp_path, monkeypatch) -> None:
+    contract = tmp_path / "migration-contract.json"
+    contract.write_text(
+        json.dumps({"expected_heads": ["0100_production_session_waiting_user"]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(release_audit, "MIGRATION_CONTRACT_PATH", contract)
+    evidence = {
+        "status": "PASS",
+        "source_backup": {"integrity": "ok", "migration_heads": ["0093_shot_prompt_bundle_snapshots"]},
+        "upgrade_copy": {
+            "integrity": "ok",
+            "migration_heads": ["0100_production_session_waiting_user"],
+            "expected_heads": ["0100_production_session_waiting_user"],
+        },
+        "restore_copy": {"integrity": "ok", "matches_source_sha256": True},
+        "safety": {
+            "production_database_mutated": False,
+            "comfyui_contacted": False,
+            "network_contacted": False,
+            "jobs_created": False,
+        },
+    }
+    path = tmp_path / "rehearsal.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+    assert release_audit._rehearsal_passed(path) is True
+
+    evidence["upgrade_copy"]["migration_heads"] = ["0099_production_session_asset_inputs"]
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+    assert release_audit._rehearsal_passed(path) is False
+
+
+def test_release_audit_reports_old_database_instead_of_querying_new_schema(
+    tmp_path, monkeypatch
+) -> None:
+    database_path = tmp_path / "old.sqlite3"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("CREATE TABLE alembic_version (version_num TEXT NOT NULL)")
+        connection.execute(
+            "INSERT INTO alembic_version (version_num) VALUES ('0093_shot_prompt_bundle_snapshots')"
+        )
+        connection.execute("CREATE TABLE projects (id TEXT PRIMARY KEY, created_at TEXT NOT NULL)")
+        connection.execute("INSERT INTO projects VALUES ('old-project','2026-09-21T00:00:00Z')")
+
+    monkeypatch.setattr(release_audit, "DB_PATH", database_path)
+    monkeypatch.setattr(
+        release_audit,
+        "_expected_migration_heads",
+        lambda: ["0100_production_session_waiting_user"],
+    )
+    result = release_audit.audit()
+
+    migration = next(item for item in result["checks"] if item["code"] == "MIGRATION_HEAD")
+    assert result["status"] == "IN_PROGRESS"
+    assert migration["passed"] is False
+    assert migration["observed"] == ["0093_shot_prompt_bundle_snapshots"]
+    assert migration["expected"] == ["0100_production_session_waiting_user"]
+    assert next(item for item in result["checks"] if item["code"] == "ORDERED_G7")["observed"] == "NOT_EVALUATED"

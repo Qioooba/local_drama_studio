@@ -49,6 +49,10 @@ def test_prompt_bundle_uses_independent_negative_binding_when_published() -> Non
 def test_prompt_bundle_defaults_negative_constraints_and_rejects_missing_base_prompt() -> None:
     bundle = compile_shot_prompt_bundle({"base_prompt": "单帧电影画面"})
     assert bundle["negative_prompt"] == DEFAULT_SHOT_NEGATIVE_PROMPT
+    assert "extra people" in bundle["negative_prompt"]
+    assert "duplicate person" in bundle["negative_prompt"]
+    assert "scene change" in bundle["negative_prompt"]
+    assert "hard cut" in bundle["negative_prompt"]
     with pytest.raises(DomainRuleError) as error:
         compile_shot_prompt_bundle({"positive_override": "only an override"})
     assert error.value.code == "SHOT_PROMPT_BASE_REQUIRED"

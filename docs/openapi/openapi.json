@@ -6678,9 +6678,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Addmodellibraryroot"
+                  "$ref": "#/components/schemas/ModelLibraryRootResponse"
                 }
               }
             }
@@ -15839,6 +15837,151 @@
         }
       }
     },
+    "/api/v1/episode-renders/{render_id}/reviews": {
+      "post": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "Submit Episode Render Review",
+        "operationId": "submitEpisodeRenderReview",
+        "parameters": [
+          {
+            "name": "render_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Render Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EpisodeRenderReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeRenderReviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/episode-render-review-batches:plan": {
+      "post": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "Plan Episode Render Review Batch",
+        "operationId": "planEpisodeRenderReviewBatch",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EpisodeRenderBatchReviewPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeRenderBatchReviewPlanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/episode-render-review-batches:commit": {
+      "post": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "Commit Episode Render Review Batch",
+        "operationId": "commitEpisodeRenderReviewBatch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EpisodeRenderBatchReviewCommitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeRenderBatchReviewCommitResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/subjects/{subject_type}/{subject_id}/machine-checks": {
       "post": {
         "tags": [
@@ -20358,6 +20501,1454 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/delivery-episodes": {
+      "get": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "List Project Delivery Episodes",
+        "operationId": "listProjectDeliveryEpisodes",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "season_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Season Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/video-upscale-selections:resolve": {
+      "post": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Resolve Video Upscale Selection",
+        "operationId": "resolveVideoUpscaleSelection",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoUpscaleSelectionResolveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/video-upscale-plans": {
+      "post": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Create Video Upscale Plan",
+        "operationId": "createVideoUpscalePlan",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoUpscalePlanCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-upscale-plans/{plan_id}": {
+      "get": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Get Video Upscale Plan",
+        "operationId": "getVideoUpscalePlan",
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/video-upscale-batches": {
+      "post": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Create Video Upscale Batch",
+        "operationId": "createVideoUpscaleBatch",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoUpscaleBatchCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "List Video Upscale Batches",
+        "operationId": "listVideoUpscaleBatches",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-upscale-batches/{batch_id}": {
+      "get": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Get Video Upscale Batch",
+        "operationId": "getVideoUpscaleBatch",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-upscale-batches/{batch_id}:control": {
+      "post": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Control Video Upscale Batch",
+        "operationId": "controlVideoUpscaleBatch",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoUpscaleBatchControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/video-upscale-cleanup:plan": {
+      "post": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Plan Video Upscale Cleanup",
+        "operationId": "planVideoUpscaleCleanup",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoUpscaleCleanupPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/video-upscale-cleanup:commit": {
+      "post": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Commit Video Upscale Cleanup",
+        "operationId": "commitVideoUpscaleCleanup",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoUpscaleCleanupCommitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-upscale-runs/{run_id}": {
+      "get": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Get Video Upscale Run",
+        "operationId": "getVideoUpscaleRun",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/video-upscale-previews": {
+      "post": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Create Video Upscale Preview",
+        "operationId": "createVideoUpscalePreview",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoUpscalePreviewCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-upscale-previews/{run_id}/content": {
+      "get": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Get Video Upscale Preview Content",
+        "operationId": "getVideoUpscalePreviewContent",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-upscale-previews/{run_id}/source-content": {
+      "get": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Get Video Upscale Preview Source Content",
+        "operationId": "getVideoUpscalePreviewSourceContent",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-upscale-presets": {
+      "get": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "List Video Upscale Presets",
+        "operationId": "listVideoUpscalePresets",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Create Video Upscale Preset",
+        "operationId": "createVideoUpscalePreset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoUpscalePresetCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-upscale-presets/{preset_id}/versions": {
+      "post": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Create Video Upscale Preset Version",
+        "operationId": "createVideoUpscalePresetVersion",
+        "parameters": [
+          {
+            "name": "preset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Preset Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoUpscalePresetVersionCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/episodes/{episode_id}/delivery-versions": {
+      "get": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "List Episode Delivery Versions",
+        "operationId": "listEpisodeDeliveryVersions",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/delivery-selections:plan": {
+      "post": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Plan Episode Delivery Selections",
+        "operationId": "planEpisodeDeliverySelections",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EpisodeDeliverySelectionPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/delivery-selections:commit": {
+      "post": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Commit Episode Delivery Selections",
+        "operationId": "commitEpisodeDeliverySelections",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EpisodeDeliverySelectionCommitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/delivery-build-batches:plan": {
+      "post": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Plan Video Upscale Delivery Build Batch",
+        "operationId": "planVideoUpscaleDeliveryBuildBatch",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeliveryBuildBatchPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/delivery-build-batches:submit": {
+      "post": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Submit Video Upscale Delivery Build Batch",
+        "operationId": "submitVideoUpscaleDeliveryBuildBatch",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeliveryBuildBatchSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/delivery-build-batches": {
+      "get": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "List Video Upscale Delivery Build Batches",
+        "operationId": "listVideoUpscaleDeliveryBuildBatches",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/delivery-build-batches/{batch_id}": {
+      "get": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Get Video Upscale Delivery Build Batch",
+        "operationId": "getVideoUpscaleDeliveryBuildBatch",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/delivery-build-batches/{batch_id}:retry-failed": {
+      "post": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Retry Failed Video Upscale Delivery Build Batch",
+        "operationId": "retryFailedVideoUpscaleDeliveryBuildBatch",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoUpscaleBatchControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/video-upscale-settings": {
+      "get": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Get Project Video Upscale Settings",
+        "operationId": "getProjectVideoUpscaleSettings",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Update Project Video Upscale Settings",
+        "operationId": "updateProjectVideoUpscaleSettings",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectUpscaleSettingsUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-upscale-options": {
+      "get": {
+        "tags": [
+          "video-upscale"
+        ],
+        "summary": "Get Video Upscale Options",
+        "operationId": "getVideoUpscaleOptions",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoUpscaleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/visual-labs": {
       "get": {
         "tags": [
@@ -23974,6 +25565,987 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProjectOverviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/projects/{project_id}/production-sessions:plan": {
+      "post": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "Plan Production Session",
+        "operationId": "planProductionSessionV2",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductionSessionPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionSessionPlanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/projects/{project_id}/production-sessions": {
+      "post": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "Create Production Session",
+        "operationId": "createProductionSessionV2",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductionSessionCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionSessionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "List Production Sessions",
+        "operationId": "listProductionSessionsV2",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionSessionPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/production-sessions/{session_id}": {
+      "get": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "Get Production Session",
+        "operationId": "getProductionSessionV2",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionSessionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/production-sessions/{session_id}/items": {
+      "get": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "List Production Session Items",
+        "operationId": "listProductionSessionItemsV2",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionSessionItemPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/production-sessions/{session_id}/review": {
+      "get": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "Get Production Session Review",
+        "operationId": "getProductionSessionReviewV2",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionSessionReviewPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/production-sessions/{session_id}/episodes/{episode_id}:confirm": {
+      "post": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "Confirm Production Session Episode",
+        "operationId": "confirmProductionSessionEpisodeV2",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductionSessionEpisodeConfirmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionSessionEpisodeConfirmResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/production-sessions/{session_id}/choices/{choice_id}:reroll": {
+      "post": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "Reroll Production Session Choice",
+        "operationId": "rerollProductionSessionChoiceV2",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "choice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Choice Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductionChoiceRerollRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionChoiceRerollResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/production-sessions/{session_id}/items/{item_id}:retry": {
+      "post": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "Retry Production Session Item",
+        "operationId": "retryProductionSessionItemV2",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductionSessionItemRetryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionSessionItemRetryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/production-sessions/{session_id}:extend-budget": {
+      "post": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "Extend Production Session Budget",
+        "operationId": "extendProductionSessionBudgetV2",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductionSessionBudgetExtendRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionSessionBudgetExtendResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/production-sessions/{session_id}:start": {
+      "post": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "Start Production Session",
+        "operationId": "startProductionSessionV2",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductionSessionControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionSessionRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/production-sessions/{session_id}:refresh": {
+      "post": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "Refresh Production Session",
+        "operationId": "refreshProductionSessionV2",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionSessionReconcileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/production-sessions/{session_id}:pause": {
+      "post": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "Pause Production Session",
+        "operationId": "pauseProductionSessionV2",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductionSessionControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionSessionControlResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/production-sessions/{session_id}:resume": {
+      "post": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "Resume Production Session",
+        "operationId": "resumeProductionSessionV2",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductionSessionControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionSessionControlResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/production-sessions/{session_id}:cancel": {
+      "post": {
+        "tags": [
+          "production-sessions-v2"
+        ],
+        "summary": "Cancel Production Session",
+        "operationId": "cancelProductionSessionV2",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductionSessionControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionSessionControlResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/model-platform/ncnn-video-upscale:configure-and-publish": {
+      "post": {
+        "tags": [
+          "model-platform-v2"
+        ],
+        "summary": "Configure And Publish Ncnn Video Upscale",
+        "description": "Run real local inference, then publish the exact runtime/model Profile.",
+        "operationId": "configureAndPublishModelPlatformNcnnVideoUpscale",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPlatformNcnnUpscaleProvisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelPlatformNcnnUpscaleProvisionResponse"
                 }
               }
             }
@@ -34856,6 +37428,158 @@
         ],
         "title": "DeliveryArtifactFile"
       },
+      "DeliveryBuildBatchItemRequest": {
+        "properties": {
+          "episode_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Episode Id"
+          },
+          "target_version_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Target Version Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "episode_id",
+          "target_version_id"
+        ],
+        "title": "DeliveryBuildBatchItemRequest"
+      },
+      "DeliveryBuildBatchPlanRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryBuildBatchItemRequest"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Items"
+          },
+          "brand_kit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Kit Id"
+          },
+          "watermark_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watermark Profile Id"
+          },
+          "compliance_policy_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compliance Policy Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "DeliveryBuildBatchPlanRequest"
+      },
+      "DeliveryBuildBatchSubmitRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryBuildBatchItemRequest"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Items"
+          },
+          "brand_kit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Kit Id"
+          },
+          "watermark_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watermark Profile Id"
+          },
+          "compliance_policy_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compliance Policy Id"
+          },
+          "plan_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Plan Hash"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "plan_hash",
+          "title"
+        ],
+        "title": "DeliveryBuildBatchSubmitRequest"
+      },
       "DeliveryBuildEnvelope": {
         "properties": {
           "delivery": {
@@ -37898,6 +40622,85 @@
         ],
         "title": "EpisodeContext"
       },
+      "EpisodeDeliverySelectionCommitRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EpisodeDeliverySelectionItem"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Items"
+          },
+          "plan_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Plan Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "plan_hash"
+        ],
+        "title": "EpisodeDeliverySelectionCommitRequest"
+      },
+      "EpisodeDeliverySelectionItem": {
+        "properties": {
+          "episode_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Episode Id"
+          },
+          "target_slot": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_:-]{2,120}$",
+            "title": "Target Slot"
+          },
+          "selected_render_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Selected Render Id"
+          },
+          "expected_selection_revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Selection Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "episode_id",
+          "target_slot",
+          "selected_render_id",
+          "expected_selection_revision"
+        ],
+        "title": "EpisodeDeliverySelectionItem"
+      },
+      "EpisodeDeliverySelectionPlanRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EpisodeDeliverySelectionItem"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "EpisodeDeliverySelectionPlanRequest"
+      },
       "EpisodeEditWorkspaceFact": {
         "properties": {
           "episode_id": {
@@ -38672,6 +41475,21 @@
               }
             ],
             "title": "Job Id"
+          },
+          "job_ownership": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "OWNED",
+                  "REUSED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Ownership"
           },
           "draft_id": {
             "anyOf": [
@@ -39744,6 +42562,411 @@
         ],
         "title": "EpisodeRender"
       },
+      "EpisodeRenderBatchReviewCheck": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "title": "Item Id"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "PASS",
+              "FAIL",
+              "NOT_APPLICABLE"
+            ],
+            "title": "Result"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id",
+          "result"
+        ],
+        "title": "EpisodeRenderBatchReviewCheck"
+      },
+      "EpisodeRenderBatchReviewCommit": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "plan_hash": {
+            "type": "string",
+            "title": "Plan Hash"
+          },
+          "status": {
+            "type": "string",
+            "const": "COMMITTED",
+            "title": "Status"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EpisodeRenderReviewRecord"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "review_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Review Count"
+          },
+          "atomic": {
+            "type": "boolean",
+            "const": true,
+            "title": "Atomic"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "plan_id",
+          "plan_hash",
+          "status",
+          "items",
+          "review_count",
+          "atomic"
+        ],
+        "title": "EpisodeRenderBatchReviewCommit"
+      },
+      "EpisodeRenderBatchReviewCommitRequest": {
+        "properties": {
+          "plan_token": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 20,
+            "title": "Plan Token"
+          },
+          "plan_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Plan Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "plan_token",
+          "plan_hash"
+        ],
+        "title": "EpisodeRenderBatchReviewCommitRequest"
+      },
+      "EpisodeRenderBatchReviewCommitResponse": {
+        "properties": {
+          "commit": {
+            "$ref": "#/components/schemas/EpisodeRenderBatchReviewCommit"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "commit"
+        ],
+        "title": "EpisodeRenderBatchReviewCommitResponse"
+      },
+      "EpisodeRenderBatchReviewItemRequest": {
+        "properties": {
+          "render_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Render Id"
+          },
+          "template_version_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Template Version Id"
+          },
+          "decision": {
+            "type": "string",
+            "pattern": "^(APPROVED|REJECTED|NEEDS_CHANGES)$",
+            "title": "Decision"
+          },
+          "expected_subject_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Subject Revision"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewCheckRequest"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "minItems": 1,
+            "title": "Checks"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "render_id",
+          "template_version_id",
+          "decision",
+          "expected_subject_revision",
+          "checks"
+        ],
+        "title": "EpisodeRenderBatchReviewItemRequest",
+        "description": "One independently reviewed render in an atomic episode-review batch."
+      },
+      "EpisodeRenderBatchReviewPlan": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "plan_token": {
+            "type": "string",
+            "title": "Plan Token"
+          },
+          "plan_hash": {
+            "type": "string",
+            "title": "Plan Hash"
+          },
+          "expires_at": {
+            "type": "string",
+            "title": "Expires At"
+          },
+          "status": {
+            "type": "string",
+            "const": "READY",
+            "title": "Status"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EpisodeRenderBatchReviewPlanItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "would_create_review_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Would Create Review Count"
+          },
+          "mutated_reviews": {
+            "type": "boolean",
+            "const": false,
+            "title": "Mutated Reviews"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "plan_id",
+          "plan_token",
+          "plan_hash",
+          "expires_at",
+          "status",
+          "items",
+          "would_create_review_count",
+          "mutated_reviews"
+        ],
+        "title": "EpisodeRenderBatchReviewPlan"
+      },
+      "EpisodeRenderBatchReviewPlanItem": {
+        "properties": {
+          "render_id": {
+            "type": "string",
+            "title": "Render Id"
+          },
+          "episode_id": {
+            "type": "string",
+            "title": "Episode Id"
+          },
+          "episode_code": {
+            "type": "string",
+            "title": "Episode Code"
+          },
+          "render_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Render Revision"
+          },
+          "render_sha256": {
+            "type": "string",
+            "title": "Render Sha256"
+          },
+          "root_compose_render_id": {
+            "type": "string",
+            "title": "Root Compose Render Id"
+          },
+          "root_compose_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Root Compose Revision"
+          },
+          "root_compose_sha256": {
+            "type": "string",
+            "title": "Root Compose Sha256"
+          },
+          "machine_check_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Check Run Id"
+          },
+          "machine_check_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Check Status"
+          },
+          "machine_check_policy_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Check Policy Version"
+          },
+          "template_version_id": {
+            "type": "string",
+            "title": "Template Version Id"
+          },
+          "template_version_no": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Template Version No"
+          },
+          "template_items_sha256": {
+            "type": "string",
+            "title": "Template Items Sha256"
+          },
+          "previous_review_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Review Id"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "REJECTED",
+              "NEEDS_CHANGES"
+            ],
+            "title": "Decision"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/EpisodeRenderBatchReviewCheck"
+            },
+            "type": "array",
+            "title": "Checks"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "render_id",
+          "episode_id",
+          "episode_code",
+          "render_revision",
+          "render_sha256",
+          "root_compose_render_id",
+          "root_compose_revision",
+          "root_compose_sha256",
+          "machine_check_run_id",
+          "machine_check_status",
+          "machine_check_policy_version",
+          "template_version_id",
+          "template_version_no",
+          "template_items_sha256",
+          "previous_review_id",
+          "decision",
+          "checks",
+          "comment"
+        ],
+        "title": "EpisodeRenderBatchReviewPlanItem"
+      },
+      "EpisodeRenderBatchReviewPlanRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EpisodeRenderBatchReviewItemRequest"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "EpisodeRenderBatchReviewPlanRequest"
+      },
+      "EpisodeRenderBatchReviewPlanResponse": {
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/EpisodeRenderBatchReviewPlan"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "plan"
+        ],
+        "title": "EpisodeRenderBatchReviewPlanResponse"
+      },
       "EpisodeRenderEnvelope": {
         "properties": {
           "render": {
@@ -39756,6 +42979,115 @@
           "render"
         ],
         "title": "EpisodeRenderEnvelope"
+      },
+      "EpisodeRenderReviewRecord": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "subject_type": {
+            "type": "string",
+            "const": "EPISODE_RENDER_VERSION",
+            "title": "Subject Type"
+          },
+          "subject_id": {
+            "type": "string",
+            "title": "Subject Id"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "REJECTED",
+              "NEEDS_CHANGES"
+            ],
+            "title": "Decision"
+          },
+          "is_stale": {
+            "type": "boolean",
+            "title": "Is Stale"
+          },
+          "subject_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Subject Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "subject_type",
+          "subject_id",
+          "decision",
+          "is_stale",
+          "subject_revision"
+        ],
+        "title": "EpisodeRenderReviewRecord"
+      },
+      "EpisodeRenderReviewRequest": {
+        "properties": {
+          "template_version_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Template Version Id"
+          },
+          "decision": {
+            "type": "string",
+            "pattern": "^(APPROVED|REJECTED|NEEDS_CHANGES)$",
+            "title": "Decision"
+          },
+          "expected_subject_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Subject Revision"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewCheckRequest"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "minItems": 1,
+            "title": "Checks"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "template_version_id",
+          "decision",
+          "expected_subject_revision",
+          "checks"
+        ],
+        "title": "EpisodeRenderReviewRequest"
+      },
+      "EpisodeRenderReviewResponse": {
+        "properties": {
+          "review": {
+            "$ref": "#/components/schemas/EpisodeRenderReviewRecord"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "review"
+        ],
+        "title": "EpisodeRenderReviewResponse"
       },
       "EpisodeSceneRangeRequest": {
         "properties": {
@@ -41523,7 +44855,7 @@
           "native_audio": {
             "type": "boolean",
             "title": "Native Audio",
-            "default": true
+            "default": false
           },
           "tier": {
             "anyOf": [
@@ -41610,7 +44942,7 @@
           "native_audio": {
             "type": "boolean",
             "title": "Native Audio",
-            "default": true
+            "default": false
           },
           "tier": {
             "anyOf": [
@@ -42708,6 +46040,31 @@
         ],
         "title": "ModelLibraryRootRequest"
       },
+      "ModelLibraryRootResponse": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "saved": {
+            "type": "boolean",
+            "title": "Saved"
+          },
+          "copied": {
+            "type": "boolean",
+            "const": false,
+            "title": "Copied"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "saved",
+          "copied"
+        ],
+        "title": "ModelLibraryRootResponse"
+      },
       "ModelLicenseEvidenceRequest": {
         "properties": {
           "model_artifact_id": {
@@ -42953,6 +46310,176 @@
         ],
         "title": "ModelPlatformExpectedInstallArtifact",
         "description": "A browser may declare integrity facts, never a server-side source path."
+      },
+      "ModelPlatformNcnnUpscaleProvisionRequest": {
+        "properties": {
+          "executable_path": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Executable Path"
+          },
+          "model_directory": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Model Directory"
+          },
+          "model_name": {
+            "type": "string",
+            "enum": [
+              "realesr-animevideov3",
+              "realesrgan-x4plus-anime",
+              "realesrgan-x4plus"
+            ],
+            "title": "Model Name",
+            "default": "realesr-animevideov3"
+          },
+          "gpu_device": {
+            "type": "integer",
+            "maximum": 31.0,
+            "minimum": 0.0,
+            "title": "Gpu Device",
+            "default": 0
+          },
+          "tile_size": {
+            "type": "integer",
+            "enum": [
+              0,
+              64,
+              128,
+              256,
+              512,
+              1024
+            ],
+            "title": "Tile Size",
+            "default": 0
+          },
+          "load_threads": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Load Threads",
+            "default": 1
+          },
+          "proc_threads": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Proc Threads",
+            "default": 1
+          },
+          "save_threads": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Save Threads",
+            "default": 2
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor",
+            "default": "local-user"
+          },
+          "confirm_publish": {
+            "type": "boolean",
+            "const": true,
+            "title": "Confirm Publish"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "executable_path",
+          "model_directory",
+          "confirm_publish"
+        ],
+        "title": "ModelPlatformNcnnUpscaleProvisionRequest",
+        "description": "Explicit local-machine NCNN smoke and publication request."
+      },
+      "ModelPlatformNcnnUpscaleProvisionResponse": {
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/ModelPlatformNcnnUpscaleProvisionResult"
+          },
+          "network_used": {
+            "type": "boolean",
+            "const": false,
+            "title": "Network Used"
+          },
+          "real_smoke_required": {
+            "type": "boolean",
+            "const": true,
+            "title": "Real Smoke Required"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile",
+          "network_used",
+          "real_smoke_required"
+        ],
+        "title": "ModelPlatformNcnnUpscaleProvisionResponse"
+      },
+      "ModelPlatformNcnnUpscaleProvisionResult": {
+        "properties": {
+          "profile_version_id": {
+            "type": "string",
+            "title": "Profile Version Id"
+          },
+          "runtime_model_installation_id": {
+            "type": "string",
+            "title": "Runtime Model Installation Id"
+          },
+          "validation_run_id": {
+            "type": "string",
+            "title": "Validation Run Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "verified_native_scales": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Verified Native Scales"
+          },
+          "runtime_sha256": {
+            "type": "string",
+            "title": "Runtime Sha256"
+          },
+          "model_bundle_sha256": {
+            "type": "string",
+            "title": "Model Bundle Sha256"
+          },
+          "reused_profile": {
+            "type": "boolean",
+            "title": "Reused Profile"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile_version_id",
+          "runtime_model_installation_id",
+          "validation_run_id",
+          "status",
+          "model_name",
+          "verified_native_scales",
+          "runtime_sha256",
+          "model_bundle_sha256",
+          "reused_profile"
+        ],
+        "title": "ModelPlatformNcnnUpscaleProvisionResult"
       },
       "ModelPlatformOfflineImportPlanRequest": {
         "properties": {
@@ -43822,6 +47349,89 @@
         "type": "object",
         "title": "PipelinePreflightRequest"
       },
+      "PipelineProductionAuthorization": {
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "title": "Endpoint",
+            "description": "STRUCTURE_ONLY 或 WAITING_REVIEW",
+            "default": "STRUCTURE_ONLY"
+          },
+          "production_mode": {
+            "type": "string",
+            "title": "Production Mode",
+            "default": "BALANCED"
+          },
+          "checkpoint_policy": {
+            "type": "string",
+            "title": "Checkpoint Policy",
+            "default": "ON_EXCEPTION"
+          },
+          "tts_enabled": {
+            "type": "boolean",
+            "title": "Tts Enabled",
+            "default": true
+          },
+          "max_parallel_episodes": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Max Parallel Episodes",
+            "default": 1
+          },
+          "min_free_disk_bytes": {
+            "type": "integer",
+            "maximum": 1125899906842624.0,
+            "minimum": 1.0,
+            "title": "Min Free Disk Bytes",
+            "default": 5368709120
+          },
+          "max_duration_seconds": {
+            "type": "integer",
+            "maximum": 31536000.0,
+            "minimum": 60.0,
+            "title": "Max Duration Seconds",
+            "default": 86400
+          },
+          "max_new_jobs": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Max New Jobs",
+            "default": 600
+          },
+          "max_attempts_total": {
+            "type": "integer",
+            "maximum": 2000000.0,
+            "minimum": 1.0,
+            "title": "Max Attempts Total",
+            "default": 1200
+          },
+          "max_output_bytes": {
+            "type": "integer",
+            "maximum": 1125899906842624.0,
+            "minimum": 1.0,
+            "title": "Max Output Bytes",
+            "default": 107374182400
+          },
+          "max_queued_gpu_jobs": {
+            "type": "integer",
+            "maximum": 128.0,
+            "minimum": 1.0,
+            "title": "Max Queued Gpu Jobs",
+            "default": 8
+          },
+          "dispatch_shots_per_tick": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Dispatch Shots Per Tick",
+            "default": 4
+          }
+        },
+        "type": "object",
+        "title": "PipelineProductionAuthorization"
+      },
       "PostAudioSummary": {
         "properties": {
           "state": {
@@ -44370,6 +47980,85 @@
         ],
         "title": "ProductionBlockerFact"
       },
+      "ProductionChoiceRerollRequest": {
+        "properties": {
+          "expected_session_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Session Revision"
+          },
+          "expected_choice_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Choice Revision"
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor",
+            "default": "local-user"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_session_revision",
+          "expected_choice_revision"
+        ],
+        "title": "ProductionChoiceRerollRequest"
+      },
+      "ProductionChoiceRerollResponse": {
+        "properties": {
+          "choice": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Choice"
+          },
+          "session": {
+            "$ref": "#/components/schemas/ProductionSessionFact"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "PREVIEW_REBUILD_QUEUED",
+              "VIDEO_REBUILD_REQUIRED"
+            ],
+            "title": "Outcome"
+          },
+          "dispatched_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Dispatched Count",
+            "default": 0
+          },
+          "waiting_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Waiting Count",
+            "default": 0
+          },
+          "blocked_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Blocked Count",
+            "default": 0
+          },
+          "idempotent_replay": {
+            "type": "boolean",
+            "title": "Idempotent Replay",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "choice",
+          "session",
+          "outcome"
+        ],
+        "title": "ProductionChoiceRerollResponse"
+      },
       "ProductionFreshnessEdgeFact": {
         "properties": {
           "source_revision": {
@@ -44493,6 +48182,1581 @@
           "title"
         ],
         "title": "ProductionPlanRequest"
+      },
+      "ProductionSessionApprovalBinding": {
+        "properties": {
+          "production_choice_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Production Choice Id"
+          },
+          "review_decision_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Review Decision Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "production_choice_id",
+          "review_decision_id"
+        ],
+        "title": "ProductionSessionApprovalBinding"
+      },
+      "ProductionSessionBudgetExtendRequest": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "max_duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 31536000.0,
+                "minimum": 60.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Duration Seconds"
+          },
+          "max_new_jobs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max New Jobs"
+          },
+          "max_attempts_total": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2000000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Attempts Total"
+          },
+          "max_output_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1125899906842624.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Output Bytes"
+          },
+          "max_queued_gpu_jobs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 128.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Queued Gpu Jobs"
+          },
+          "dispatch_shots_per_tick": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatch Shots Per Tick"
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor",
+            "default": "local-user"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision"
+        ],
+        "title": "ProductionSessionBudgetExtendRequest"
+      },
+      "ProductionSessionBudgetExtendResponse": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/ProductionSessionFact"
+          },
+          "extended": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extended"
+          },
+          "rearmed_item_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rearmed Item Count"
+          },
+          "outcome": {
+            "type": "string",
+            "const": "BUDGET_EXTENDED",
+            "title": "Outcome"
+          },
+          "dispatched_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Dispatched Count",
+            "default": 0
+          },
+          "waiting_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Waiting Count",
+            "default": 0
+          },
+          "blocked_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Blocked Count",
+            "default": 0
+          },
+          "idempotent_replay": {
+            "type": "boolean",
+            "title": "Idempotent Replay",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session",
+          "extended",
+          "rearmed_item_count",
+          "outcome"
+        ],
+        "title": "ProductionSessionBudgetExtendResponse"
+      },
+      "ProductionSessionControlRequest": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor",
+            "default": "local-user"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision"
+        ],
+        "title": "ProductionSessionControlRequest"
+      },
+      "ProductionSessionControlResponse": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/ProductionSessionFact"
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome"
+          },
+          "idempotent_replay": {
+            "type": "boolean",
+            "title": "Idempotent Replay",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session",
+          "outcome"
+        ],
+        "title": "ProductionSessionControlResponse"
+      },
+      "ProductionSessionCreateRequest": {
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "enum": [
+              "SINGLE_EPISODE",
+              "WHOLE_DRAMA"
+            ],
+            "title": "Scope Type"
+          },
+          "episode_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 2000,
+            "title": "Episode Ids"
+          },
+          "production_mode": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "BALANCED",
+              "QUALITY"
+            ],
+            "title": "Production Mode",
+            "default": "BALANCED"
+          },
+          "checkpoint_policy": {
+            "type": "string",
+            "enum": [
+              "AUTO_CONTINUE",
+              "AFTER_ASSETS",
+              "AFTER_SHOT_PLAN",
+              "BEFORE_VIDEO",
+              "ON_EXCEPTION"
+            ],
+            "title": "Checkpoint Policy",
+            "default": "ON_EXCEPTION"
+          },
+          "tts_enabled": {
+            "type": "boolean",
+            "title": "Tts Enabled",
+            "default": true
+          },
+          "max_parallel_episodes": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Max Parallel Episodes",
+            "default": 1
+          },
+          "min_free_disk_bytes": {
+            "type": "integer",
+            "maximum": 1125899906842624.0,
+            "minimum": 1.0,
+            "title": "Min Free Disk Bytes",
+            "default": 5368709120
+          },
+          "max_duration_seconds": {
+            "type": "integer",
+            "maximum": 31536000.0,
+            "minimum": 60.0,
+            "title": "Max Duration Seconds",
+            "default": 86400
+          },
+          "max_new_jobs": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Max New Jobs",
+            "default": 600
+          },
+          "max_attempts_total": {
+            "type": "integer",
+            "maximum": 2000000.0,
+            "minimum": 1.0,
+            "title": "Max Attempts Total",
+            "default": 1200
+          },
+          "max_output_bytes": {
+            "type": "integer",
+            "maximum": 1125899906842624.0,
+            "minimum": 1.0,
+            "title": "Max Output Bytes",
+            "default": 107374182400
+          },
+          "max_queued_gpu_jobs": {
+            "type": "integer",
+            "maximum": 128.0,
+            "minimum": 1.0,
+            "title": "Max Queued Gpu Jobs",
+            "default": 8
+          },
+          "dispatch_shots_per_tick": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Dispatch Shots Per Tick",
+            "default": 4
+          },
+          "expected_plan_hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Plan Hash"
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor",
+            "default": "local-user"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scope_type",
+          "expected_plan_hash"
+        ],
+        "title": "ProductionSessionCreateRequest"
+      },
+      "ProductionSessionEpisodeConfirmRequest": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "approvals": {
+            "items": {
+              "$ref": "#/components/schemas/ProductionSessionApprovalBinding"
+            },
+            "type": "array",
+            "maxItems": 2000,
+            "minItems": 1,
+            "title": "Approvals"
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor",
+            "default": "local-user"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "approvals"
+        ],
+        "title": "ProductionSessionEpisodeConfirmRequest"
+      },
+      "ProductionSessionEpisodeConfirmResponse": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/ProductionSessionFact"
+          },
+          "episode_id": {
+            "type": "string",
+            "title": "Episode Id"
+          },
+          "confirmed_choice_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Confirmed Choice Count"
+          },
+          "preview_render_review_decision_id": {
+            "type": "string",
+            "title": "Preview Render Review Decision Id"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "EPISODE_CONFIRMED",
+              "SESSION_COMPLETED"
+            ],
+            "title": "Outcome"
+          },
+          "idempotent_replay": {
+            "type": "boolean",
+            "title": "Idempotent Replay",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session",
+          "episode_id",
+          "confirmed_choice_count",
+          "preview_render_review_decision_id",
+          "outcome"
+        ],
+        "title": "ProductionSessionEpisodeConfirmResponse"
+      },
+      "ProductionSessionFact": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "scope_type": {
+            "type": "string",
+            "enum": [
+              "SINGLE_EPISODE",
+              "WHOLE_DRAMA"
+            ],
+            "title": "Scope Type"
+          },
+          "production_mode": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "BALANCED",
+              "QUALITY"
+            ],
+            "title": "Production Mode"
+          },
+          "checkpoint_policy": {
+            "type": "string",
+            "enum": [
+              "AUTO_CONTINUE",
+              "AFTER_ASSETS",
+              "AFTER_SHOT_PLAN",
+              "BEFORE_VIDEO",
+              "ON_EXCEPTION"
+            ],
+            "title": "Checkpoint Policy"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "READY",
+              "RUNNING",
+              "PAUSED",
+              "WAITING_USER",
+              "WAITING_REVIEW",
+              "COMPLETED",
+              "FAILED",
+              "CANCELLED"
+            ],
+            "title": "Status"
+          },
+          "current_stage": {
+            "type": "string",
+            "title": "Current Stage"
+          },
+          "plan_hash": {
+            "type": "string",
+            "title": "Plan Hash"
+          },
+          "configuration": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Configuration"
+          },
+          "budget": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Budget"
+          },
+          "counters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Counters"
+          },
+          "item_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Item Count"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "last_error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Message"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "allowed_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Actions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "scope_type",
+          "production_mode",
+          "checkpoint_policy",
+          "status",
+          "current_stage",
+          "plan_hash",
+          "configuration",
+          "budget",
+          "counters",
+          "item_count",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "revision",
+          "allowed_actions"
+        ],
+        "title": "ProductionSessionFact"
+      },
+      "ProductionSessionItemFact": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "episode_id": {
+            "type": "string",
+            "title": "Episode Id"
+          },
+          "episode_code": {
+            "type": "string",
+            "title": "Episode Code"
+          },
+          "episode_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode Title"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Ordinal"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "RUNNING",
+              "WAITING",
+              "BLOCKED",
+              "FAILED",
+              "COMPLETED",
+              "SKIPPED",
+              "CANCELLED"
+            ],
+            "title": "State"
+          },
+          "current_stage": {
+            "type": "string",
+            "title": "Current Stage"
+          },
+          "source_episode_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Source Episode Revision"
+          },
+          "shot_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Shot Count"
+          },
+          "progress": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Progress"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "last_error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Message"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "session_id",
+          "episode_id",
+          "episode_code",
+          "ordinal",
+          "state",
+          "current_stage",
+          "source_episode_revision",
+          "shot_count",
+          "progress",
+          "updated_at",
+          "revision"
+        ],
+        "title": "ProductionSessionItemFact"
+      },
+      "ProductionSessionItemPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProductionSessionItemFact"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cursor"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "read_only": {
+            "type": "boolean",
+            "const": true,
+            "title": "Read Only"
+          },
+          "request_shape": {
+            "type": "string",
+            "const": "bounded_production_session_items_v2",
+            "title": "Request Shape"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "cursor",
+          "limit",
+          "total",
+          "read_only",
+          "request_shape"
+        ],
+        "title": "ProductionSessionItemPage"
+      },
+      "ProductionSessionItemRetryRequest": {
+        "properties": {
+          "expected_session_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Session Revision"
+          },
+          "expected_item_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Item Revision"
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "RETRY_FAILED_STAGE",
+              "RECOMPOSE_ONLY",
+              "FULL_EPISODE"
+            ],
+            "title": "Strategy",
+            "default": "RETRY_FAILED_STAGE"
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor",
+            "default": "local-user"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_session_revision",
+          "expected_item_revision"
+        ],
+        "title": "ProductionSessionItemRetryRequest"
+      },
+      "ProductionSessionItemRetryResponse": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/ProductionSessionFact"
+          },
+          "item": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Item"
+          },
+          "outcome": {
+            "type": "string",
+            "const": "RETRY_QUEUED",
+            "title": "Outcome"
+          },
+          "dispatched_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Dispatched Count",
+            "default": 0
+          },
+          "waiting_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Waiting Count",
+            "default": 0
+          },
+          "blocked_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Blocked Count",
+            "default": 0
+          },
+          "idempotent_replay": {
+            "type": "boolean",
+            "title": "Idempotent Replay",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session",
+          "item",
+          "outcome"
+        ],
+        "title": "ProductionSessionItemRetryResponse"
+      },
+      "ProductionSessionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProductionSessionFact"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cursor"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "read_only": {
+            "type": "boolean",
+            "const": true,
+            "title": "Read Only"
+          },
+          "request_shape": {
+            "type": "string",
+            "const": "bounded_production_sessions_v2",
+            "title": "Request Shape"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "cursor",
+          "limit",
+          "total",
+          "read_only",
+          "request_shape"
+        ],
+        "title": "ProductionSessionPage"
+      },
+      "ProductionSessionPlanEpisodeFact": {
+        "properties": {
+          "episode_id": {
+            "type": "string",
+            "title": "Episode Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Ordinal"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "shot_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Shot Count"
+          },
+          "asset_bound_shot_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Asset Bound Shot Count"
+          },
+          "missing_asset_binding_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Missing Asset Binding Count"
+          },
+          "readiness": {
+            "type": "string",
+            "enum": [
+              "READY",
+              "NEEDS_PREPARATION"
+            ],
+            "title": "Readiness"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "episode_id",
+          "code",
+          "ordinal",
+          "revision",
+          "shot_count",
+          "asset_bound_shot_count",
+          "missing_asset_binding_count",
+          "readiness"
+        ],
+        "title": "ProductionSessionPlanEpisodeFact"
+      },
+      "ProductionSessionPlanFact": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "scope_type": {
+            "type": "string",
+            "enum": [
+              "SINGLE_EPISODE",
+              "WHOLE_DRAMA"
+            ],
+            "title": "Scope Type"
+          },
+          "production_mode": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "BALANCED",
+              "QUALITY"
+            ],
+            "title": "Production Mode"
+          },
+          "checkpoint_policy": {
+            "type": "string",
+            "enum": [
+              "AUTO_CONTINUE",
+              "AFTER_ASSETS",
+              "AFTER_SHOT_PLAN",
+              "BEFORE_VIDEO",
+              "ON_EXCEPTION"
+            ],
+            "title": "Checkpoint Policy"
+          },
+          "episode_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Episode Count"
+          },
+          "total_shot_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Shot Count"
+          },
+          "estimated_candidate_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Estimated Candidate Count"
+          },
+          "can_create": {
+            "type": "boolean",
+            "const": true,
+            "title": "Can Create"
+          },
+          "plan_hash": {
+            "type": "string",
+            "title": "Plan Hash"
+          },
+          "configuration": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Configuration"
+          },
+          "stages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Stages"
+          },
+          "warnings": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "episodes": {
+            "items": {
+              "$ref": "#/components/schemas/ProductionSessionPlanEpisodeFact"
+            },
+            "type": "array",
+            "title": "Episodes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "scope_type",
+          "production_mode",
+          "checkpoint_policy",
+          "episode_count",
+          "total_shot_count",
+          "estimated_candidate_count",
+          "can_create",
+          "plan_hash",
+          "configuration",
+          "stages",
+          "warnings",
+          "episodes"
+        ],
+        "title": "ProductionSessionPlanFact"
+      },
+      "ProductionSessionPlanRequest": {
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "enum": [
+              "SINGLE_EPISODE",
+              "WHOLE_DRAMA"
+            ],
+            "title": "Scope Type"
+          },
+          "episode_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 2000,
+            "title": "Episode Ids"
+          },
+          "production_mode": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "BALANCED",
+              "QUALITY"
+            ],
+            "title": "Production Mode",
+            "default": "BALANCED"
+          },
+          "checkpoint_policy": {
+            "type": "string",
+            "enum": [
+              "AUTO_CONTINUE",
+              "AFTER_ASSETS",
+              "AFTER_SHOT_PLAN",
+              "BEFORE_VIDEO",
+              "ON_EXCEPTION"
+            ],
+            "title": "Checkpoint Policy",
+            "default": "ON_EXCEPTION"
+          },
+          "tts_enabled": {
+            "type": "boolean",
+            "title": "Tts Enabled",
+            "default": true
+          },
+          "max_parallel_episodes": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Max Parallel Episodes",
+            "default": 1
+          },
+          "min_free_disk_bytes": {
+            "type": "integer",
+            "maximum": 1125899906842624.0,
+            "minimum": 1.0,
+            "title": "Min Free Disk Bytes",
+            "default": 5368709120
+          },
+          "max_duration_seconds": {
+            "type": "integer",
+            "maximum": 31536000.0,
+            "minimum": 60.0,
+            "title": "Max Duration Seconds",
+            "default": 86400
+          },
+          "max_new_jobs": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Max New Jobs",
+            "default": 600
+          },
+          "max_attempts_total": {
+            "type": "integer",
+            "maximum": 2000000.0,
+            "minimum": 1.0,
+            "title": "Max Attempts Total",
+            "default": 1200
+          },
+          "max_output_bytes": {
+            "type": "integer",
+            "maximum": 1125899906842624.0,
+            "minimum": 1.0,
+            "title": "Max Output Bytes",
+            "default": 107374182400
+          },
+          "max_queued_gpu_jobs": {
+            "type": "integer",
+            "maximum": 128.0,
+            "minimum": 1.0,
+            "title": "Max Queued Gpu Jobs",
+            "default": 8
+          },
+          "dispatch_shots_per_tick": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Dispatch Shots Per Tick",
+            "default": 4
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scope_type"
+        ],
+        "title": "ProductionSessionPlanRequest"
+      },
+      "ProductionSessionPlanResponse": {
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/ProductionSessionPlanFact"
+          },
+          "read_only": {
+            "type": "boolean",
+            "const": true,
+            "title": "Read Only"
+          },
+          "request_shape": {
+            "type": "string",
+            "const": "production_session_plan_v2",
+            "title": "Request Shape"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "plan",
+          "read_only",
+          "request_shape"
+        ],
+        "title": "ProductionSessionPlanResponse"
+      },
+      "ProductionSessionReconcileResponse": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/ProductionSessionFact"
+          },
+          "dispatched_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Dispatched Count"
+          },
+          "waiting_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Waiting Count"
+          },
+          "blocked_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Blocked Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session",
+          "dispatched_count",
+          "waiting_count",
+          "blocked_count"
+        ],
+        "title": "ProductionSessionReconcileResponse"
+      },
+      "ProductionSessionResponse": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/ProductionSessionFact"
+          },
+          "idempotent_replay": {
+            "type": "boolean",
+            "title": "Idempotent Replay",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session"
+        ],
+        "title": "ProductionSessionResponse"
+      },
+      "ProductionSessionReviewItem": {
+        "properties": {
+          "session_item_id": {
+            "type": "string",
+            "title": "Session Item Id"
+          },
+          "episode_id": {
+            "type": "string",
+            "title": "Episode Id"
+          },
+          "episode_code": {
+            "type": "string",
+            "title": "Episode Code"
+          },
+          "episode_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode Title"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Ordinal"
+          },
+          "item_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Item Revision"
+          },
+          "item_state": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "RUNNING",
+              "WAITING",
+              "BLOCKED",
+              "FAILED",
+              "COMPLETED",
+              "SKIPPED",
+              "CANCELLED"
+            ],
+            "title": "Item State"
+          },
+          "current_stage": {
+            "type": "string",
+            "title": "Current Stage"
+          },
+          "review_status": {
+            "type": "string",
+            "enum": [
+              "GENERATING",
+              "BLOCKED",
+              "READY_FOR_HUMAN_REVIEW",
+              "REVIEWED"
+            ],
+            "title": "Review Status"
+          },
+          "choices": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Choices"
+          },
+          "asset_inputs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Asset Inputs"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline"
+          },
+          "timeline_choice_consistency": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Timeline Choice Consistency"
+          },
+          "preview_render": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Render"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery"
+          },
+          "blockers": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Blockers"
+          },
+          "repair_plan": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Repair Plan"
+          },
+          "allowed_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Actions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_item_id",
+          "episode_id",
+          "episode_code",
+          "ordinal",
+          "item_revision",
+          "item_state",
+          "current_stage",
+          "review_status",
+          "choices",
+          "asset_inputs",
+          "timeline_choice_consistency",
+          "blockers",
+          "repair_plan",
+          "allowed_actions"
+        ],
+        "title": "ProductionSessionReviewItem"
+      },
+      "ProductionSessionReviewPage": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "session_status": {
+            "type": "string",
+            "enum": [
+              "READY",
+              "RUNNING",
+              "PAUSED",
+              "WAITING_USER",
+              "WAITING_REVIEW",
+              "COMPLETED",
+              "FAILED",
+              "CANCELLED"
+            ],
+            "title": "Session Status"
+          },
+          "session_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Session Revision"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProductionSessionReviewItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cursor"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "read_only": {
+            "type": "boolean",
+            "const": true,
+            "title": "Read Only"
+          },
+          "human_approval_written": {
+            "type": "boolean",
+            "const": false,
+            "title": "Human Approval Written"
+          },
+          "request_shape": {
+            "type": "string",
+            "const": "bounded_production_session_review_v2",
+            "title": "Request Shape"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_id",
+          "project_id",
+          "session_status",
+          "session_revision",
+          "summary",
+          "items",
+          "cursor",
+          "limit",
+          "total",
+          "read_only",
+          "human_approval_written",
+          "request_shape"
+        ],
+        "title": "ProductionSessionReviewPage"
+      },
+      "ProductionSessionRunResponse": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/ProductionSessionFact"
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome"
+          },
+          "dispatched_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Dispatched Count"
+          },
+          "waiting_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Waiting Count"
+          },
+          "blocked_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Blocked Count"
+          },
+          "idempotent_replay": {
+            "type": "boolean",
+            "title": "Idempotent Replay",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session",
+          "outcome",
+          "dispatched_count",
+          "waiting_count",
+          "blocked_count"
+        ],
+        "title": "ProductionSessionRunResponse"
       },
       "ProductionStageFact": {
         "properties": {
@@ -45352,6 +50616,38 @@
           "expected_revision"
         ],
         "title": "ProjectUpdateRequest"
+      },
+      "ProjectUpscaleSettingsUpdateRequest": {
+        "properties": {
+          "preset_version_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Preset Version Id"
+          },
+          "pipeline_overrides": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Pipeline Overrides"
+          },
+          "model_overrides": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Model Overrides"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "preset_version_id",
+          "expected_revision"
+        ],
+        "title": "ProjectUpscaleSettingsUpdateRequest"
       },
       "PromptBranchRequest": {
         "properties": {
@@ -46349,6 +51645,40 @@
           "request_shape"
         ],
         "title": "ReviewAnnotationPage"
+      },
+      "ReviewCheckRequest": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Item Id"
+          },
+          "result": {
+            "type": "string",
+            "pattern": "^(PASS|FAIL|NOT_APPLICABLE)$",
+            "title": "Result"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id",
+          "result"
+        ],
+        "title": "ReviewCheckRequest"
       },
       "ReviewDecisionCheckCommand": {
         "properties": {
@@ -50206,7 +55536,7 @@
             "type": "string",
             "maxLength": 4000,
             "title": "Negative Prompt",
-            "default": "multi-panel, triptych, contact sheet, storyboard, split-screen, collage, multi-panel layout, text layout, captions, subtitles, watermark"
+            "default": "multi-panel, triptych, contact sheet, storyboard, split-screen, collage, multi-panel layout, text layout, captions, subtitles, watermark, extra people, bystanders, crowd, background figures, duplicate person, merged identities, scene change, hard cut, jump cut, transition, aerial view, unrelated location"
           },
           "provenance": {
             "type": "string",
@@ -51271,6 +56601,10 @@
           "application_authorization": {
             "$ref": "#/components/schemas/PipelineApplicationAuthorization",
             "description": "本次运行的具体应用终点；旧客户端默认只生成草案"
+          },
+          "production_authorization": {
+            "$ref": "#/components/schemas/PipelineProductionAuthorization",
+            "description": "结构应用完成后是否继续创建整部待审预览；旧客户端默认只处理结构"
           }
         },
         "type": "object",
@@ -52887,6 +58221,11 @@
             "title": "Include Music And Sfx",
             "default": true
           },
+          "include_source_audio": {
+            "type": "boolean",
+            "title": "Include Source Audio",
+            "default": false
+          },
           "include_subtitles": {
             "type": "boolean",
             "title": "Include Subtitles",
@@ -54116,6 +59455,287 @@
         ],
         "title": "TransitionConstraintRequest"
       },
+      "UpscaleModelOptions": {
+        "properties": {
+          "adapter_code": {
+            "type": "string",
+            "const": "ncnn.realesrgan.video.v1",
+            "title": "Adapter Code",
+            "default": "ncnn.realesrgan.video.v1"
+          },
+          "model_name": {
+            "type": "string",
+            "enum": [
+              "realesr-animevideov3",
+              "realesrgan-x4plus-anime",
+              "realesrgan-x4plus"
+            ],
+            "title": "Model Name"
+          },
+          "native_scales": {
+            "items": {
+              "type": "integer",
+              "enum": [
+                2,
+                3,
+                4
+              ]
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Native Scales"
+          },
+          "tile_size": {
+            "type": "integer",
+            "maximum": 1024.0,
+            "minimum": 0.0,
+            "title": "Tile Size",
+            "default": 0
+          },
+          "tile_fallback_sizes": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Tile Fallback Sizes"
+          },
+          "tta": {
+            "type": "boolean",
+            "title": "Tta",
+            "default": false
+          },
+          "load_threads": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Load Threads",
+            "default": 1
+          },
+          "proc_threads": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Proc Threads",
+            "default": 1
+          },
+          "save_threads": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Save Threads",
+            "default": 2
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model_name",
+          "native_scales"
+        ],
+        "title": "UpscaleModelOptions"
+      },
+      "UpscalePipelineOptions": {
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/UpscaleTargetOptions"
+          },
+          "scale_policy": {
+            "type": "string",
+            "enum": [
+              "AUTO_NATIVE",
+              "EXPLICIT_NATIVE"
+            ],
+            "title": "Scale Policy",
+            "default": "AUTO_NATIVE"
+          },
+          "native_scale": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  2,
+                  3,
+                  4
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Native Scale"
+          },
+          "fps_policy": {
+            "type": "string",
+            "const": "PRESERVE_CFR",
+            "title": "Fps Policy",
+            "default": "PRESERVE_CFR"
+          },
+          "audio_policy": {
+            "type": "string",
+            "enum": [
+              "COPY_IF_COMPATIBLE_ELSE_AAC",
+              "COPY_STRICT"
+            ],
+            "title": "Audio Policy",
+            "default": "COPY_IF_COMPATIBLE_ELSE_AAC"
+          },
+          "aac_bitrate_kbps": {
+            "type": "integer",
+            "enum": [
+              128,
+              192,
+              256,
+              320
+            ],
+            "title": "Aac Bitrate Kbps",
+            "default": 192
+          },
+          "subtitle_policy": {
+            "type": "string",
+            "const": "INHERIT",
+            "title": "Subtitle Policy",
+            "default": "INHERIT"
+          },
+          "watermark_policy": {
+            "type": "string",
+            "const": "INHERIT_SOURCE_STATE",
+            "title": "Watermark Policy",
+            "default": "INHERIT_SOURCE_STATE"
+          },
+          "encoder": {
+            "type": "string",
+            "enum": [
+              "libx264",
+              "h264_nvenc"
+            ],
+            "title": "Encoder",
+            "default": "libx264"
+          },
+          "crf": {
+            "type": "integer",
+            "maximum": 28.0,
+            "minimum": 14.0,
+            "title": "Crf",
+            "default": 18
+          },
+          "preset": {
+            "type": "string",
+            "enum": [
+              "ultrafast",
+              "veryfast",
+              "medium",
+              "slow"
+            ],
+            "title": "Preset",
+            "default": "veryfast"
+          },
+          "container": {
+            "type": "string",
+            "const": "mp4",
+            "title": "Container",
+            "default": "mp4"
+          },
+          "pix_fmt": {
+            "type": "string",
+            "const": "yuv420p",
+            "title": "Pix Fmt",
+            "default": "yuv420p"
+          },
+          "source_policy": {
+            "type": "string",
+            "enum": [
+              "PREFER_FINAL_DELIVERY",
+              "APPROVED_COMPOSE"
+            ],
+            "title": "Source Policy",
+            "default": "PREFER_FINAL_DELIVERY"
+          },
+          "existing_result_policy": {
+            "type": "string",
+            "enum": [
+              "REUSE_EQUIVALENT",
+              "NEW_VARIANT"
+            ],
+            "title": "Existing Result Policy",
+            "default": "REUSE_EQUIVALENT"
+          },
+          "chunk_frames": {
+            "type": "integer",
+            "maximum": 480.0,
+            "minimum": 48.0,
+            "title": "Chunk Frames",
+            "default": 240
+          },
+          "max_attempts": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Max Attempts",
+            "default": 2
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UpscalePipelineOptions"
+      },
+      "UpscaleTargetOptions": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "FOLLOW_ORIENTATION_1080",
+              "CUSTOM"
+            ],
+            "title": "Mode",
+            "default": "FOLLOW_ORIENTATION_1080"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 4096.0,
+                "minimum": 64.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 4096.0,
+                "minimum": 64.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "fit": {
+            "type": "string",
+            "enum": [
+              "CONTAIN",
+              "COVER"
+            ],
+            "title": "Fit",
+            "default": "CONTAIN"
+          },
+          "allow_cross_orientation": {
+            "type": "boolean",
+            "title": "Allow Cross Orientation",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UpscaleTargetOptions"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -54794,6 +60414,405 @@
           "story"
         ],
         "title": "VideoPromptExpandRequest"
+      },
+      "VideoUpscaleBatchControlRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "PAUSE_PENDING",
+              "PAUSE_ALL",
+              "RESUME",
+              "RETRY_FAILED",
+              "CANCEL_UNFINISHED"
+            ],
+            "title": "Action"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action",
+          "expected_revision"
+        ],
+        "title": "VideoUpscaleBatchControlRequest"
+      },
+      "VideoUpscaleBatchCreateRequest": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Plan Id"
+          },
+          "plan_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Plan Hash"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "acknowledged_warning_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 400,
+            "title": "Acknowledged Warning Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "plan_id",
+          "plan_hash",
+          "title"
+        ],
+        "title": "VideoUpscaleBatchCreateRequest"
+      },
+      "VideoUpscaleCleanupCommitRequest": {
+        "properties": {
+          "retention_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Retention Days",
+            "default": 7
+          },
+          "eligible_before": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 20,
+            "title": "Eligible Before"
+          },
+          "plan_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Plan Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "eligible_before",
+          "plan_hash"
+        ],
+        "title": "VideoUpscaleCleanupCommitRequest"
+      },
+      "VideoUpscaleCleanupPlanRequest": {
+        "properties": {
+          "retention_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Retention Days",
+            "default": 7
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "VideoUpscaleCleanupPlanRequest"
+      },
+      "VideoUpscalePlanCreateRequest": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "localdrama.video-upscale-request.v1",
+            "title": "Schema Version",
+            "default": "localdrama.video-upscale-request.v1"
+          },
+          "selection_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Selection Hash"
+          },
+          "episode_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Episode Ids"
+          },
+          "preset_version_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Preset Version Id"
+          },
+          "execution_profile_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Profile Version Id"
+          },
+          "batch_pipeline_overrides": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Batch Pipeline Overrides"
+          },
+          "batch_model_overrides": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Batch Model Overrides"
+          },
+          "item_overrides": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Item Overrides"
+          },
+          "existing_result_policy": {
+            "type": "string",
+            "enum": [
+              "REUSE_EQUIVALENT",
+              "NEW_VARIANT"
+            ],
+            "title": "Existing Result Policy",
+            "default": "REUSE_EQUIVALENT"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "selection_hash",
+          "episode_ids",
+          "preset_version_id"
+        ],
+        "title": "VideoUpscalePlanCreateRequest"
+      },
+      "VideoUpscalePresetCreateRequest": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Project Id"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{1,79}$",
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "profile_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Version Id"
+          },
+          "pipeline_options": {
+            "$ref": "#/components/schemas/UpscalePipelineOptions"
+          },
+          "model_options": {
+            "$ref": "#/components/schemas/UpscaleModelOptions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "code",
+          "title",
+          "pipeline_options",
+          "model_options"
+        ],
+        "title": "VideoUpscalePresetCreateRequest"
+      },
+      "VideoUpscalePresetVersionCreateRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "profile_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Version Id"
+          },
+          "pipeline_options": {
+            "$ref": "#/components/schemas/UpscalePipelineOptions"
+          },
+          "model_options": {
+            "$ref": "#/components/schemas/UpscaleModelOptions"
+          },
+          "expected_current_version_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Expected Current Version Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pipeline_options",
+          "model_options",
+          "expected_current_version_id"
+        ],
+        "title": "VideoUpscalePresetVersionCreateRequest"
+      },
+      "VideoUpscalePreviewCreateRequest": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Plan Id"
+          },
+          "plan_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Plan Hash"
+          },
+          "episode_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Episode Id"
+          },
+          "start_ms": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Start Ms",
+            "default": 0
+          },
+          "duration_ms": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1000.0,
+            "title": "Duration Ms",
+            "default": 5000
+          },
+          "acknowledged_warning_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "title": "Acknowledged Warning Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "plan_id",
+          "plan_hash",
+          "episode_id"
+        ],
+        "title": "VideoUpscalePreviewCreateRequest"
+      },
+      "VideoUpscaleResponse": {
+        "additionalProperties": true,
+        "type": "object",
+        "title": "VideoUpscaleResponse",
+        "description": "Named JSON response contract for versioned video-upscale projections."
+      },
+      "VideoUpscaleSelectionResolveRequest": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "EXPLICIT",
+              "ALL_ELIGIBLE"
+            ],
+            "title": "Mode",
+            "default": "EXPLICIT"
+          },
+          "episode_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Episode Ids"
+          },
+          "search": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search"
+          },
+          "season_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Season Id"
+          },
+          "source_policy": {
+            "type": "string",
+            "enum": [
+              "PREFER_FINAL_DELIVERY",
+              "APPROVED_COMPOSE"
+            ],
+            "title": "Source Policy",
+            "default": "PREFER_FINAL_DELIVERY"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "VideoUpscaleSelectionResolveRequest"
       },
       "VisualLabBatchDeleteRequest": {
         "properties": {

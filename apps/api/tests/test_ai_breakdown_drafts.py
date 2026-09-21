@@ -1394,7 +1394,7 @@ def test_breakdown_retry_after_post_persist_crash_reuses_deterministic_draft(wor
     failed = worker.run_once("breakdown-replay-worker", ["CPU"])
     assert failed is not None
     assert failed["error"] == "DISK_FULL"
-    assert failed["result"]["job_state"] == "FAILED"
+    assert failed["result"]["job_state"] == "NEEDS_ATTENTION"
     drafts = LocalLLMService(database, workspace).list_breakdown_drafts(str(project["id"]))
     assert len(drafts) == 1
     draft_id = str(drafts[0]["id"])

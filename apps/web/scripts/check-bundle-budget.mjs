@@ -1,10 +1,10 @@
-import { readdir, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const assetsDir = resolve("dist", "assets");
 const maxChunkBytes = 500 * 1024;
-const chunks = (await readdir(assetsDir)).filter((name) => name.endsWith(".js"));
-const sizes = await Promise.all(chunks.map(async (name) => ({ name, bytes: (await stat(resolve(assetsDir, name))).size })));
+const manifest = JSON.parse(await readFile(resolve("dist", ".vite", "manifest.json"), "utf8"));
+const chunks = [...new Set(Object.values(manifest).map((entry) => entry.file).filter((name) => name.endsWith(".js")))];
+const sizes = await Promise.all(chunks.map(async (name) => ({ name, bytes: (await stat(resolve("dist", name))).size })));
 const oversized = sizes.filter(({ bytes }) => bytes > maxChunkBytes);
 
 if (oversized.length > 0) {

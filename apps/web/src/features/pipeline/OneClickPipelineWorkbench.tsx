@@ -98,6 +98,7 @@ export function OneClickPipelineWorkbench({
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [applyPreview, setApplyPreview] = useState<PipelineApplyImpact | null>(null);
   const [authorizeAutomaticApply, setAuthorizeAutomaticApply] = useState(true);
+  const [continueToWaitingReview, setContinueToWaitingReview] = useState(false);
   const [selectedPilotEpisodeIds, setSelectedPilotEpisodeIds] = useState<string[]>([]);
 
   const capabilityOptions = useCapabilityOptions("LLM_STORY_PARSE", { projectId });
@@ -118,7 +119,14 @@ export function OneClickPipelineWorkbench({
   const latestQuery = useQuery({
     queryKey: latestKey,
     queryFn: () => getLatestPipeline(projectId),
-    refetchInterval: (query) => (query.state.data?.run?.state === "RUNNING" ? 1200 : false),
+    refetchInterval: (query) => {
+      const current = query.state.data?.run;
+      return current?.state === "RUNNING"
+        || ["QUEUED", "CLAIMED", "RUNNING"].includes(current?.apply_continuation?.state ?? "")
+        || current?.production_continuation?.session_status === "RUNNING"
+        ? 1200
+        : false;
+    },
   });
   const historyQuery = useQuery({ queryKey: historyKey, queryFn: () => listPipelineRuns(projectId) });
   const selectedRunQuery = useQuery({
@@ -157,6 +165,15 @@ export function OneClickPipelineWorkbench({
     application_authorization: authorizeAutomaticApply
       ? { endpoint: "APPLY_SELECTED_SECTIONS", sections: PIPELINE_SECTIONS }
       : { endpoint: "DRAFT_ONLY", sections: [] },
+    production_authorization: continueToWaitingReview
+      ? {
+        endpoint: "WAITING_REVIEW",
+        production_mode: "BALANCED",
+        checkpoint_policy: "ON_EXCEPTION",
+        tts_enabled: true,
+        max_parallel_episodes: 1,
+      }
+      : { endpoint: "STRUCTURE_ONLY" },
   });
 
   const launchMutation = useMutation({
@@ -411,19 +428,27 @@ export function OneClickPipelineWorkbench({
           <label className="pipeline-field">
             <span>草案完成后的处理</span>
             <select
-              value={authorizeAutomaticApply ? "APPLY" : "DRAFT_ONLY"}
-              onChange={(event) => { setAuthorizeAutomaticApply(event.target.value === "APPLY"); launchMutation.reset(); }}
+              value={!authorizeAutomaticApply ? "DRAFT_ONLY" : continueToWaitingReview ? "WAITING_REVIEW" : "APPLY"}
+              onChange={(event) => {
+                const value = event.target.value;
+                setAuthorizeAutomaticApply(value !== "DRAFT_ONLY");
+                setContinueToWaitingReview(value === "WAITING_REVIEW");
+                launchMutation.reset();
+              }}
             >
+              <option value="WAITING_REVIEW">授权应用结构，并持续生成整部待审预览</option>
               <option value="APPLY">授权后台应用分集规划、创作记忆和核心资产</option>
               <option value="DRAFT_ONLY">只生成草案，完成后由我预览并应用</option>
             </select>
-            <small>这项选择会作为本次运行的持久授权保存；不会授权媒体生成、审核或发布。</small>
+            <small>{continueToWaitingReview
+              ? "会以均衡档、单集容量窗口持续生成；机器只能临时选择，不会写入人工批准或自动发布。"
+              : "这项选择会作为本次运行的持久授权保存；不会授权媒体生成、审核或发布。"}</small>
           </label>
           <div className="pipeline-launch">
             <button type="button" className="pipeline-button primary" disabled={!canStart || isUploading || launchMutation.isPending} onClick={() => launchMutation.mutate()}>
               {launchMutation.isPending ? "AI 正在检查并启动…" : "开始 AI 制作"}
             </button>
-            <small>{authorizeAutomaticApply ? "关页后后台仍会按上面的明确范围续接。" : "完成后停在草案，不会自动写入项目。"}</small>
+            <small>{continueToWaitingReview ? "关页后会继续到整部集中待审。" : authorizeAutomaticApply ? "关页后后台仍会按上面的明确范围续接。" : "完成后停在草案，不会自动写入项目。"}</small>
           </div>
           {launchMutation.isError && <p className="pipeline-alert error" role="alert">{errorText(launchMutation.error)}</p>}
           {launchMutation.isError && <Link className="pipeline-text-link" to="/system/capabilities?view=resources">检查 AI 模型配置</Link>}
@@ -459,6 +484,15 @@ export function OneClickPipelineWorkbench({
               草案已生成，但授权应用暂停：{run.apply_continuation.last_error_detail || run.apply_continuation.last_error_code || "请检查冲突后手动预览。"}
             </p>
           ) : null}
+          {run.production_authorization?.endpoint === "WAITING_REVIEW" && (
+            <p className={`pipeline-alert ${run.production_continuation?.state === "INVALID" ? "error" : "success"}`} role="status">
+              {run.production_continuation?.session_id
+                ? <>整部生产会话已续接：{run.production_continuation.session_status} · {run.production_continuation.current_stage ?? "PREPARATION"}。 <Link className="pipeline-text-link" to={`/projects/${encodeURIComponent(projectId)}/factory`}>打开一键漫剧工厂</Link></>
+                : run.apply_state === "APPLIED"
+                  ? "故事结构已应用，正在创建整部生产会话。"
+                  : "已保存整部续接授权，故事结构通过门禁后会自动开始。"}
+            </p>
+          )}
           {sourceCoverage && (
             <section className="draft-preview-section" aria-label="原稿覆盖">
               <h5>原稿覆盖：{sourceCoverage.status === "FULL" ? "完整" : sourceCoverage.status === "PARTIAL" ? "部分完成" : "尚未完成"}</h5>

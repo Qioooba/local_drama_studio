@@ -59,6 +59,9 @@ export type AuditEventFilters = { project_id?: string; occurred_after?: string; 
 export type AuditProof = { algorithm: string; scope: string; event_count: number; first_event_id: number | null; last_event_id: number | null; chain_sha256: string; truncated: boolean; max_events: number; filters: Record<string, unknown>; metadata_redacted: true; local_only: true; network_contacted: false; mutated: false };
 export type ReviewTemplate = { id: string; code: string; version_no: number; subject_type: string; items: Array<{ id: string; label: string; required: boolean }> };
 export type ReviewTemplateVersionPayload = { code: string; subject_type: string; items: Array<{ id: string; label: string; required?: boolean }> };
+export type EpisodeRenderReviewCheck = { item_id: string; result: 'PASS' | 'FAIL' | 'NOT_APPLICABLE'; comment?: string | null };
+export type EpisodeRenderBatchReviewItem = { render_id: string; template_version_id: string; decision: 'APPROVED' | 'REJECTED' | 'NEEDS_CHANGES'; expected_subject_revision: number; checks: EpisodeRenderReviewCheck[]; comment?: string | null };
+export type EpisodeRenderBatchReviewPlan = { plan_id: string; plan_token: string; plan_hash: string; expires_at: string; status: 'READY'; items: Array<Record<string, unknown>>; would_create_review_count: number; mutated_reviews: false };
 export type ReviewInboxItem = { media_version_id: string; media_asset_id: string; project_id: string; project_code?: string; project_title?: string; episode_id?: string | null; episode_code?: string | null; episode_number?: number | null; shot_id?: string | null; shot_code?: string | null; media_kind: string; stage: string; decision: string | null; is_stale: number | null; inbox_at?: string; age_hours?: number; age_days?: number; priority?: 'HIGH' | 'NORMAL' | 'LOW'; is_blocked?: number; blocking?: 'BLOCKED' | 'READY'; machine_status?: string; integrity_status?: string; [key: string]: unknown };
 export type ReviewInboxFilters = { episode_id?: string; media_kind?: string; age?: 'ALL' | 'NEW' | 'AGING' | 'OLD'; priority?: 'ALL' | 'HIGH' | 'NORMAL' | 'LOW'; blocking?: 'ALL' | 'BLOCKED' | 'READY'; min_age_days?: number; max_age_days?: number; include_resolved?: boolean };
 export type FrameAnchor = { id: string; source_media_version_id: string; source_time_us: number; source_frame_index: number; extracted_media_version_id: string; role_hint: string; sha256: string; requested_time_us: number | null; resolved_time_us: number; source_sha256: string; extraction_method: string; [key: string]: unknown };
@@ -73,6 +76,14 @@ export type JobArtifact = { id: string; job_attempt_id: string; kind: string; sa
 export type JobProgress = { phase?: string; node?: string; percent?: number; eta_seconds?: number; [key: string]: unknown };
 export type JobAttempt = { id: string; job_id: string; attempt_no: number; state: string; worker_id?: string | null; lease_token?: string | null; lease_expires_at?: string | null; heartbeat_at?: string | null; provider_job_id?: string | null; error_code?: string | null; error_detail_redacted?: string | null; progress: JobProgress; artifacts?: JobArtifact[]; [key: string]: unknown };
 export type Job = { id: string; type: string; project_id: string; state: string; channel: string; priority: number; max_attempts: number; revision: number; progress?: JobProgress; progress_updated_at?: string | null; started_at?: string | null; finished_at?: string | null; last_error_code?: string | null; last_error_detail_redacted?: string | null; [key: string]: unknown };
+export type ProductionSessionStatus = 'READY' | 'RUNNING' | 'PAUSED' | 'WAITING_USER' | 'WAITING_REVIEW' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type ProductionSessionBudget = { limits: Record<string, number>; usage: Record<string, number>; remaining: Record<string, number>; hard_blockers: Array<{ code: string; message: string; limit_key: string; usage: number; limit: number }>; resource_wait: { code: string; message: string; limit_key: string; usage: number; limit: number } | null; can_dispatch: boolean; observed_at: string };
+export type ProductionSession = { id: string; project_id: string; scope_type: 'SINGLE_EPISODE' | 'WHOLE_DRAMA'; production_mode: 'DRAFT' | 'BALANCED' | 'QUALITY'; checkpoint_policy: 'AUTO_CONTINUE' | 'AFTER_ASSETS' | 'AFTER_SHOT_PLAN' | 'BEFORE_VIDEO' | 'ON_EXCEPTION'; status: ProductionSessionStatus; current_stage: string; plan_hash: string; configuration: Record<string, unknown>; budget: ProductionSessionBudget; counters: Record<string, number>; item_count: number; last_error_code: string | null; last_error_message: string | null; started_at: string | null; finished_at: string | null; created_at: string; updated_at: string; created_by: string; revision: number; allowed_actions: string[] };
+export type ProductionSessionPlanCommand = { scope_type: 'SINGLE_EPISODE' | 'WHOLE_DRAMA'; episode_ids: string[]; production_mode: 'DRAFT' | 'BALANCED' | 'QUALITY'; checkpoint_policy: 'AUTO_CONTINUE' | 'AFTER_ASSETS' | 'AFTER_SHOT_PLAN' | 'BEFORE_VIDEO' | 'ON_EXCEPTION'; tts_enabled: boolean; max_parallel_episodes: number; min_free_disk_bytes: number; max_duration_seconds: number; max_new_jobs: number; max_attempts_total: number; max_output_bytes: number; max_queued_gpu_jobs: number; dispatch_shots_per_tick: number };
+export type ProductionSessionPlan = { project_id: string; scope_type: 'SINGLE_EPISODE' | 'WHOLE_DRAMA'; production_mode: 'DRAFT' | 'BALANCED' | 'QUALITY'; checkpoint_policy: ProductionSessionPlanCommand['checkpoint_policy']; episode_count: number; total_shot_count: number; estimated_candidate_count: number; can_create: true; plan_hash: string; configuration: Record<string, unknown>; stages: string[]; warnings: Array<Record<string, unknown>>; episodes: Array<{ episode_id: string; code: string; title: string | null; ordinal: number; revision: number; readiness: 'READY' | 'NEEDS_PREPARATION'; shot_count: number }> };
+export type ProductionSessionChoice = { id: string; target_id: string; shot_code?: string | null; slot_role: string; candidate_id: string; choice_type: 'MACHINE' | 'HUMAN'; selection_state: 'TEMPORARY' | 'CONFIRMED' | 'REVOKED'; selection_authority: string; revision: number; available_human_approval_id?: string | null; media: { media_kind?: string | null; integrity_status?: string | null; duration_ms?: number | null; [key: string]: unknown }; [key: string]: unknown };
+export type ProductionSessionReviewItem = { session_item_id: string; episode_id: string; episode_code: string; episode_title: string | null; ordinal: number; item_revision: number; item_state: string; current_stage: string; review_status: 'GENERATING' | 'BLOCKED' | 'READY_FOR_HUMAN_REVIEW' | 'REVIEWED'; choices: ProductionSessionChoice[]; asset_inputs: Array<{ id: string; asset_proposal_id: string; story_asset_id: string; kind: string; name: string; asset_code: string; proposal_status: string; review_status: 'PENDING' | 'CONFIRMED' | 'MISMATCH'; selection_authority: 'MACHINE_TEMPORARY'; human_approved: boolean; [key: string]: unknown }>; timeline: { id: string; revision_no: number; status: string; [key: string]: unknown } | null; timeline_choice_consistency: { status: string; mismatches?: Array<Record<string, unknown>>; [key: string]: unknown }; preview_render: { id: string; integrity_status: string; duration_ms?: number | null; [key: string]: unknown } | null; delivery?: Record<string, unknown> | null; blockers: Array<{ code: string; message: string; [key: string]: unknown }>; repair_plan: { recommended_strategy: 'RETRY_FAILED_STAGE' | 'RECOMPOSE_ONLY' | 'FULL_EPISODE' | null; summary: string; effects: string[]; prerequisites: Array<{ action: string; message: string }>; can_retry_now: boolean; read_only: true; mutated: false }; allowed_actions: string[] };
+export type ProductionSessionReviewPage = { session_id: string; project_id: string; session_status: ProductionSessionStatus; session_revision: number; summary: Record<string, unknown>; items: ProductionSessionReviewItem[]; cursor: number; limit: number; total: number; next_cursor: number | null; read_only: true; human_approval_written: false; request_shape: 'bounded_production_session_review_v2' };
 export type MediaDerivativeBackfill = { project_id: string; cursor: number; limit: number; scanned: number; submitted: number; replayed: number; jobs: Job[]; has_more: boolean; next_cursor: number | null };
 export type GenerationIntent = { id: string; project_id: string; owner_type: string; owner_id: string; purpose: string; creative_goal: string; [key: string]: unknown };
 export type VariantInput = { role: string; media_version_id: string; ordinal?: number; weight?: number | null };
@@ -138,6 +149,18 @@ export type TTSJobRequest = { voice_profile_version_id: string; emotion: string;
 export type MediaImportRequest = { project_id: string; source_path: string; purpose: string; owner_type?: string; owner_id?: string; media_kind: 'AUDIO' };
 export type ImportedMedia = { media_version_id: string; media_asset_id: string; sha256: string; rel_path: string; duplicate?: boolean; [key: string]: unknown };
 export type EpisodeRender = { id: string; episode_id: string; timeline_revision_id: string; integrity_status: string; [key: string]: unknown };
+export type UpscaleFinding = { code: string; message: string; details?: Record<string, unknown> };
+export type DeliveryEpisode = { episode: { id: string; code: string; title: string; number: number; season_id: string; season_number: number; season_title: string }; compose: { id: string; revision: number; integrity_status: string; sha256: string; duration_ms: number | null; width: number | null; height: number | null; approval: { id: string | null; decision: string | null; is_stale: boolean; valid: boolean } } | null; source_choices: Array<Record<string, unknown>>; recommended_source: Record<string, unknown> | null; selectable: boolean; blockers: UpscaleFinding[]; warnings: UpscaleFinding[]; derived_version_count: number; delivery_selections: Array<Record<string, unknown>> };
+export type VideoUpscalePreset = { id: string; code: string; title: string; builtin: boolean; current_version_id: string; version_id: string; version_no: number; profile_version_id: string | null; pipeline_options: Record<string, unknown>; model_options: Record<string, unknown>; available: boolean; unavailable_reason: string | null };
+export type ProjectVideoUpscaleSettings = { project_id: string; preset_id: string; preset_title: string; preset_version_id: string; overrides: { pipeline: Record<string, unknown>; model: Record<string, unknown> }; revision: number; inherited: boolean };
+export type VideoUpscaleOptions = { project_id: string; settings: ProjectVideoUpscaleSettings; presets: VideoUpscalePreset[]; profiles: Array<{ profile_version_id: string; title: string; version_no: number; adapter_code: string; ready: boolean; blocker?: string; payload: Record<string, unknown> }>; pipeline_contract: Record<string, unknown>; model_contract: Record<string, unknown>; runtime_contacted: false; network_contacted: false; mutated: false };
+export type VideoUpscalePlan = { id: string; project_id: string; status: 'CHECKING' | 'READY' | 'BLOCKED' | 'FAILED' | 'EXPIRED'; plan_hash: string | null; expires_at: string; revision: number; items: Array<{ episode_id: string; disposition: string; geometry: Record<string, unknown> | null; frame_count: number | null; blockers: UpscaleFinding[]; warnings: UpscaleFinding[]; disk_budget?: Record<string, number> }>; check_job?: Job; [key: string]: unknown };
+export type VideoUpscaleBatchItem = { id: string; episode_id: string; ordinal: number; current_run_id: string | null; participation_state: string; job_id: string | null; job_state: string | null; effective_state: string; output_render_id: string | null; progress: Record<string, unknown>; source_descriptor: Record<string, unknown>; effective_options: Record<string, unknown> };
+export type VideoUpscaleBatch = { id: string; project_id: string; title: string; control_state: string; revision: number; created_at: string; items: VideoUpscaleBatchItem[]; aggregate: { total: number; states: Record<string, number> } };
+export type VideoUpscaleRun = { id: string; project_id: string; episode_id: string | null; purpose: 'PREVIEW' | 'FULL'; job_id: string; job_state: string; output_render_id: string | null; output_rel_path: string | null; output_sha256: string | null; sample_start_ms: number | null; sample_duration_ms: number | null; content_url?: string; source_content_url?: string; progress: Record<string, unknown>; progress_summary: Record<string, unknown>; [key: string]: unknown };
+export type VideoUpscaleDeliveryBatch = { id: string; project_id: string; title: string; revision: number; created_at: string; items: Array<{ id: string; episode_id: string; ordinal: number; selected_render_id: string; target_version_id: string; job_id: string | null; job_state: string | null; package_id: string | null; package_status: string | null; package_rel_path: string | null; progress: Record<string, unknown> }>; aggregate: { total: number; states: Record<string, number> } };
+export type VideoUpscaleCleanupPlan = { schema_version: 'localdrama.video-upscale-cleanup-plan.v1'; project_id: string; retention_days: number; eligible_before: string; plan_hash: string; candidate_count: number; reclaimable_bytes: number; candidates: Array<{ run_id: string; job_id: string; job_state: string; terminal_at: string; rel_path: string; byte_size: number }>; skipped: Array<{ run_id: string; reason: string }>; mutated: false; runtime_contacted: false; network_contacted: false };
+export type EpisodeDeliveryVersions = { episode_id: string; project_id: string; current_root_compose_render_id: string | null; items: Array<{ id: string; render_kind: string; parent_render_version_id: string | null; integrity_status: string; approved: boolean; machine_qc_passed: boolean; source_current: boolean; adoptable: boolean; stale_reason: string | null; revision: number; created_at: string; probe: Record<string, unknown> }>; selections: Array<{ id: string; target_slot: string; selected_render_id: string; approval_id: string; revision: number }> };
 export type DeliveryPackage = { id: string; episode_render_version_id: string; target_version_id: string; status: string; artifact: LocalArtifactReference; rel_path?: string; manifest_sha256?: string; withdrawn_reason?: string | null; files?: Array<Record<string, unknown>>; events?: Array<Record<string, unknown>>; target?: Record<string, unknown>; [key: string]: unknown };
 export type DeliveryPackageFile = { id: string; delivery_package_id: string; rel_path: string; sha256: string; byte_size: number };
 export type DeliveryTargetVersion = { id: string; version_id: string; project_id: string; code: string; title: string; transport: 'LOCAL_FILESYSTEM'; spec: Record<string, unknown>; version_no: number; status: string };
@@ -298,7 +321,7 @@ export type EditTimelineRevisionV2 = { id: string; revision_no: number; status: 
 export type EditIssueV2 = { code: string; severity: 'BLOCKER' | 'WARNING'; message: string; subject_id: string | null; owner_route: 'SHOT_STUDIO' | 'POST_AUDIO' | 'POST_EDIT' | 'REVIEW' };
 export type EpisodeEditWorkspaceV2 = { episode_id: string; project_id: string; episode_code: string; episode_title: string | null; freshness: 'EMPTY' | 'CURRENT' | 'STALE'; upstream_fingerprint: string; latest_revision: EditTimelineRevisionV2 | null; history: EditTimelineRevisionV2[]; history_has_more: boolean; video_clips: EditVideoClipV2[]; audio_clips: EditAudioClipV2[]; subtitle: EditSubtitleV2 | null; issues: EditIssueV2[]; duration_us: number; allowed_actions: string[] };
 export type EditVideoClipCommandV2 = { shot_id: string; media_version_id: string; duration_us: number; source_start_us?: number; transition_in?: 'CUT' | 'DISSOLVE' | 'FADE' };
-export type TimelineDraftCreateCommandV2 = { clips: EditVideoClipCommandV2[]; include_dialogue?: boolean; include_music_and_sfx?: boolean; include_subtitles?: boolean; expected_latest_revision_id?: string | null; expected_upstream_fingerprint: string; idempotency_key: string };
+export type TimelineDraftCreateCommandV2 = { clips: EditVideoClipCommandV2[]; include_dialogue?: boolean; include_music_and_sfx?: boolean; include_source_audio?: boolean; include_subtitles?: boolean; expected_latest_revision_id?: string | null; expected_upstream_fingerprint: string; idempotency_key: string };
 export type TimelineWriteV2 = { id: string; episode_id: string; revision_no: number; status: 'DRAFT' | 'FROZEN'; revision_hash: string; outcome: 'DRAFT_CREATED' | 'FROZEN'; idempotent_replay: boolean };
 export type ComposePreflight = { project_id: string; episode_id: string; timeline_revision_id: string; compose_fingerprint: string; input_snapshot: Record<string, unknown>; existing_render: Record<string, unknown> | null; would_execute_ffmpeg: boolean; read_only: true; writes_performed: 0; status: 'READY' | 'BLOCKED'; disk_gate: Record<string, unknown>; blockers: Array<Record<string, unknown>>; production_spec?: ProductionSpecSnapshot | null };
 export type ComposeSubmission = { preflight: ComposePreflight; job?: Job; render?: Record<string, unknown>; idempotent_replay?: boolean; [key: string]: unknown };
@@ -706,6 +729,14 @@ export async function listReviewTemplates(baseUrl = ''): Promise<{ items: Review
 
 export async function createReviewTemplateVersion(payload: ReviewTemplateVersionPayload, baseUrl = ''): Promise<{ template: ReviewTemplate & { duplicate?: boolean; immutable?: boolean } }> {
   return requestJson('/api/v1/review-templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function planEpisodeRenderReviewBatch(projectId: string, items: EpisodeRenderBatchReviewItem[], baseUrl = ''): Promise<{ plan: EpisodeRenderBatchReviewPlan }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/episode-render-review-batches:plan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) }, baseUrl);
+}
+
+export async function commitEpisodeRenderReviewBatch(planToken: string, planHash: string, baseUrl = ''): Promise<{ commit: { plan_id: string; plan_hash: string; status: 'COMMITTED'; items: Array<Record<string, unknown>>; review_count: number; atomic: true } }> {
+  return requestJson('/api/v1/episode-render-review-batches:commit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan_token: planToken, plan_hash: planHash }) }, baseUrl);
 }
 
 export async function reviewInbox(projectId?: string, baseUrl = '', filters?: ReviewInboxFilters): Promise<{ items: ReviewInboxItem[]; next_cursor?: number | null; cursor?: number; limit?: number }> {
@@ -1990,6 +2021,105 @@ export async function submitEpisodeCompose(timelineRevisionId: string, payload: 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   return requestJson(`/api/v1/timeline-revisions/${encodeURIComponent(timelineRevisionId)}/compose:submit`, { method: 'POST', headers, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listProjectDeliveryEpisodes(projectId: string, options: { cursor?: number; limit?: number; search?: string; seasonId?: string } = {}, baseUrl = ''): Promise<{ project_id: string; items: DeliveryEpisode[]; page: { cursor: number; limit: number; total: number; next_cursor: number | null } }> {
+  const query = new URLSearchParams({ cursor: String(options.cursor ?? 0), limit: String(options.limit ?? 50) });
+  if (options.search) query.set('search', options.search);
+  if (options.seasonId) query.set('season_id', options.seasonId);
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/delivery-episodes?${query}`, undefined, baseUrl);
+}
+
+export async function resolveVideoUpscaleSelection(projectId: string, payload: { mode: 'EXPLICIT' | 'ALL_ELIGIBLE'; episode_ids: string[]; search?: string; season_id?: string; source_policy?: 'PREFER_FINAL_DELIVERY' | 'APPROVED_COMPOSE' }, baseUrl = ''): Promise<{ selection: { selection_hash: string; count: number; items: Array<{ episode_id: string; source: Record<string, unknown> }>; blocked: Array<Record<string, unknown>> } }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/video-upscale-selections:resolve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function getVideoUpscaleOptions(projectId: string, baseUrl = ''): Promise<VideoUpscaleOptions> {
+  return requestJson(`/api/v1/video-upscale-options?${new URLSearchParams({ project_id: projectId })}`, undefined, baseUrl);
+}
+
+export async function getProjectVideoUpscaleSettings(projectId: string, baseUrl = ''): Promise<{ settings: ProjectVideoUpscaleSettings }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/video-upscale-settings`, undefined, baseUrl);
+}
+
+export async function updateProjectVideoUpscaleSettings(projectId: string, payload: { preset_version_id: string; pipeline_overrides: Record<string, unknown>; model_overrides: Record<string, unknown>; expected_revision: number }, baseUrl = ''): Promise<{ settings: ProjectVideoUpscaleSettings }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/video-upscale-settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function createVideoUpscalePreset(payload: { project_id: string; code: string; title: string; profile_version_id: string | null; pipeline_options: Record<string, unknown>; model_options: Record<string, unknown> }, baseUrl = ''): Promise<{ preset: VideoUpscalePreset }> {
+  return requestJson('/api/v1/video-upscale-presets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function createVideoUpscalePresetVersion(presetId: string, payload: { title?: string; profile_version_id: string | null; pipeline_options: Record<string, unknown>; model_options: Record<string, unknown>; expected_current_version_id: string }, baseUrl = ''): Promise<{ preset: VideoUpscalePreset }> {
+  return requestJson(`/api/v1/video-upscale-presets/${encodeURIComponent(presetId)}/versions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function createVideoUpscalePlan(projectId: string, payload: Record<string, unknown>, baseUrl = ''): Promise<{ plan: VideoUpscalePlan; job: Job; idempotent_replay: boolean }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/video-upscale-plans`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function getVideoUpscalePlan(planId: string, baseUrl = ''): Promise<{ plan: VideoUpscalePlan }> {
+  return requestJson(`/api/v1/video-upscale-plans/${encodeURIComponent(planId)}`, undefined, baseUrl);
+}
+
+export async function createVideoUpscaleBatch(projectId: string, payload: Record<string, unknown>, idempotencyKey: string, baseUrl = ''): Promise<{ batch: VideoUpscaleBatch; jobs?: Job[]; idempotent_replay: boolean }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/video-upscale-batches`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listVideoUpscaleBatches(projectId: string, baseUrl = ''): Promise<{ items: VideoUpscaleBatch[]; page: Record<string, unknown> }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/video-upscale-batches`, undefined, baseUrl);
+}
+
+export async function getVideoUpscaleBatch(batchId: string, baseUrl = ''): Promise<{ batch: VideoUpscaleBatch }> {
+  return requestJson(`/api/v1/video-upscale-batches/${encodeURIComponent(batchId)}`, undefined, baseUrl);
+}
+
+export async function controlVideoUpscaleBatch(batchId: string, action: 'PAUSE_PENDING' | 'PAUSE_ALL' | 'RESUME' | 'RETRY_FAILED' | 'CANCEL_UNFINISHED', expectedRevision: number, baseUrl = ''): Promise<{ batch: VideoUpscaleBatch; effects: Array<Record<string, unknown>> }> {
+  return requestJson(`/api/v1/video-upscale-batches/${encodeURIComponent(batchId)}:control`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, expected_revision: expectedRevision }) }, baseUrl);
+}
+
+export async function planVideoUpscaleCleanup(projectId: string, retentionDays = 7, baseUrl = ''): Promise<{ plan: VideoUpscaleCleanupPlan }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/video-upscale-cleanup:plan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ retention_days: retentionDays }) }, baseUrl);
+}
+
+export async function commitVideoUpscaleCleanup(projectId: string, plan: VideoUpscaleCleanupPlan, baseUrl = ''): Promise<{ result: { deleted_count: number; released_bytes: number; mutated: boolean } }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/video-upscale-cleanup:commit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ retention_days: plan.retention_days, eligible_before: plan.eligible_before, plan_hash: plan.plan_hash }) }, baseUrl);
+}
+
+export async function createVideoUpscalePreview(projectId: string, payload: Record<string, unknown>, idempotencyKey: string, baseUrl = ''): Promise<{ run: VideoUpscaleRun; job?: Job; idempotent_replay: boolean }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/video-upscale-previews`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function getVideoUpscaleRun(runId: string, baseUrl = ''): Promise<{ run: VideoUpscaleRun }> {
+  return requestJson(`/api/v1/video-upscale-runs/${encodeURIComponent(runId)}`, undefined, baseUrl);
+}
+
+export async function listEpisodeDeliveryVersions(episodeId: string, baseUrl = ''): Promise<{ versions: EpisodeDeliveryVersions }> {
+  return requestJson(`/api/v1/episodes/${encodeURIComponent(episodeId)}/delivery-versions`, undefined, baseUrl);
+}
+
+export async function planEpisodeDeliverySelections(projectId: string, items: Array<Record<string, unknown>>, baseUrl = ''): Promise<{ plan: { plan_hash: string; status: 'READY'; items: Array<Record<string, unknown>> } }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/delivery-selections:plan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) }, baseUrl);
+}
+
+export async function commitEpisodeDeliverySelections(projectId: string, items: Array<Record<string, unknown>>, planHash: string, baseUrl = ''): Promise<{ commit: Record<string, unknown> }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/delivery-selections:commit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items, plan_hash: planHash }) }, baseUrl);
+}
+
+export async function planVideoUpscaleDeliveryBuildBatch(projectId: string, payload: Record<string, unknown>, baseUrl = ''): Promise<{ plan: { status: 'READY'; plan_hash: string; items: Array<Record<string, unknown>> } }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/delivery-build-batches:plan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function submitVideoUpscaleDeliveryBuildBatch(projectId: string, payload: Record<string, unknown>, idempotencyKey: string, baseUrl = ''): Promise<{ batch: VideoUpscaleDeliveryBatch; jobs?: Job[]; idempotent_replay: boolean }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/delivery-build-batches:submit`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function listVideoUpscaleDeliveryBuildBatches(projectId: string, baseUrl = ''): Promise<{ items: VideoUpscaleDeliveryBatch[]; page: Record<string, unknown> }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/delivery-build-batches`, undefined, baseUrl);
+}
+
+export async function retryFailedVideoUpscaleDeliveryBuildBatch(batchId: string, expectedRevision: number, baseUrl = ''): Promise<{ batch: VideoUpscaleDeliveryBatch; jobs: Job[]; retried: number }> {
+  return requestJson(`/api/v1/delivery-build-batches/${encodeURIComponent(batchId)}:retry-failed`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'RETRY_FAILED', expected_revision: expectedRevision }) }, baseUrl);
 }
 
 export async function uploadScriptDocument(projectId: string, file: File, baseUrl = ''): Promise<{ import: DocumentImport }> {

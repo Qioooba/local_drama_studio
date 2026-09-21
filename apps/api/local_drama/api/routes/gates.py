@@ -26,9 +26,10 @@ from local_drama.api.schemas.g7_model import (
     GlobalModelRegistryResponse,
     LocalModelReferenceRequest,
     ModelCompatibilityRequest,
+    ModelLibraryRootRequest,
+    ModelLibraryRootResponse,
     ModelLicenseEvidenceRequest,
     ModelRegistryScanRequest,
-    ModelLibraryRootRequest,
 )
 from local_drama.api.server_paths import require_configured_model_file, require_server_loopback
 from local_drama.application.errors import api_error_from_domain
@@ -94,7 +95,11 @@ def scan_local_model_registry(payload: ModelRegistryScanRequest, request: Reques
         raise api_error_from_domain(error) from error
 
 
-@router.post("/model-registry/roots", operation_id="addModelLibraryRoot")
+@router.post(
+    "/model-registry/roots",
+    operation_id="addModelLibraryRoot",
+    response_model=ModelLibraryRootResponse,
+)
 def add_model_library_root(payload: ModelLibraryRootRequest, request: Request) -> dict[str, object]:
     try:
         require_server_loopback(request, action="配置本机模型目录")

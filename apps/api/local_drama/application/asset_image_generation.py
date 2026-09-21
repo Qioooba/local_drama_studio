@@ -317,8 +317,10 @@ class AssetImageGenerationBatchService:
             placeholders = ",".join("?" for _ in normalized_ids)
             rows = connection.execute(
                 f"""SELECT a.*,
-                EXISTS(SELECT 1 FROM story_asset_references r WHERE r.story_asset_id=a.id
-                    AND r.reference_kind='HERO' AND r.status='ACTIVE') AS has_hero
+                EXISTS(SELECT 1 FROM story_asset_references r
+                    JOIN media_versions mv ON mv.id=r.media_version_id
+                    WHERE r.story_asset_id=a.id AND r.reference_kind='HERO'
+                    AND r.status='ACTIVE' AND mv.integrity_status='VERIFIED') AS has_hero
                 FROM story_assets a WHERE a.id IN ({placeholders})""",
                 normalized_ids,
             ).fetchall()
@@ -788,9 +790,11 @@ class AssetImageGenerationCompletionService:
         self.media.submit_default_derivatives(media_version_id)
         with self.database.transaction() as connection:
             current = connection.execute(
-                """SELECT id,media_version_id FROM story_asset_references
-                WHERE story_asset_id=? AND reference_kind='HERO' AND status='ACTIVE'
-                ORDER BY priority,created_at,id LIMIT 1""",
+                """SELECT r.id,r.media_version_id FROM story_asset_references r
+                JOIN media_versions mv ON mv.id=r.media_version_id
+                WHERE r.story_asset_id=? AND r.reference_kind='HERO' AND r.status='ACTIVE'
+                  AND mv.integrity_status='VERIFIED'
+                ORDER BY r.priority,r.created_at,r.id LIMIT 1""",
                 (item["asset_id"],),
             ).fetchone()
             if current is not None:

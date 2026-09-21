@@ -3,6 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from local_drama.application.local_llm import LocalLLMService
 from local_drama.application.pipeline_orchestrator import PipelineOrchestratorService
 from local_drama.application.projects import ProjectService
 from local_drama.application.story_pipeline_ai import FullStoryAIGenerationService
@@ -473,6 +474,87 @@ def test_authorized_pipeline_apply_continues_in_backend_after_restart_and_replay
     replay = service.continue_authorized_application(run["run_id"])
     assert replay["idempotent_replay"] is True
     assert replay["run"]["revision"] == applied["revision"]
+
+
+def test_authorized_source_pipeline_hands_off_once_to_durable_whole_drama_session(
+    workspace, database, mock_story_pipeline_ai, monkeypatch,
+) -> None:
+    del mock_story_pipeline_ai
+    monkeypatch.setattr(
+        "local_drama.infrastructure.local_llm.LocalLLMClient.probe",
+        lambda self, load_test=False: {
+            "status": "PASS",
+            "model": "qwen-test",
+            "runtime": "ollama",
+        },
+    )
+    profile = LocalLLMService(database, workspace).sync_candidate("qwen-test")
+    LocalLLMService(database, workspace).publish(str(profile["profile_version_id"]))
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="pipeline_to_production_session",
+        title="Source to review continuation",
+        episode_count=1,
+        aspect_ratio="9:16",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True,
+    )
+    project_id = str(project["id"])
+    service = build_pipeline_orchestrator(database, workspace)
+    run = service.start_pipeline(
+        project_id,
+        raw_text="# 第一章\n\n林枫进入坠仙谷寻找九阳神丹，并发现顾清雪留下的示警。",
+        application_authorization={
+            "endpoint": "APPLY_SELECTED_SECTIONS",
+            "sections": ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"],
+        },
+        production_authorization={
+            "endpoint": "WAITING_REVIEW",
+            "production_mode": "DRAFT",
+            "checkpoint_policy": "ON_EXCEPTION",
+            "tts_enabled": False,
+            "max_parallel_episodes": 1,
+            "min_free_disk_bytes": 1,
+        },
+    )
+    assert run["production_continuation"]["state"] == "PENDING"
+
+    plan_result = LocalMediaWorker(database, workspace).run_once("source-plan-worker", ["CPU"])
+    assert plan_result is not None and plan_result.get("error") is None
+    apply_result = LocalMediaWorker(database, workspace).run_once("source-apply-worker", ["CPU"])
+    assert apply_result is not None and apply_result.get("error") is None
+
+    continued = service.get_pipeline(project_id, run["run_id"])
+    session_id = continued["production_continuation"]["session_id"]
+    assert session_id
+    assert continued["production_continuation"]["session_status"] == "RUNNING"
+    with database.connect() as connection:
+        sessions = connection.execute(
+            "SELECT id,status,scope_type FROM production_sessions WHERE project_id=?",
+            (project_id,),
+        ).fetchall()
+        items = connection.execute(
+            "SELECT state,current_stage FROM production_session_items WHERE session_id=?",
+            (session_id,),
+        ).fetchall()
+        human_approvals = connection.execute(
+            "SELECT COUNT(*) FROM review_decisions WHERE decision IN ('APPROVED','REJECTED')"
+        ).fetchone()[0]
+    assert [dict(item) for item in sessions] == [
+        {"id": session_id, "status": "RUNNING", "scope_type": "WHOLE_DRAMA"}
+    ]
+    assert len(items) >= 1
+    assert all(item["state"] in {"WAITING", "RUNNING", "BLOCKED"} for item in items)
+    assert human_approvals == 0
+
+    replay = service.continue_authorized_application(run["run_id"])
+    assert replay["idempotent_replay"] is True
+    assert replay["production"]["idempotent_replay"] is True
+    with database.connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM production_sessions WHERE project_id=?", (project_id,)
+        ).fetchone()[0] == 1
 
 
 def test_authorized_pipeline_apply_can_be_cancelled_before_application(

@@ -29,7 +29,9 @@ PROMPT_FRAME_ROLES = frozenset({"FIRST_FRAME", "END_FRAME"})
 # forced to obey a hidden field that its workflow does not bind.
 DEFAULT_SHOT_NEGATIVE_PROMPT = (
     "multi-panel, triptych, contact sheet, storyboard, split-screen, collage, "
-    "multi-panel layout, text layout, captions, subtitles, watermark"
+    "multi-panel layout, text layout, captions, subtitles, watermark, extra people, "
+    "bystanders, crowd, background figures, duplicate person, merged identities, "
+    "scene change, hard cut, jump cut, transition, aerial view, unrelated location"
 )
 
 

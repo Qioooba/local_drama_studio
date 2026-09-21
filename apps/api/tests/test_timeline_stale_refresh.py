@@ -5,11 +5,17 @@ import subprocess
 import pytest
 from fastapi.testclient import TestClient
 
+from local_drama.application.episode_production_runs import EpisodeProductionRunService
+from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
 from local_drama.application.media import MediaService
+from local_drama.application.production_choices import ProductionChoiceService
+from local_drama.application.production_session_review import ProductionSessionReviewService
+from local_drama.application.production_sessions import ProductionSessionService
 from local_drama.application.projects import ProjectService
 from local_drama.application.reviews import ReviewService
 from local_drama.application.timeline import TimelineService
 from local_drama.application.timeline_status import TimelineStatusService
+from local_drama.application.worker_handlers.automation_task import _automation_render
 from local_drama.main import create_app
 
 
@@ -156,6 +162,222 @@ def test_assemble_episode_timeline_creates_skips_then_refreshes(workspace, datab
         assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE action='TIMELINE_AUTO_ASSEMBLED' AND subject_id=?", (str(refreshed["timeline"]["id"]),)).fetchone()[0] == 1
 
 
+def test_session_timeline_uses_temporary_choice_without_changing_human_selection(
+    workspace, database
+) -> None:
+    projects = ProjectService(database, workspace.projects_root)
+    project = projects.create_project(
+        code="session_timeline_choice",
+        title="Session timeline choice",
+        episode_count=1,
+        aspect_ratio="16:9",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=2_000,
+        allow_unconfigured_capabilities=True,
+    )
+    project_id = str(project["id"])
+    episode = projects.list_episodes(
+        str(projects.list_seasons(project_id)[0]["id"])
+    )[0]
+    episode_id = str(episode["id"])
+    shot = projects.create_shot(episode_id, "S001", 2_000)
+    media_service = MediaService(database, workspace)
+
+    version_ids: list[str] = []
+    for color in ("navy", "orange"):
+        source = workspace.work_root / f"session-timeline-{color}.mp4"
+        subprocess.run(
+            [
+                workspace.ffmpeg_path,
+                "-f",
+                "lavfi",
+                "-i",
+                f"color=c={color}:s=160x90:d=2",
+                "-pix_fmt",
+                "yuv420p",
+                "-an",
+                "-y",
+                str(source),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        imported = media_service.import_file(
+            project_id,
+            source,
+            purpose="SHOT_VIDEO",
+            owner_type="SHOT",
+            owner_id=str(shot["id"]),
+            media_kind="VIDEO",
+            stage="PROXY",
+        )
+        version_ids.append(str(imported["media_version_id"]))
+
+    human_version_id, session_version_id = version_ids
+    ReviewService(database, workspace).select_version(human_version_id, "PROXY_WINNER")
+    timeline = TimelineService(database, workspace)
+    human_timeline = timeline.assemble_episode_timeline(
+        episode_id, audio_strategy="SILENT", actor="human-editor"
+    )
+    assert human_timeline["status"] == "CREATED"
+
+    sessions = ProductionSessionService(database)
+    command = {
+        "scope_type": "SINGLE_EPISODE",
+        "episode_ids": [episode_id],
+        "production_mode": "BALANCED",
+        "checkpoint_policy": "ON_EXCEPTION",
+        "tts_enabled": False,
+        "max_parallel_episodes": 1,
+        "min_free_disk_bytes": 1,
+    }
+    plan = sessions.plan(project_id, command)
+    session = sessions.create(
+        project_id,
+        {**command, "expected_plan_hash": plan["plan_hash"]},
+        idempotency_key="session-timeline-choice",
+    )["session"]
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO machine_check_runs
+               (id,subject_type,subject_id,policy_version,status,created_by)
+               VALUES ('session-timeline-qc','MEDIA_VERSION',?,'test-policy','PASS','test')""",
+            (session_version_id,),
+        )
+    ProductionChoiceService(database).record_video_choice(
+        str(session["id"]),
+        episode_id,
+        str(shot["id"]),
+        session_version_id,
+        "session-timeline-qc",
+        actor="session-machine",
+    )
+
+    with database.connect() as connection:
+        before = dict(
+            connection.execute(
+                """SELECT selected_version_id,version_counter,revision FROM media_assets
+                   WHERE id=(SELECT media_asset_id FROM media_versions WHERE id=?)""",
+                (human_version_id,),
+            ).fetchone()
+        )
+        selection_count_before = int(
+            connection.execute("SELECT COUNT(*) FROM selections").fetchone()[0]
+        )
+
+    created = timeline.assemble_episode_timeline(
+        episode_id,
+        audio_strategy="SILENT",
+        production_session_id=str(session["id"]),
+        actor="production-session-worker",
+    )
+    replay = timeline.assemble_episode_timeline(
+        episode_id,
+        audio_strategy="SILENT",
+        production_session_id=str(session["id"]),
+        actor="production-session-worker",
+    )
+
+    assert created["status"] == "CREATED"
+    assert created["timeline"]["revision_no"] == 2
+    assert created["timeline"]["items"][0]["media_version_id"] == session_version_id
+    assert created["timeline"]["input_snapshot"]["production_session_id"] == session["id"]
+    assert created["timeline"]["input_snapshot"]["session_choice_fingerprint"]
+    assert replay["status"] == "SKIPPED"
+    assert replay["timeline_revision_id"] == created["timeline"]["id"]
+
+    later_human_timeline = timeline.create_timeline_revision(
+        episode_id,
+        created["timeline"]["items"],
+        {"schema_version": "test.v1", "source": "LATER_HUMAN_EDIT"},
+        status="FROZEN",
+        actor="human-editor",
+    )
+    assert later_human_timeline["revision_no"] == 3
+    with database.connect() as connection:
+        scoped_timeline, _ = ProductionSessionReviewService._timeline(
+            connection,
+            episode_id,
+            str(session["id"]),
+        )
+    assert scoped_timeline is not None
+    assert scoped_timeline["id"] == created["timeline"]["id"]
+
+    class _CapturingTimeline:
+        def __init__(self) -> None:
+            self.timeline_ids: list[str] = []
+
+        def render_episode(
+            self,
+            timeline_revision_id: str,
+            *,
+            force_rerender: bool = False,
+            actor: str = "local-user",
+        ) -> dict:
+            self.timeline_ids.append(timeline_revision_id)
+            return {
+                "id": f"render-{len(self.timeline_ids)}",
+                "timeline_revision_id": timeline_revision_id,
+                "sha256": "a" * 64,
+                "byte_size": 1,
+                "probe": {"duration_ms": 2_000},
+                "rel_path": "preview.mp4",
+            }
+
+    renderer = _CapturingTimeline()
+    session_render = _automation_render(
+        database,
+        lambda: renderer,
+        episode_id,
+        {"production_session_id": str(session["id"])},
+    )[0]
+    ordinary_render = _automation_render(database, lambda: renderer, episode_id, {})[0]
+    assert session_render["machine_check"]["timeline_revision_id"] == created["timeline"]["id"]
+    assert ordinary_render["machine_check"]["timeline_revision_id"] == later_human_timeline["id"]
+    assert renderer.timeline_ids == [created["timeline"]["id"], later_human_timeline["id"]]
+
+    impact = EpisodeWorkerActionService(database, workspace).operation_impact(
+        episode_id,
+        operation="RECOMPOSE_ONLY",
+        tts_enabled=False,
+        production_session_id=str(session["id"]),
+    )
+    run_service = EpisodeProductionRunService(database, workspace)
+    recomposition_run = run_service.start(
+        episode_id,
+        idempotency_key="session-choice-recomposition",
+        tts_enabled=False,
+        production_mode="BALANCED",
+        checkpoint_policy="ON_EXCEPTION",
+        operation="RECOMPOSE_ONLY",
+        target_take_count=1,
+        expected_plan_hash=str(impact["plan_hash"]),
+        expected_episode_revision=int(episode["revision"]),
+        production_session_id=str(session["id"]),
+        actor="production-session-worker",
+    )
+    raw_run = run_service.automation.get_run(str(recomposition_run["id"]))
+    workflow = run_service.automation.get_workflow(str(raw_run["workflow_id"]))
+    actions = [item["payload"] for item in workflow["definition"]["batch_items"]]
+    assert [payload["action"] for payload in actions] == ["TIMELINE_ASSEMBLY", "RENDER"]
+    assert all(payload["production_session_id"] == session["id"] for payload in actions)
+    assert workflow["definition"]["nodes"][0]["metadata"]["production_session_id"] == session["id"]
+    with database.connect() as connection:
+        after = dict(
+            connection.execute(
+                """SELECT selected_version_id,version_counter,revision FROM media_assets
+                   WHERE id=(SELECT media_asset_id FROM media_versions WHERE id=?)""",
+                (human_version_id,),
+            ).fetchone()
+        )
+        selection_count_after = int(
+            connection.execute("SELECT COUNT(*) FROM selections").fetchone()[0]
+        )
+    assert after == before
+    assert selection_count_after == selection_count_before
+
+
 @pytest.mark.parametrize("audio_seconds", [1.5, 3.5])
 def test_assemble_episode_timeline_places_selected_dialogue_audio(workspace, database, audio_seconds) -> None:
     import uuid as _uuid
@@ -288,6 +510,23 @@ def test_split_aligned_cue_groups_words_and_scales_times() -> None:
 
     assert split_aligned_cue("文本", [], 0, 1_000_000) == []
     assert split_aligned_cue("文本", [{"text": "文", "start_time": "bad", "end_time": 1.0}], 0, 1_000_000) == []
+
+
+def test_split_aligned_cue_preserves_source_punctuation_omitted_by_aligner() -> None:
+    from local_drama.application.timeline import split_aligned_cue
+
+    words = [
+        {"text": "警报", "start_time": 0.0, "end_time": 0.4},
+        {"text": "还没", "start_time": 0.4, "end_time": 0.7},
+        {"text": "解除", "start_time": 0.7, "end_time": 1.0},
+        {"text": "我们不能", "start_time": 1.05, "end_time": 1.3},
+        {"text": "停", "start_time": 1.3, "end_time": 1.5},
+    ]
+
+    cues = split_aligned_cue("警报还没解除，我们不能停。", words, 0, 1_500_000)
+
+    assert "".join(cue["text"] for cue in cues) == "警报还没解除，我们不能停。"
+    assert split_aligned_cue("警报已经解除。", words, 0, 1_500_000) == []
 
 
 def test_subtitle_draft_uses_word_alignment_when_available(workspace, database) -> None:

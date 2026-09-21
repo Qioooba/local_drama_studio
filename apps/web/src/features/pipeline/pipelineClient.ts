@@ -160,6 +160,20 @@ export type PipelineRun = {
     continuation_job_id?: string;
     revoked_at?: string;
   };
+  production_authorization?: {
+    schema_version?: "pipeline-production-authorization/v1";
+    endpoint: "STRUCTURE_ONLY" | "WAITING_REVIEW";
+    production_mode?: "DRAFT" | "BALANCED" | "QUALITY";
+    checkpoint_policy?: "AUTO_CONTINUE" | "AFTER_ASSETS" | "AFTER_SHOT_PLAN" | "BEFORE_VIDEO" | "ON_EXCEPTION";
+    tts_enabled?: boolean;
+    max_parallel_episodes?: number;
+  };
+  production_continuation?: {
+    state: "NOT_AUTHORIZED" | "PENDING" | "NOT_STARTED" | "INVALID" | "READY" | "STARTED";
+    session_id?: string | null;
+    session_status?: string | null;
+    current_stage?: string;
+  };
   apply_continuation?: {
     state: string;
     job_id?: string | null;
@@ -219,6 +233,13 @@ export type StartPipelinePayload = {
   application_authorization?: {
     endpoint: "DRAFT_ONLY" | "APPLY_SELECTED_SECTIONS";
     sections: string[];
+  };
+  production_authorization?: {
+    endpoint: "STRUCTURE_ONLY" | "WAITING_REVIEW";
+    production_mode?: "DRAFT" | "BALANCED" | "QUALITY";
+    checkpoint_policy?: "AUTO_CONTINUE" | "AFTER_ASSETS" | "AFTER_SHOT_PLAN" | "BEFORE_VIDEO" | "ON_EXCEPTION";
+    tts_enabled?: boolean;
+    max_parallel_episodes?: number;
   };
 };
 

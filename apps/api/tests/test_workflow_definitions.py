@@ -87,10 +87,12 @@ def test_h3_definition_preserves_freeform_duration_and_sampling(workspace) -> No
     assert compiled["contract"]["production_tier"] is None
     assert compiled["contract"]["sampling_mode"] == "FREEFORM"
     assert compiled["contract"]["parameter_effects"]["tier"] == "INACTIVE_FREEFORM_MODE"
+    assert compiled["contract"]["authoring_parameters"]["native_audio"] is False
 
     tiered = WorkflowDefinitionService(workspace).instantiate("H3_T2V", {"prompt": "tiered", "seed": 4})
     assert tiered["contract"]["parameter_effects"]["duration_seconds"] == "INACTIVE_TIER_CONTROLS_FRAMES"
     assert tiered["contract"]["parameter_effects"]["sigma_points"] == "INACTIVE_TIER_CONTROLS_STEPS"
+    assert WorkflowDefinitionService(workspace).get("H3_T2V").fields["native_audio"]["default"] is False
 
 
 def test_comfy_lab_capture_requires_matching_pass_execution_before_promotion(workspace) -> None:

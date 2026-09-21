@@ -27,7 +27,7 @@ export function prepareI2VEvidenceKeyframe(projectId: string, sourceMediaVersion
   return requestJson<{
     approved_keyframe: {
       media_version_id: string;
-      shot_id: string;
+      owner_id: string;
       approval_id: string;
       source_media_version_id: string;
       reused: boolean;

@@ -25,6 +25,8 @@ from .character_identity_packs import CharacterIdentityPackService
 from .effective_configuration import EffectiveConfigurationService
 from .jobs import JobService
 from .media import MediaService
+from .production_choices import session_keyframe_for_shot
+from .production_identity_inputs import session_identity_snapshot_for_shot
 from .prompt_anchors import character_anchor_line, character_anchor_rows
 from .queries.generation_style_context import build_generation_style_context
 from .workflow_contracts import effective_workflow_contract
@@ -187,6 +189,24 @@ class GenerationService:
         self.database = database
         self.settings = settings
         self.media = MediaService(database, settings)
+
+    @staticmethod
+    def _identity_snapshot_for_plan(
+        connection: Any, intent: Any, plan: VariantPlan
+    ) -> dict[str, Any] | None:
+        if plan.production_session_id:
+            if str(intent["owner_type"]).upper() != "SHOT" or not intent["owner_id"]:
+                raise DomainRuleError(
+                    "PRODUCTION_SESSION_IDENTITY_OWNER_INVALID",
+                    "会话临时人物身份输入只允许用于镜头生成",
+                )
+            return session_identity_snapshot_for_shot(
+                connection,
+                plan.production_session_id,
+                str(intent["project_id"]),
+                str(intent["owner_id"]),
+            )
+        return CharacterIdentityPackService.generation_snapshot_for_intent(connection, intent)
 
     # These roles are deliberately semantic.  A local Profile may bind them to
     # any workflow node, but a Variant can never silently turn a driving input
@@ -760,6 +780,7 @@ class GenerationService:
             counts: dict[str, int] = {}
             media_dependencies: list[dict[str, Any]] = []
             approval_dependencies: dict[tuple[str, int], str] = {}
+            production_choice_dependencies: dict[tuple[str, int], str] = {}
             visual_dimensions: dict[tuple[str, int], tuple[int, int]] = {}
             bindings_by_role: dict[str, list[VariantInput]] = {}
             for binding in plan.bindings:
@@ -930,13 +951,34 @@ class GenerationService:
                         ORDER BY rd.created_at DESC LIMIT 1""",
                         (binding.media_version_id, intent["project_id"], intent["owner_id"], intent["owner_id"]),
                     ).fetchone()
-                    if approval is None:
-                        raise DomainRuleError(
-                            "APPROVED_KEYFRAME_REQUIRED",
-                            "正式 I2V 代理或正式视频只能绑定当前镜头已批准关键帧",
-                            {"media_version_id": binding.media_version_id, "shot_id": intent["owner_id"]},
+                    if approval is not None:
+                        approval_dependencies[(binding.role, binding.ordinal)] = str(approval["id"])
+                    else:
+                        session_keyframe = (
+                            session_keyframe_for_shot(
+                                connection,
+                                plan.production_session_id,
+                                str(intent["owner_id"]),
+                            )
+                            if plan.production_session_id
+                            else None
                         )
-                    approval_dependencies[(binding.role, binding.ordinal)] = str(approval["id"])
+                        if (
+                            session_keyframe is None
+                            or str(session_keyframe["media_version_id"]) != binding.media_version_id
+                        ):
+                            raise DomainRuleError(
+                                "APPROVED_KEYFRAME_REQUIRED",
+                                "正式 I2V 代理或正式视频只能绑定当前镜头已批准关键帧，或同一生产会话已验证的临时关键帧",
+                                {
+                                    "media_version_id": binding.media_version_id,
+                                    "shot_id": intent["owner_id"],
+                                    "production_session_id": plan.production_session_id,
+                                },
+                            )
+                        production_choice_dependencies[(binding.role, binding.ordinal)] = str(
+                            session_keyframe["production_choice_id"]
+                        )
                 media_dependencies.append(
                     {
                         "id": binding.media_version_id,
@@ -967,11 +1009,35 @@ class GenerationService:
                             ),
                         },
                         "source_approval_id": approval_dependencies.get((binding.role, binding.ordinal)),
+                        "source_production_choice_id": production_choice_dependencies.get(
+                            (binding.role, binding.ordinal)
+                        ),
                         **({"project_asset_grant": grant_snapshot} if grant_snapshot else {}),
                     }
                 )
             first_dimensions = visual_dimensions.get(("FIRST_FRAME", 0))
             end_dimensions = visual_dimensions.get(("END_FRAME", 0))
+            if (
+                first_dimensions
+                and str(intent["purpose"]) in {"I2V_PROXY", "I2V_FORMAL"}
+                and isinstance(production_spec, dict)
+            ):
+                generation_actual = production_spec.get("generation", {}).get("actual", {})
+                target_width = generation_actual.get("width")
+                target_height = generation_actual.get("height")
+                if isinstance(target_width, int) and isinstance(target_height, int):
+                    first_width, first_height = first_dimensions
+                    source_orientation = "LANDSCAPE" if first_width > first_height else "PORTRAIT" if first_height > first_width else "SQUARE"
+                    target_orientation = "LANDSCAPE" if target_width > target_height else "PORTRAIT" if target_height > target_width else "SQUARE"
+                    if source_orientation != "SQUARE" and target_orientation != "SQUARE" and source_orientation != target_orientation:
+                        raise DomainRuleError(
+                            "FIRST_FRAME_CROSS_ORIENTATION_BLOCKED",
+                            "正式视频首帧与生成画幅方向相反；请先生成同方向关键帧，避免人物被大面积裁切或拉伸",
+                            {
+                                "first_frame": {"width": first_width, "height": first_height, "orientation": source_orientation},
+                                "generation": {"width": target_width, "height": target_height, "orientation": target_orientation},
+                            },
+                        )
             if first_dimensions and end_dimensions:
                 first_width, first_height = first_dimensions
                 end_width, end_height = end_dimensions
@@ -1170,7 +1236,7 @@ class GenerationService:
                 JOIN director_recipe_versions v ON v.id=b.recipe_version_id WHERE b.project_id=?""",
                 (intent["project_id"],),
             ).fetchone()
-            identity_pack_snapshot = CharacterIdentityPackService.generation_snapshot_for_intent(connection, intent)
+            identity_pack_snapshot = self._identity_snapshot_for_plan(connection, intent, plan)
             if plan.expected_identity_pack_snapshot_hash is not None and plan.expected_identity_pack_snapshot_hash != (identity_pack_snapshot or {}).get("snapshot_hash"):
                 raise DomainRuleError("VARIANT_PLAN_STALE", "人物身份包已变化，请重新检查关键帧生成计划")
             intent_project_id = str(intent["project_id"])
@@ -1346,6 +1412,7 @@ class GenerationService:
             "explicit_seed": plan.explicit_seed,
             "provider_random_nonce": plan.provider_random_nonce,
             "expected_effective_configuration_fingerprint": plan.expected_effective_configuration_fingerprint,
+            "production_session_id": plan.production_session_id,
             "prompt_bundle": plan.prompt_bundle,
             "bindings": [GenerationService._binding_dict(binding) for binding in plan.bindings],
         }
@@ -1360,6 +1427,7 @@ class GenerationService:
             "explicit_seed": plan.explicit_seed,
             "provider_random_nonce": plan.provider_random_nonce,
             "expected_effective_configuration_fingerprint": plan.expected_effective_configuration_fingerprint,
+            "production_session_id": plan.production_session_id,
             "prompt_bundle": plan.prompt_bundle,
             "bindings": [GenerationService._binding_dict(binding) for binding in plan.bindings],
         }
@@ -1434,6 +1502,7 @@ class GenerationService:
                     "media_kind": evidence.get("media_kind"),
                     "probe": evidence.get("probe"),
                     "source_approval_id": evidence.get("source_approval_id"),
+                    "source_production_choice_id": evidence.get("source_production_choice_id"),
                 }
             )
         declared_roles = set(dependencies.get("workflow_bindings") or {})
@@ -1924,6 +1993,12 @@ class GenerationService:
         stage_code: str,
     ) -> dict[str, Any]:
         """Produce a read-only, shot-scoped confirmation token for BASE generation."""
+        # A Shot keeps the creator's camera intent, while the capability
+        # adjudication belongs to the selected immutable ProfileVersion.  A
+        # project/profile switch must therefore re-adjudicate that intent at
+        # the shot command boundary instead of rejecting an otherwise valid
+        # READY shot with CAMERA_PLAN_PROFILE_MISMATCH.
+        self._retarget_camera_plan(plan.parameter_set, plan.profile_version_id)
         plan = self._prepare_prompt_plan(plan)
         self._validate_shot_base_plan(plan)
         if stage_code not in {"SHOT_IMAGE", "VIDEO"}:
@@ -1993,6 +2068,10 @@ class GenerationService:
         idempotency_key: str,
     ) -> dict[str, Any]:
         """Submit a BASE variant under the URL Shot and recover exact command replays."""
+        # Mirror preflight normalization so a client can submit the exact
+        # request body it just confirmed even when the Shot's saved
+        # CameraPlan was adjudicated by the previous video ProfileVersion.
+        self._retarget_camera_plan(plan.parameter_set, plan.profile_version_id)
         plan = self._prepare_prompt_plan(plan)
         self._validate_shot_base_plan(plan)
         # Owner scope is always enforced, while a successful replay deliberately
@@ -2266,10 +2345,7 @@ class GenerationService:
                     "style_context_hash": current_style_hash,
                 }
             identity_pack_snapshot = dependencies.get("identity_pack_snapshot")
-            current_identity_pack_snapshot = CharacterIdentityPackService.generation_snapshot_for_intent(
-                connection,
-                intent,
-            )
+            current_identity_pack_snapshot = self._identity_snapshot_for_plan(connection, intent, plan)
             expected_identity_hash = identity_pack_snapshot.get("snapshot_hash") if isinstance(identity_pack_snapshot, dict) else None
             current_identity_hash = current_identity_pack_snapshot.get("snapshot_hash") if isinstance(current_identity_pack_snapshot, dict) else None
             if expected_identity_hash != current_identity_hash:

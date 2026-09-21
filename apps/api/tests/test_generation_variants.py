@@ -15,6 +15,8 @@ from local_drama.application.experiments import ExperimentService
 from local_drama.application.generation import GenerationService
 from local_drama.application.jobs import JobService
 from local_drama.application.media import MediaService
+from local_drama.application.production_choices import ProductionChoiceService
+from local_drama.application.production_sessions import ProductionSessionService
 from local_drama.application.profiles import ProfileService
 from local_drama.application.projects import ProjectService
 from local_drama.application.prompts import PromptService
@@ -1002,6 +1004,149 @@ def test_camera_plan_must_match_profile_and_is_frozen_in_job_snapshot(workspace,
     with pytest.raises(DomainRuleError) as error:
         generation.preflight_variant(str(intent["id"]), stale)
     assert error.value.code == "CAMERA_PLAN_RESOLUTION_STALE"
+
+
+def test_shot_base_command_retargets_saved_camera_plan_after_profile_switch(workspace, database) -> None:
+    project = _project(workspace, database, "shot_base_camera_profile_switch")
+    project_id = str(project["id"])
+    projects = ProjectService(database, workspace.projects_root)
+    season = projects.list_seasons(project_id)[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    shot = projects.create_shot(str(episode["id"]), "SHOT-001", 4_000)
+    media_version_id = _image(workspace, database, project_id, "shot-base-camera-switch.png")
+    source_profile_id = _published_profile(workspace, database)
+    target_profile_id = _copy_profile_version(database, source_profile_id)
+    camera_schema = json.dumps(
+        {
+            "seed": {"required": True, "determinism": "profile_declared"},
+            "capabilities": {"camera": {"support": "PROMPT_FALLBACK", "prompt_fallback": True}},
+        }
+    )
+
+
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE execution_profile_versions SET parameter_schema_json=? WHERE id IN (?,?)",
+            (camera_schema, source_profile_id, target_profile_id),
+        )
+    generation = GenerationService(database, workspace)
+    intent = generation.create_intent(project_id, "SHOT", str(shot["id"]), "I2V", "camera profile switch")
+    source_camera = {
+        "mode": "PROMPT_FALLBACK",
+        "shot_type": "MEDIUM",
+        "movement": "PUSH_IN",
+        "prompt_text": "camera: slow push in",
+        "direction": "FORWARD",
+        "intensity": 0.4,
+        "curve": "LINEAR",
+        "profile_version_id": source_profile_id,
+    }
+
+    def plan() -> VariantPlan:
+        base = _plan(target_profile_id, media_version_id)
+        return VariantPlan(
+            **{
+                **base.__dict__,
+                "parameter_set": {**base.parameter_set, "camera_plan": dict(source_camera)},
+            }
+        )
+
+    preview = generation.preflight_shot_base_variant(
+        str(shot["id"]),
+        str(intent["id"]),
+        plan(),
+        int(shot["revision"]),
+        "VIDEO",
+    )
+    resolved = preview["actual_execution_inputs"]["execution_metadata"]["camera_plan"]
+    assert resolved["profile_version_id"] == target_profile_id
+    assert resolved["movement"] == "PUSH_IN"
+    assert resolved["prompt_text"] == "camera: slow push in"
+
+    submitted = generation.submit_shot_base_variant(
+        str(shot["id"]),
+        str(intent["id"]),
+        plan(),
+        expected_shot_revision=int(shot["revision"]),
+        stage_code="VIDEO",
+        plan_hash=str(preview["plan_hash"]),
+        idempotency_key="shot-base-camera-profile-switch",
+    )
+    stored = json.loads(str(submitted["variant"]["parameter_set_json"]))
+    assert stored["camera_plan"]["profile_version_id"] == target_profile_id
+
+
+def test_formal_i2v_accepts_only_same_session_verified_temporary_keyframe(
+    workspace,
+    database,
+) -> None:
+    project = _project(workspace, database, "i2v_session_keyframe")
+    project_id = str(project["id"])
+    projects = ProjectService(database, workspace.projects_root)
+    season = projects.list_seasons(project_id)[0]
+    episode = projects.list_episodes(str(season["id"]))[0]
+    episode_id = str(episode["id"])
+    shot = projects.create_shot(episode_id, "S001", 4_000)
+    shot_id = str(shot["id"])
+    keyframe = _shot_image(workspace, database, project_id, shot_id, "session-keyframe.png")
+    keyframe_id = str(keyframe["media_version_id"])
+    profile_id = _published_profile(workspace, database)
+
+    sessions = ProductionSessionService(database)
+    request = {
+        "scope_type": "SINGLE_EPISODE",
+        "episode_ids": [episode_id],
+        "production_mode": "DRAFT",
+        "checkpoint_policy": "ON_EXCEPTION",
+        "tts_enabled": False,
+        "max_parallel_episodes": 1,
+        "min_free_disk_bytes": 1,
+    }
+    session_plan = sessions.plan(project_id, request)
+    session = sessions.create(
+        project_id,
+        {**request, "expected_plan_hash": session_plan["plan_hash"]},
+        idempotency_key="i2v-session-keyframe-create",
+    )["session"]
+    session_id = str(session["id"])
+    now = "2026-09-21T00:00:00Z"
+    with database.transaction() as connection:
+        connection.execute(
+            """INSERT INTO shot_keyframe_generation_batches
+               (id,project_id,episode_id,frame_strategy,candidate_count,status,plan_hash,
+                idempotency_key,selected_shot_count,queued_count,created_at,updated_at,created_by)
+               VALUES ('i2v-session-batch',?,?,'FIRST_ONLY',1,'RUNNING',?,
+                       'i2v-session-batch',1,1,?,?, 'test')""",
+            (project_id, episode_id, "b" * 64, now, now),
+        )
+        connection.execute(
+            """INSERT INTO shot_keyframe_generation_batch_items
+               (id,batch_id,shot_id,shot_revision,frame_role,candidate_index,profile_version_id,
+                status,prompt_snapshot,input_snapshot_json,media_version_id,created_at,updated_at)
+               VALUES ('i2v-session-item','i2v-session-batch',?,?,'FIRST_FRAME',1,?,
+                       'SUCCEEDED','prompt','{}',?,?,?)""",
+            (shot_id, shot["revision"], profile_id, keyframe_id, now, now),
+        )
+    report, _ = ProductionChoiceService(database).ensure_keyframes(session_id, episode_id, actor="test")
+    assert report["status"] == "PASS"
+    choice_id = report["produced"]["items"][0]["production_choice_id"]
+
+    generation = GenerationService(database, workspace)
+    intent = generation.create_intent(project_id, "SHOT", shot_id, "I2V_PROXY", "session temporary first frame")
+    scoped_plan = replace(_plan(profile_id, keyframe_id), production_session_id=session_id)
+    preflight = generation.preflight_variant(str(intent["id"]), scoped_plan)
+
+    assert preflight["status"] == "READY"
+    assert preflight["dependencies"]["approvals"] == []
+    assert preflight["actual_execution_inputs"]["media_bindings"][0]["source_approval_id"] is None
+    assert preflight["actual_execution_inputs"]["media_bindings"][0]["source_production_choice_id"] == choice_id
+
+    with pytest.raises(DomainRuleError) as wrong_session:
+        generation.preflight_variant(
+            str(intent["id"]),
+            replace(scoped_plan, production_session_id=str(uuid.uuid4())),
+        )
+    assert wrong_session.value.code == "APPROVED_KEYFRAME_REQUIRED"
 
 
 def test_tampered_variant_input_is_blocked_before_variant_or_job_creation(workspace, database) -> None:

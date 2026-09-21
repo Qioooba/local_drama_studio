@@ -910,6 +910,10 @@ class ComfyGenerationService:
         }
 
     def _finalize_business_outputs(self, job_id: str, artifacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        from local_drama.application.production_identity_inputs import (
+            ProductionIdentityGenerationCompletionService,
+        )
+
         outcomes: list[dict[str, Any]] = []
         asset_completion = build_asset_image_completion(self.database, self.settings)
         try:
@@ -927,10 +931,32 @@ class ComfyGenerationService:
         except DomainRuleError as error:
             keyframe_completion.record_failure(job_id, error)
             outcomes.append({"kind": "SHOT_KEYFRAME", "status": "FAILED", "error_code": error.code})
+        identity_completion = ProductionIdentityGenerationCompletionService(
+            self.database, self.settings
+        )
+        try:
+            result = identity_completion.finalize_job(job_id, artifacts)
+            if result is not None:
+                outcomes.append(
+                    {
+                        "kind": "PRODUCTION_IDENTITY_VIEW",
+                        "status": "FINALIZED",
+                        "result": result,
+                    }
+                )
+        except DomainRuleError as error:
+            identity_completion.record_failure(job_id, error)
+            outcomes.append(
+                {
+                    "kind": "PRODUCTION_IDENTITY_VIEW",
+                    "status": "FAILED",
+                    "error_code": error.code,
+                }
+            )
         return outcomes
 
     def reconcile_succeeded_business_outputs(self, *, limit: int = 50) -> dict[str, Any]:
-        """Finish idempotent asset/keyframe adoption after a process restart.
+        """Finish idempotent asset/keyframe/identity adoption after a restart.
 
         A crash can occur after the durable Job is marked SUCCEEDED but before
         its output is promoted into the owning production batch.  Provider
@@ -945,10 +971,24 @@ class ComfyGenerationService:
                 FROM jobs j
                 LEFT JOIN asset_image_generation_batch_items ai ON ai.job_id=j.id
                 LEFT JOIN shot_keyframe_generation_batch_items ki ON ki.job_id=j.id
+                LEFT JOIN production_session_job_links pi
+                  ON pi.job_id=j.id AND pi.link_state='ACTIVE'
+                 AND pi.role LIKE 'IDENTITY_VIEW_%'
                 WHERE j.state='SUCCEEDED'
                   AND (
                     (ai.id IS NOT NULL AND ai.status NOT IN ('SUCCEEDED','SUPERSEDED','FAILED','CANCELLED'))
                     OR (ki.id IS NOT NULL AND ki.status NOT IN ('SUCCEEDED','SUPERSEDED','FAILED','CANCELLED'))
+                    OR (
+                      pi.id IS NOT NULL
+                      AND NOT EXISTS (
+                        SELECT 1 FROM production_session_identity_inputs pii
+                        JOIN generation_variants piv ON piv.id=j.subject_id
+                        JOIN generation_intents pii_intent ON pii_intent.id=piv.intent_id
+                        WHERE pii.session_id=pi.session_id
+                          AND pii.story_asset_id=pii_intent.owner_id
+                          AND pii.state='ACTIVE'
+                      )
+                    )
                   )
                 ORDER BY j.updated_at,j.id LIMIT ?""",
                 (bounded_limit,),

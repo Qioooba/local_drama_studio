@@ -102,7 +102,11 @@ def test_unresolved_canonical_speaker_blocks_video_and_keyframe_plans(workspace,
     )
     keyframe_item = plan["items"][0]
     assert keyframe_item["status"] == "BLOCKED"
-    assert "待确认说话人：不要替我猜名字。" in keyframe_item["prompt"]
+    # Still-image prompts intentionally omit spoken text to avoid rendering
+    # subtitles or speech as pixels.  The canonical line identity remains in
+    # the blocker so the operator can resolve the speaker without guessing.
+    assert "待确认说话人" not in keyframe_item["prompt"]
+    assert "不要替我猜名字" not in keyframe_item["prompt"]
     keyframe_blocker = next(
         blocker
         for blocker in keyframe_item["blockers"]

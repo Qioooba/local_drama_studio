@@ -30,7 +30,7 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         keyframe_item_columns = {row[1] for row in connection.execute("PRAGMA table_info(shot_keyframe_generation_batch_items)")}
         quick_run_columns = {row[1] for row in connection.execute("PRAGMA table_info(quick_generation_runs)")}
         execution_snapshot_columns = {row[1] for row in connection.execute("PRAGMA table_info(mp_execution_snapshots)")}
-        assert version == "0094_project_target_duration"
+        assert version == "0100_production_session_waiting_user"
         seeded_capability_count = connection.execute("SELECT COUNT(*) FROM mp_capability_definitions").fetchone()[0]
         embedding_definition = connection.execute(
             "SELECT family, background_only FROM mp_capability_definitions WHERE code = 'EMBEDDING_TEXT'"
@@ -39,6 +39,7 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
     assert seeded_capability_count == len(CAPABILITY_DEFINITIONS)
     assert tuple(embedding_definition) == ("RETRIEVAL", 1)
     assert {"quick_generation_runs", "quick_generation_candidates", "quick_generation_outputs", "quick_generation_events", "quick_generation_presets"} <= tables
+    assert "production_session_asset_inputs" in tables
     assert "model_parameters_json" in quick_run_columns
     assert "input_snapshot_json" in keyframe_batch_columns
     assert "input_snapshot_json" in keyframe_item_columns
@@ -67,7 +68,15 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
     assert {"requested_time_us", "resolved_time_us", "source_sha256", "extraction_method"} <= anchor_columns
     assert "source_artifact_id" in media_columns
     assert {"output_contract_json", "resource_policy_json"} <= profile_columns
-    assert {"input_snapshot_json", "ffmpeg_command_json", "execution_log_text"} <= render_columns
+    assert {
+        "input_snapshot_json",
+        "ffmpeg_command_json",
+        "execution_log_text",
+        "render_kind",
+        "parent_render_version_id",
+        "upscale_run_id",
+        "derivation_fingerprint",
+    } <= render_columns
     assert {"progress_json", "progress_updated_at", "started_at", "finished_at", "last_error_detail_redacted"} <= job_columns
     assert {"subject_kind", "scope_kind", "scope_project_id", "scope_episode_id", "scope_shot_id", "stage_code"} <= job_columns
     assert "job_stage_definitions" in tables
@@ -128,6 +137,12 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "ix_shot_working_media_slots_version",
         "uq_gpu_runtime_leases_active_resource",
         "ix_gpu_runtime_leases_owner_ref",
+        "ix_episode_renders_episode_kind_created",
+        "uq_episode_renders_upscale_run",
+        "ix_video_upscale_plans_project_status",
+        "ix_video_upscale_batches_project_created",
+        "ix_video_upscale_chunks_run_state",
+        "ix_episode_delivery_selections_render",
     } <= indexes
     expected = {
         "projects",
@@ -192,6 +207,20 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         "story_asset_proposals",
         "worker_sessions",
         "storage_operations",
+        "video_upscale_presets",
+        "video_upscale_preset_versions",
+        "project_upscale_settings",
+        "video_upscale_plans",
+        "video_upscale_batches",
+        "video_upscale_batch_items",
+        "video_upscale_runs",
+        "video_upscale_chunks",
+        "episode_delivery_selections",
+        "video_upscale_delivery_links",
+        "production_sessions",
+        "production_session_items",
+        "production_choices",
+        "production_session_job_links",
         "visual_lab_documents",
         "visual_lab_nodes",
         "visual_lab_node_revisions",

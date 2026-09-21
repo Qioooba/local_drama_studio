@@ -61,14 +61,14 @@ class SqlitePostReadRepository:
             ).fetchone()
             render = connection.execute(
                 """SELECT id,revision,integrity_status FROM episode_render_versions
-                WHERE episode_id=? ORDER BY created_at DESC,id DESC LIMIT 1""",
+                WHERE episode_id=? AND render_kind='COMPOSE' ORDER BY created_at DESC,id DESC LIMIT 1""",
                 (episode_id,),
             ).fetchone()
             render_count = int(connection.execute(
-                "SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=?", (episode_id,)
+                "SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=? AND render_kind='COMPOSE'", (episode_id,)
             ).fetchone()[0])
             verified_render_count = int(connection.execute(
-                "SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=? AND integrity_status='VERIFIED'",
+                "SELECT COUNT(*) FROM episode_render_versions WHERE episode_id=? AND render_kind='COMPOSE' AND integrity_status='VERIFIED'",
                 (episode_id,),
             ).fetchone()[0])
             package = connection.execute(
@@ -196,14 +196,21 @@ class SqlitePostReadRepository:
                 COALESCE(direct_shot.code,generation_shot.code,dialogue_shot.code,mv.id) AS label,
                 ma.media_kind,mv.stage,mv.duration_ms,ma.revision AS subject_revision,mv.integrity_status,mv.created_at,
                 COALESCE(mc.status,'NOT_RUN') AS machine_status,
-                CASE WHEN ma.media_kind='AUDIO' AND EXISTS (
-                  SELECT 1 FROM dialogue_candidate_selections dcs
-                  JOIN tts_candidates tc ON tc.id=dcs.tts_candidate_id
-                  WHERE tc.media_version_id=mv.id
-                    AND dcs.id=(SELECT latest.id FROM dialogue_candidate_selections latest
-                      WHERE latest.dialogue_line_id=dcs.dialogue_line_id
-                      ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1)
-                ) THEN 1 ELSE 0 END AS is_adopted,
+                CASE
+                  WHEN ma.media_kind='AUDIO' AND EXISTS (
+                    SELECT 1 FROM dialogue_candidate_selections dcs
+                    JOIN tts_candidates tc ON tc.id=dcs.tts_candidate_id
+                    WHERE tc.media_version_id=mv.id
+                      AND dcs.id=(SELECT latest.id FROM dialogue_candidate_selections latest
+                        WHERE latest.dialogue_line_id=dcs.dialogue_line_id
+                        ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1)
+                  ) THEN 1
+                  WHEN ma.media_kind IN ('IMAGE','VIDEO') AND EXISTS (
+                    SELECT 1 FROM shot_working_media_slots swms
+                    WHERE swms.media_version_id=mv.id
+                  ) THEN 1
+                  ELSE 0
+                END AS is_adopted,
                 template.id AS template_version_id,template.code AS template_code,template.items_json AS template_items_json,
                 rd.id AS latest_decision_id,rd.decision AS latest_decision,rd.revision AS latest_decision_revision,
                 COALESCE(rd.is_stale,0) AS latest_decision_stale
@@ -250,15 +257,18 @@ class SqlitePostReadRepository:
         if not target_kinds or "EPISODE_RENDER_VERSION" in target_kinds:
             renders = connection.execute(
                 """SELECT erv.id AS target_id,se.project_id,erv.episode_id,NULL AS shot_id,
-                e.code || ' 整集成片' AS label,NULL AS media_kind,'FORMAL' AS stage,
-                NULL AS duration_ms,erv.revision AS subject_revision,erv.integrity_status,NULL AS machine_status,
+                e.code || CASE WHEN erv.render_kind='SUPER_RESOLUTION' THEN ' 超分成片' ELSE ' 整集成片' END AS label,
+                NULL AS media_kind,'FORMAL' AS stage,NULL AS duration_ms,erv.revision AS subject_revision,
+                erv.integrity_status,(SELECT status FROM machine_check_runs mc WHERE mc.subject_type='EPISODE_RENDER_VERSION'
+                  AND mc.subject_id=erv.id ORDER BY mc.created_at DESC,mc.id DESC LIMIT 1) AS machine_status,
                 template.id AS template_version_id,template.code AS template_code,template.items_json AS template_items_json,
                 rd.id AS latest_decision_id,rd.decision AS latest_decision,rd.revision AS latest_decision_revision,
                 COALESCE(rd.is_stale,0) AS latest_decision_stale,erv.created_at
                 FROM episode_render_versions erv JOIN episodes e ON e.id=erv.episode_id
                 JOIN seasons se ON se.id=e.season_id
                 JOIN review_templates template ON template.id=(SELECT rt.id FROM review_templates rt
-                  WHERE rt.code='episode_render' ORDER BY rt.version_no DESC,rt.id DESC LIMIT 1)
+                  WHERE rt.code=CASE WHEN erv.render_kind='SUPER_RESOLUTION' THEN 'episode_upscale' ELSE 'episode_render' END
+                  ORDER BY rt.version_no DESC,rt.id DESC LIMIT 1)
                 LEFT JOIN review_decisions rd ON rd.id=(SELECT r.id FROM review_decisions r
                   WHERE r.subject_type='EPISODE_RENDER_VERSION' AND r.subject_id=erv.id
                   ORDER BY r.created_at DESC,r.id DESC LIMIT 1)
@@ -271,6 +281,8 @@ class SqlitePostReadRepository:
                 blockers = []
                 if str(row["integrity_status"]) != "VERIFIED":
                     blockers.append("RENDER_INTEGRITY_REQUIRED")
+                if str(row["template_code"]) == "episode_upscale" and str(row.get("machine_status") or "") != "PASS":
+                    blockers.append("UPSCALE_MACHINE_QC_REQUIRED")
                 if bool(row["latest_decision_stale"]):
                     blockers.append("PREVIOUS_DECISION_STALE")
                 item = {**row, "target_kind": "EPISODE_RENDER_VERSION", "latest_decision_stale": bool(row["latest_decision_stale"]),
