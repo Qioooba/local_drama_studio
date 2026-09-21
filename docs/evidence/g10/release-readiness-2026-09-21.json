@@ -1,6 +1,6 @@
 {
   "schema_version": "g10.release_audit.read_only.v1",
-  "observed_at": "2026-09-21T04:50:09.727632+00:00",
+  "observed_at": "2026-09-21T16:36:29.133417+00:00",
   "status": "IN_PROGRESS",
   "project_id": "6b6b2481-0a2c-4ee8-8f85-7c21578c681d",
   "checks": [
@@ -35,7 +35,7 @@
     {
       "code": "ORDERED_G8",
       "passed": false,
-      "observed": "PASS",
+      "observed": "IN_PROGRESS",
       "upstream_g7": "IN_PROGRESS",
       "next_required_action": "WAIT_FOR_G7:ZERO_PUBLIC_NETWORK_E2E"
     },
@@ -44,7 +44,7 @@
       "passed": false,
       "observed": "IN_PROGRESS",
       "upstream_g7": "IN_PROGRESS",
-      "upstream_g8": "PASS",
+      "upstream_g8": "IN_PROGRESS",
       "next_required_action": "WAIT_FOR_ORDERED_G8:ZERO_PUBLIC_NETWORK_E2E"
     },
     {

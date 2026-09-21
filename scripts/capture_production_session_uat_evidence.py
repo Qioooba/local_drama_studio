@@ -344,11 +344,22 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
         else:
             os.environ["LOCAL_DRAMA_INSTANCE_ROOT"] = previous_instance
 
-    summary = review.get("summary") or {}
     failures: list[str] = []
     if session["status"] != "WAITING_REVIEW":
         failures.append("SESSION_NOT_WAITING_REVIEW")
-    if int(summary.get("ready_for_human_review") or 0) != int(session["item_count"]):
+    ready_episodes = sum(
+        1
+        for item in review.get("items") or []
+        if item.get("review_status") == "READY_FOR_HUMAN_REVIEW"
+        or (
+            item.get("review_status") == "BLOCKED"
+            and {b.get("code") for b in item.get("blockers") or []}
+            == {"SESSION_ASSET_IDENTITIES_REVIEW_REQUIRED"}
+            and item.get("current_stage") == "WAITING_REVIEW"
+            and item.get("item_state") in {"WAITING", "COMPLETED"}
+        )
+    )
+    if ready_episodes != int(session["item_count"]):
         failures.append("NOT_ALL_EPISODES_READY_FOR_REVIEW")
     if any(
         row["state"] in {"FAILED", "CANCELLED", "NEEDS_ATTENTION", "ORPHANED"}

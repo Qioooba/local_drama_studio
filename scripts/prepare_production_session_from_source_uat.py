@@ -30,8 +30,10 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 from local_drama.application.commands.generation_preferences import (
     GenerationPreferenceCommandService,
 )
+from local_drama.application.configuration import ConfigurationService
 from local_drama.application.projects import ProjectService
 from local_drama.config import Settings
+from local_drama.domain.production_spec import canonical_production_plan_code
 from local_drama.infrastructure.database.backup import online_backup
 from local_drama.infrastructure.database.generation_preference_repository import (
     SqliteGenerationPreferenceRepository,
@@ -50,7 +52,7 @@ DEFAULT_PROFILES = {
     "LLM_STORY_PARSE": "98dae1f1-b625-57a3-aad2-1e448a1b38b9",
     "IMAGE_CHARACTER": "bcae6c29-ac73-4d19-9ddf-693f0f60df24",
     "IMAGE_SCENE": "a7b62b46-a800-4171-8a09-deb1210cabc3",
-    "IMAGE_CONCEPT": "d892a257-9459-47bb-9df3-10a3e7428350",
+    "IMAGE_CONCEPT": "9a349408-267c-4cd7-8d94-d5165d35e2ca",
     "VIDEO_I2V": "bfade67b-7ef2-4e3e-83a5-2ba77025e952",
 }
 
@@ -326,6 +328,33 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             profile_bindings=bindings,
             actor="source-production-uat",
         )
+        ConfigurationService(database).create_plan_binding(
+            str(project["id"]),
+            canonical_production_plan_code(str(project["id"])),
+            f"{args.project_title} 生产计划",
+            {
+                "schema_version": "localdrama.production-plan.v2",
+                "presentation": {
+                    "aspect_ratio": "9:16",
+                    "width": 480,
+                    "height": 854,
+                    "fps": {"numerator": 24, "denominator": 1},
+                },
+                "generation": {
+                    "strategy": "CAPABILITY_RESOLVED",
+                    "upscale": {
+                        "enabled": True,
+                        "required": True,
+                        "allow_cross_orientation": False,
+                        "stage": "COMPOSE_QC",
+                        "executor": "builtin:ffmpeg",
+                        "target": "PRESENTATION_SPEC",
+                        "fit": "LETTERBOX",
+                    },
+                },
+            },
+            actor="source-production-uat",
+        )
         generation_preferences = _write_generation_preferences(
             database, str(project["id"]), bindings
         )
@@ -356,6 +385,11 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             capability_profile_version_id=args.llm_profile_version_id,
             actor="source-production-uat",
         )
+        if not copied_llama_pid and shared_llama_pid.is_file():
+            isolated_llama_logs = instance_root / "logs" / "llama"
+            isolated_llama_logs.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(shared_llama_pid, isolated_llama_logs / shared_llama_pid.name)
+            copied_llama_pid = True
     finally:
         for key, value in saved_env.items():
             if value is None:

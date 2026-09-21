@@ -7,6 +7,14 @@ application ports and remain independently testable.
 from __future__ import annotations
 
 import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from local_drama.application.production_identity_inputs import (
+        ProductionIdentityGenerationCompletionService,
+    )
+    from local_drama.application.production_sessions import ProductionSessionService
+
 
 from local_drama.application.asset_image_generation import (
     AssetImageGenerationBatchService,
@@ -87,3 +95,20 @@ def build_pipeline_orchestrator(database: Database, settings: Settings) -> Pipel
 
 def build_scene_prop_generation(database: Database, settings: Settings) -> ScenePropAssetGenerationService:
     return ScenePropAssetGenerationService(database, settings, llm=LocalLLMService(database, settings))
+
+
+def build_production_identity_completion(
+    database: Database, settings: Settings
+) -> ProductionIdentityGenerationCompletionService:
+    from local_drama.application.production_identity_inputs import (
+        ProductionIdentityGenerationCompletionService,
+    )
+
+    return ProductionIdentityGenerationCompletionService(database, settings)
+
+
+def build_production_session_service(database: Database) -> ProductionSessionService:
+    from local_drama.application.production_sessions import ProductionSessionService
+
+    return ProductionSessionService(database)
+

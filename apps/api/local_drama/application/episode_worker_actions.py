@@ -11,8 +11,9 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections import defaultdict
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from local_drama.config import Settings
 from local_drama.domain.capabilities import VIDEO_GENERATION_CAPABILITIES
@@ -49,6 +50,49 @@ from .timeline import TimelineService
 
 ACTIVE_JOB_STATES = {"QUEUED", "CLAIMED", "RUNNING", "CANCEL_REQUESTED"}
 FAILED_JOB_STATES = {"FAILED", "NEEDS_ATTENTION", "ORPHANED"}
+
+
+def unpromoted_verified_keyframe_candidate_counts(
+    connection: sqlite3.Connection,
+    shot_ids: Iterable[str],
+) -> dict[str, int]:
+    ids = list(dict.fromkeys(str(value) for value in shot_ids if str(value)))
+    if not ids:
+        return {}
+    marks = ",".join("?" for _ in ids)
+    rows = connection.execute(
+        f"""SELECT gi.owner_id AS shot_id, COUNT(DISTINCT gv.id) AS candidate_count
+        FROM generation_intents gi
+        JOIN generation_variants gv ON gv.intent_id=gi.id
+        JOIN jobs j ON j.subject_type='GENERATION_VARIANT' AND j.subject_id=gv.id
+        JOIN job_attempts ja ON ja.job_id=j.id
+        JOIN artifacts a ON a.job_attempt_id=ja.id
+        WHERE gi.owner_type='SHOT'
+          AND gi.owner_id IN ({marks})
+          AND gi.purpose='T2I'
+          AND gv.is_stale=0
+          AND j.state='SUCCEEDED'
+          AND a.status='VERIFIED'
+        GROUP BY gi.owner_id""",
+        tuple(ids),
+    ).fetchall()
+    return {str(row["shot_id"]): int(row["candidate_count"]) for row in rows}
+
+
+def reusable_keyframe_candidate_counts(
+    connection: sqlite3.Connection,
+    shot_ids: Iterable[str],
+) -> dict[str, int]:
+    ids = list(dict.fromkeys(str(value) for value in shot_ids if str(value)))
+    if not ids:
+        return {}
+    counts: dict[str, int] = defaultdict(int)
+    for (shot_id, slot_type), count in eligible_candidate_counts(connection, ids).items():
+        if slot_type == "KEYFRAME":
+            counts[str(shot_id)] = max(counts[str(shot_id)], count)
+    for shot_id, count in unpromoted_verified_keyframe_candidate_counts(connection, ids).items():
+        counts[str(shot_id)] = max(counts[str(shot_id)], count)
+    return dict(counts)
 
 
 class EpisodeWorkerActionService:
@@ -108,7 +152,15 @@ class EpisodeWorkerActionService:
                 if production_session_id
                 else {}
             )
-        covered = set(approved) | set(session_selected)
+            candidate_counts = reusable_keyframe_candidate_counts(connection, shot_ids)
+        candidate_covered = {
+            shot_id
+            for shot_id in shot_ids
+            if shot_id not in approved
+            and shot_id not in session_selected
+            and candidate_counts.get(shot_id, 0) >= candidate_count
+        }
+        covered = set(approved) | set(session_selected) | candidate_covered
         targets = [
             {"shot_id": str(shot["id"]), "expected_revision": int(shot["revision"])}
             for shot in shots
@@ -119,6 +171,15 @@ class EpisodeWorkerActionService:
             {"shot_id": shot_id, "status": "SESSION_TEMPORARY_REUSED", **fact}
             for shot_id, fact in session_selected.items()
             if shot_id not in approved
+        )
+        reused.extend(
+            {
+                "shot_id": shot_id,
+                "status": "GENERATED_CANDIDATE_REUSED",
+                "candidate_count": candidate_counts[shot_id],
+            }
+            for shot_id in shot_ids
+            if shot_id in candidate_covered
         )
         if not targets:
             return self._report(

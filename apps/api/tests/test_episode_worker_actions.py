@@ -126,6 +126,154 @@ def test_keyframe_action_reuses_same_session_temporary_choice(workspace, databas
     service.keyframe_batches.submit.assert_not_called()
 
 
+def test_keyframe_action_reuses_verified_candidate_when_no_approval_or_choice(workspace, database, monkeypatch):
+    from unittest.mock import Mock
+
+    import local_drama.application.episode_worker_actions as module
+
+    _, episode, shot = _project_and_shot(workspace, database, "keyframe_candidate_reuse")
+    service = EpisodeWorkerActionService(database, workspace)
+    service.keyframe_batches = Mock()
+    monkeypatch.setattr(module, "approved_keyframes_for_shots", lambda *args, **kwargs: {})
+    monkeypatch.setattr(module, "session_keyframes_for_shots", lambda *args, **kwargs: {})
+    monkeypatch.setattr(module, "reusable_keyframe_candidate_counts", lambda _conn, _shot_ids: {str(shot["id"]): 1})
+
+    report, produced_bytes = service.keyframe_generation(
+        str(episode["id"]),
+        "run",
+        "task",
+        candidate_count=1,
+    )
+
+    assert produced_bytes == 0
+    assert report["status"] == "PASS"
+    assert report["machine_check"]["code"] == "KEYFRAME_INPUTS_REUSED"
+    assert report["produced"]["items"] == [
+        {
+            "shot_id": str(shot["id"]),
+            "status": "GENERATED_CANDIDATE_REUSED",
+            "candidate_count": 1,
+        }
+    ]
+    service.keyframe_batches.plan.assert_not_called()
+    service.keyframe_batches.submit.assert_not_called()
+
+
+def test_keyframe_wave_dispatch_skips_covered_shot_and_targets_second_shot(workspace, database, monkeypatch):
+    from unittest.mock import Mock
+
+    import local_drama.application.episode_worker_actions as module
+
+    project, episode, shot_1 = _project_and_shot(workspace, database, "keyframe_wave_1")
+    projects = ProjectService(database, workspace.projects_root)
+    shot_2 = projects.create_shot(str(episode["id"]), "SH-002", 4_000)
+    shot_2_id = str(shot_2["id"])
+
+    service = EpisodeWorkerActionService(database, workspace)
+    service.keyframe_batches = Mock()
+    service.keyframe_batches.plan.return_value = {"valid": True, "issues": [], "summary": {"blocked": 0}, "plan_hash": "hash-2"}
+    service.keyframe_batches.submit.return_value = {"id": "batch-2", "items": [{"shot_id": shot_2_id, "status": "QUEUED", "job_id": "image-job-2"}]}
+
+    monkeypatch.setattr(module, "approved_keyframes_for_shots", lambda *args, **kwargs: {})
+    monkeypatch.setattr(module, "session_keyframes_for_shots", lambda *args, **kwargs: {})
+    monkeypatch.setattr(
+        module,
+        "reusable_keyframe_candidate_counts",
+        lambda _conn, _shot_ids: {str(shot_1["id"]): 1, shot_2_id: 0},
+    )
+
+    report, produced_bytes = service.keyframe_generation(
+        str(episode["id"]),
+        "run",
+        "task",
+        candidate_count=1,
+        dispatch_job_limit=1,
+    )
+
+    assert report["status"] == "PASS"
+    plan_args = service.keyframe_batches.plan.call_args.kwargs
+    assert plan_args["targets"] == [{"shot_id": shot_2_id, "expected_revision": int(shot_2["revision"])}]
+    submit_args = service.keyframe_batches.submit.call_args.kwargs
+    assert submit_args["targets"] == [{"shot_id": shot_2_id, "expected_revision": int(shot_2["revision"])}]
+    assert report["produced"]["items"] == [
+        {
+            "shot_id": str(shot_1["id"]),
+            "status": "GENERATED_CANDIDATE_REUSED",
+            "candidate_count": 1,
+        },
+        {"shot_id": shot_2_id, "status": "QUEUED", "job_id": "image-job-2"},
+    ]
+
+
+def test_reusable_keyframe_candidate_counts_covers_unpromoted_verified_window(workspace, database):
+    from local_drama.application.episode_worker_actions import (
+        reusable_keyframe_candidate_counts,
+        unpromoted_verified_keyframe_candidate_counts,
+    )
+
+    project, episode, shot = _project_and_shot(workspace, database, "keyframe_unpromoted_window")
+    shot_id = str(shot["id"])
+    intent_id = str(uuid.uuid4())
+    variant_id = str(uuid.uuid4())
+    profile_id = str(uuid.uuid4())
+    now = datetime.now(UTC).isoformat()
+
+    with database.transaction() as connection:
+        connection.execute("INSERT INTO execution_profiles (id,code,title) VALUES ('kf-profile','kf-profile','test')")
+        connection.execute(
+            """INSERT INTO execution_profile_versions
+            (id,execution_profile_id,version_no,capability,model_bundle_json,input_contract_json,
+             parameter_schema_json,status,capability_json,output_contract_json,resource_policy_json)
+            VALUES (?,'kf-profile',1,'IMAGE_CHARACTER','{}','{}','{}','PUBLISHED','{}','{}','{}')""",
+            (profile_id,),
+        )
+        connection.execute(
+            """INSERT INTO generation_intents (id, project_id, owner_type, owner_id, purpose, creative_goal, status, created_at, updated_at, created_by)
+            VALUES (?, ?, 'SHOT', ?, 'T2I', 'Keyframe goal', 'ACTIVE', ?, ?, 'test')""",
+            (intent_id, str(project["id"]), shot_id, now, now),
+        )
+        connection.execute(
+            """INSERT INTO generation_variants
+            (id,intent_id,variant_no,variant_type,parent_variant_id,branch_reason,prompt_revision_id,
+             capability_profile_version_id,parameter_set_json,seed_policy,explicit_seed,input_fingerprint,
+             recipe_hash,status,is_stale,created_at,updated_at,created_by)
+            VALUES (?,?,1,'BASE',NULL,'TEST',NULL,?,'{}','EXPLICIT',7,?,?,'QUEUED',0,?,?,'test')""",
+            (variant_id, intent_id, profile_id, "0" * 64, "1" * 64, now, now),
+        )
+
+    jobs = JobService(database, workspace)
+    jobs.create_job(
+        str(project["id"]),
+        "GENERATION_VARIANT",
+        "GENERATION_VARIANT",
+        variant_id,
+        "GPU_H3",
+        {},
+        "test-kf-job",
+        max_attempts=1,
+    )
+    claim = jobs.claim("worker-1", ["GPU_H3"])
+    attempt = claim["attempt"]
+    output = workspace.work_root / "test.png"
+    output.write_bytes(b"test image fixture")
+    jobs.register_artifact(str(attempt["id"]), "COMFY_OUTPUT", "test.png")
+    jobs.complete(str(attempt["id"]), str(attempt["lease_token"]), "worker-1", success=True)
+
+    with database.connect() as connection:
+        counts = unpromoted_verified_keyframe_candidate_counts(connection, [shot_id])
+        assert counts.get(shot_id) == 1
+
+        reusable = reusable_keyframe_candidate_counts(connection, [shot_id])
+        assert reusable.get(shot_id) == 1
+
+    with database.transaction() as connection:
+        connection.execute("UPDATE generation_variants SET is_stale = 1 WHERE id = ?", (variant_id,))
+
+    with database.connect() as connection:
+        reusable_stale = reusable_keyframe_candidate_counts(connection, [shot_id])
+        assert reusable_stale.get(shot_id, 0) == 0
+
+
 def test_video_action_retries_only_the_failed_shot_job(workspace, database) -> None:
     project, episode, shot = _project_and_shot(workspace, database, "episode_video_retry")
     intent = GenerationService(database, workspace).create_intent(
