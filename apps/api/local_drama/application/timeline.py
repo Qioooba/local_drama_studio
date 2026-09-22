@@ -603,12 +603,55 @@ class TimelineService:
             if row is None:
                 raise DomainRuleError("TIMELINE_REVISION_NOT_FOUND", "时间线 revision 不存在")
             items = connection.execute("SELECT * FROM timeline_items WHERE timeline_revision_id=? ORDER BY start_us, id", (timeline_revision_id,)).fetchall()
+        normalized_items = [{**dict(item), "parameters": json.loads(item["parameters_json"])} for item in items]
         return {
             **dict(row),
             "content": json.loads(row["content_json"]),
             "input_snapshot": json.loads(row["input_snapshot_json"]),
-            "items": [{**dict(item), "parameters": json.loads(item["parameters_json"])} for item in items],
+            "items": normalized_items,
+            "version_signature": self.timeline_version_signature(normalized_items),
         }
+
+    @staticmethod
+    def timeline_version_signature(items: list[dict[str, Any]]) -> dict[str, Any]:
+        """The dirty/version signature of one timeline revision.
+
+        The frozen ``revision_hash`` deliberately covers only the raw items and
+        the caller's input snapshot.  Everything a freeze decision actually
+        depends on must therefore also be visible as one explicit signature:
+        whether the timeline contains dialogue, the audio-track parameters, and
+        the resulting duration.  Without this a client could freeze a revision
+        that no longer matches the settings on screen.
+        """
+        videos = [item for item in items if str(item.get("track_type", "")).upper() == "VIDEO"]
+        audio_tracks: list[dict[str, Any]] = []
+        for item in items:
+            track_type = str(item.get("track_type", "")).upper()
+            if track_type == "VIDEO":
+                continue
+            parameters = item.get("parameters") or {}
+            audio_tracks.append(
+                {
+                    "id": str(item.get("id") or ""),
+                    "track_type": track_type,
+                    "media_version_id": item.get("media_version_id"),
+                    "start_us": int(item["start_us"]),
+                    "end_us": int(item["end_us"]),
+                    "gain_db": float(parameters.get("gain_db") or 0.0),
+                    "loop_enabled": bool(parameters.get("loop_enabled", False)),
+                    "fade_in_us": int(parameters.get("fade_in_us") or 0),
+                    "fade_out_us": int(parameters.get("fade_out_us") or 0),
+                    "source_start_us": int(parameters.get("source_start_us") or 0),
+                }
+            )
+        duration_us = max((int(item["end_us"]) for item in videos), default=0)
+        has_dialogue = any(track["track_type"] == "DIALOGUE" for track in audio_tracks)
+        payload = {
+            "duration_us": duration_us,
+            "has_dialogue": has_dialogue,
+            "audio_tracks": audio_tracks,
+        }
+        return {**payload, "signature": _hash(payload)}
 
     def build_tts_aligner(self) -> Callable[[Path, str], list[dict[str, Any]]] | None:
         """Return a ForcedAligner callable when the local AI runtime exists."""
@@ -2202,7 +2245,8 @@ class TimelineService:
             input_snapshot_items.append({"media_version_id": str(media["id"]), "sha256": str(media["sha256"]), "byte_size": int(media["byte_size"]), "start_us": int(item["start_us"]), "end_us": int(item["end_us"]), "track_type": str(item["track_type"]), "parameters": item["parameters"]})
         bindings = self._audio_bindings_for_timeline(timeline, str(episode["id"]))
         include_source_audio = self._include_source_audio(timeline)
-        timeline_duration_us = self._timeline_video_duration_us(video_items)
+        timeline_plan = self._timeline_render_plan(episode, video_items)
+        timeline_duration_us = self._timeline_video_duration_us(video_items) - int(timeline_plan["transition_overlap_us"])
         input_snapshot = {
             "schema_version": "localdrama.episode-render-input.v1",
             "renderer_contract": RENDERER_CONTRACT,
@@ -2210,6 +2254,7 @@ class TimelineService:
             "timeline_revision_hash": timeline["revision_hash"],
             "timeline_input_snapshot": timeline["input_snapshot"],
             "timeline_duration_us": timeline_duration_us,
+            "timeline_plan": timeline_plan,
             "source_audio_policy": "INCLUDE" if include_source_audio else "MUTE",
             "items": input_snapshot_items,
         }
@@ -2251,6 +2296,7 @@ class TimelineService:
             subtitle=subtitle if subtitle_burned_in else None,
             production_spec=production_spec,
             include_source_audio=include_source_audio,
+            timeline_plan=timeline_plan,
         )
         return self._register_render(episode=episode, timeline_revision_id=timeline_revision_id, timeline=timeline, render_path=render_path, project_root=project_root, input_snapshot=input_snapshot, ffmpeg_execution=execution, actor=actor)
 
@@ -2288,13 +2334,17 @@ class TimelineService:
             actual_sha, actual_size = _hash_file(audio_path)
             if not hmac.compare_digest(actual_sha, str(binding["media_sha256"])) or actual_size != int(binding["media_byte_size"]):
                 raise DomainRuleError("SOURCE_INTEGRITY_FAILED", "Compose 音频输入 hash/size 与不可变 MediaVersion 不一致", {"media_version_id": str(binding["media_version_id"])})
+        # Freeze the ONE time/frame plan here so the plan this preflight reports
+        # and the plan the renderer executes are literally the same dict.
+        timeline_plan = self._timeline_render_plan(episode, items)
         snapshot: dict[str, Any] = {
             "schema_version": "localdrama.episode-render-input.v1",
             "renderer_contract": RENDERER_CONTRACT,
             "timeline_revision_id": timeline_revision_id,
             "timeline_revision_hash": timeline["revision_hash"],
             "timeline_input_snapshot": timeline["input_snapshot"],
-            "timeline_duration_us": self._timeline_video_duration_us(items),
+            "timeline_duration_us": self._timeline_video_duration_us(items) - int(timeline_plan["transition_overlap_us"]),
+            "timeline_plan": timeline_plan,
             "source_audio_policy": "INCLUDE" if include_source_audio else "MUTE",
             "items": items,
         }
@@ -2611,6 +2661,7 @@ class TimelineService:
                     "loop_enabled": bool(parameters.get("loop_enabled", False)),
                     "fade_in_us": int(parameters.get("fade_in_us") or 0),
                     "fade_out_us": int(parameters.get("fade_out_us") or 0),
+                    "source_start_us": int(parameters.get("source_start_us") or 0),
                     "media_sha256": str(media["sha256"]),
                     "media_byte_size": int(media["byte_size"]),
                 }
@@ -2630,6 +2681,7 @@ class TimelineService:
                 "loop_enabled": bool(binding["loop_enabled"]),
                 "fade_in_us": int(binding["fade_in_us"]),
                 "fade_out_us": int(binding["fade_out_us"]),
+                "source_start_us": int(binding.get("source_start_us") or 0),
                 "media_sha256": str(binding["media_sha256"]),
                 "media_byte_size": int(binding["media_byte_size"]),
             }
@@ -2731,19 +2783,143 @@ class TimelineService:
         return result
 
     @staticmethod
-    def _timeline_video_duration_us(video_items: list[dict[str, Any]]) -> int:
-        """Return the frozen video timeline span, not the sum of clip lengths.
+    def _timeline_transition_overlap_us(video_items: list[dict[str, Any]], *, fps: float) -> int:
+        """Total overlap the non-CUT transitions remove from the episode span.
 
-        Timeline items are placed on one shared time axis.  A transition or
-        an editor overlap therefore makes ``sum(end - start)`` longer than
-        the actual episode.  The frozen extent is the authoritative output
-        duration: from the first video start to the last video end.  Callers
-        still normalize each source clip independently, then trim the final
-        stream to this span.
+        ``xfade`` renders both clips across the transition window, so a timeline
+        with one 0.5 s DISSOLVE between two 1.0 s clips plays for 1.5 s — not
+        2.0 s and not 0.5 s.  The render and the OTIO/EDL exports must agree on
+        this number, so it is computed once from the same per-item durations the
+        renderer uses.
+        """
+        if len(video_items) < 2 or fps <= 0:
+            return 0
+        overlap_us = 0
+        for index in range(1, len(video_items)):
+            if TimelineService._timeline_transition_kind(video_items[index]) == "CUT":
+                continue
+            previous_seconds = (int(video_items[index - 1]["end_us"]) - int(video_items[index - 1]["start_us"])) / 1_000_000
+            current_seconds = (int(video_items[index]["end_us"]) - int(video_items[index]["start_us"])) / 1_000_000
+            overlap_us += round(TimelineService._timeline_transition_seconds(previous_seconds, current_seconds, fps=fps) * 1_000_000)
+        return overlap_us
+
+    def _timeline_render_plan(self, episode: dict[str, Any], video_items: list[dict[str, Any]]) -> dict[str, Any]:
+        """Freeze the ONE authoritative time/frame plan for a timeline revision.
+
+        MED-03 and MED-05 share a single root cause: the working frame rate and
+        the time origin were implicit, so preflight, the renderer and the
+        exports could each assume something different.  This plan makes both
+        explicit and is carried inside the immutable render snapshot, so a
+        preflight plan and the render that consumes it cannot disagree.
+        """
+        fps_num, fps_den = self._resolve_timeline_fps(episode, video_items)
+        fps = fps_num / fps_den
+        starts = [int(item["start_us"]) for item in video_items]
+        ends = [int(item["end_us"]) for item in video_items]
+        span_us = max(ends)
+        # The single explicit time origin is 0 = the start of the episode.  A
+        # timeline whose first clip starts later therefore renders real (black,
+        # silent) leader, exactly like the leading OTIO Gap of the same length;
+        # the renderer must never silently shift video to 0 while audio and
+        # subtitles stay on absolute time.
+        origin_us = 0
+        return {
+            "fps_num": fps_num,
+            "fps_den": fps_den,
+            "time_origin_us": origin_us,
+            "timeline_span_us": span_us,
+            "leading_blank_us": max(0, min(starts) - origin_us),
+            "transition_overlap_us": self._timeline_transition_overlap_us(video_items, fps=fps),
+        }
+
+    def _timeline_plan_from_probes(self, video_items: list[dict[str, Any]], probes: list[dict[str, Any]]) -> dict[str, Any]:
+        """Same frozen plan shape, with fps taken from already-probed sources.
+
+        Used when no explicit plan was threaded in (direct unit tests).  The
+        render and preflight entry points always pass the frozen plan, so this
+        fallback can never cause preflight and render to disagree.
+        """
+        fps_num, fps_den = self._resolve_timeline_fps({}, video_items, probes=probes)
+        fps = fps_num / fps_den
+        starts = [int(item["start_us"]) for item in video_items]
+        ends = [int(item["end_us"]) for item in video_items]
+        span_us = max(ends)
+        return {
+            "fps_num": fps_num,
+            "fps_den": fps_den,
+            "time_origin_us": 0,
+            "timeline_span_us": span_us,
+            "leading_blank_us": max(0, min(starts)),
+            "transition_overlap_us": self._timeline_transition_overlap_us(video_items, fps=fps),
+        }
+
+    def _resolve_timeline_fps(
+        self,
+        episode: dict[str, Any],
+        video_items: list[dict[str, Any]],
+        *,
+        probes: list[dict[str, Any]] | None = None,
+    ) -> tuple[int, int]:
+        """Project fps when explicitly configured, else the sources' own fps."""
+        raw_num = episode.get("fps_num")
+        raw_den = episode.get("fps_den")
+        try:
+            fps_num, fps_den = int(raw_num), int(raw_den)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            fps_num, fps_den = 0, 0
+        if fps_num > 0 and fps_den > 0:
+            return fps_num, fps_den
+        streams: list[dict[str, Any]] = []
+        for probe in probes or []:
+            streams.extend(stream for stream in probe.get("streams", []) if stream.get("codec_type") == "video")
+        if not streams:
+            fallback = self._probe_path_video_stream(video_items)
+            if fallback is not None:
+                streams.append(fallback)
+        for stream in streams:
+            for key in ("avg_frame_rate", "r_frame_rate"):
+                raw = str(stream.get(key) or "")
+                if "/" not in raw:
+                    continue
+                numerator, _, denominator = raw.partition("/")
+                try:
+                    num, den = int(numerator), int(denominator)
+                except ValueError:
+                    continue
+                if num > 0 and den > 0:
+                    return num, den
+        raise DomainRuleError("TIMELINE_FPS_REQUIRED", "时间线渲染需要项目显式 fps，或至少一个可探测帧率的源视频")
+
+    def _probe_path_video_stream(self, video_items: list[dict[str, Any]]) -> dict[str, Any] | None:
+        for item in video_items:
+            media_version_id = item.get("media_version_id")
+            if not media_version_id:
+                continue
+            try:
+                _, path = self.media.content_path(str(media_version_id))
+                probe = self._probe(path)
+            except (DomainRuleError, AttributeError):
+                continue
+            stream: dict[str, Any] | None = next(
+                (candidate for candidate in probe.get("streams", []) if candidate.get("codec_type") == "video"), None
+            )
+            if stream is not None:
+                return stream
+        return None
+
+    @staticmethod
+    def _timeline_video_duration_us(video_items: list[dict[str, Any]]) -> int:
+        """Return the frozen episode span on the single 0-based time axis.
+
+        Timeline items all live on one shared axis whose origin is 0.  The
+        authoritative output length is therefore ``max(end_us)``: a timeline
+        whose only clip occupies 1-3 s renders a 3 s file with real leader, so
+        the rendered file and the OTIO export (which emits the same leading
+        ``Gap``) can never disagree.  Non-CUT transitions render both clips
+        across the transition window, so their overlap is subtracted.
         """
         if not video_items:
             raise DomainRuleError("TIMELINE_ITEM_DURATION_INVALID", "时间线视频总时长必须大于 0")
-        starts: list[int] = []
         ends: list[int] = []
         for item in video_items:
             try:
@@ -2753,9 +2929,8 @@ class TimelineService:
                 raise DomainRuleError("TIMELINE_ITEM_DURATION_INVALID", "时间线视频项必须包含有效起止时间") from error
             if start_us < 0 or end_us <= start_us:
                 raise DomainRuleError("TIMELINE_ITEM_DURATION_INVALID", "时间线视频项时长必须大于 0")
-            starts.append(start_us)
             ends.append(end_us)
-        total_us = max(ends) - min(starts)
+        total_us = max(ends)
         if total_us <= 0:
             raise DomainRuleError("TIMELINE_ITEM_DURATION_INVALID", "时间线视频总时长必须大于 0")
         return total_us
@@ -2766,18 +2941,21 @@ class TimelineService:
         output_path: Path,
         *,
         duration_seconds: float | None = None,
+        leading_blank_us: int = 0,
     ) -> dict[str, Any]:
         padding_seconds = 0.0
         if duration_seconds is not None:
             budgets = [video_duration_budget(self._probe(path), {"start_us": 0, "end_us": 1}) for path in paths]
             available_us = sum(budget["available_us"] for budget in budgets)
             tolerance_us = max((budget["tolerance_us"] for budget in budgets), default=0)
-            required_us = round(duration_seconds * 1_000_000)
+            # Leader frames are synthesized, not sourced, so the coverage check
+            # asks only for the media the real clips must actually supply.
+            required_us = max(0, round(duration_seconds * 1_000_000) - max(0, leading_blank_us))
             if required_us <= 0 or required_us > available_us + tolerance_us:
                 raise DomainRuleError(
                     "TIMELINE_SOURCE_DURATION_INSUFFICIENT",
                     f"拼接需要 {duration_seconds:.3f} 秒，视频素材仅有 {available_us / 1_000_000:.3f} 秒；请补充素材或调整剪辑时长",
-                    {"required_us": required_us, "available_us": available_us},
+                    {"required_us": required_us, "available_us": available_us, "leading_blank_us": max(0, leading_blank_us)},
                 )
             padding_seconds = tolerance_us / 1_000_000
         concat_list = output_path.parent / f".partial-{uuid.uuid4().hex}.concat.txt"
@@ -2819,11 +2997,28 @@ class TimelineService:
         return "fade"
 
     @classmethod
-    def _timeline_transition_seconds(cls, previous_duration_seconds: float, current_duration_seconds: float) -> float:
+    def _timeline_transition_seconds(cls, previous_duration_seconds: float, current_duration_seconds: float, *, fps: float = 0.0) -> float:
+        """Transition length, snapped to a whole number of target frames.
+
+        A non-integral transition makes ``xfade`` and the timecode-based EDL
+        disagree by a sub-frame amount; snapping keeps the render, the plan and
+        every export on the same frame grid.
+        """
         if previous_duration_seconds <= 0.01 or current_duration_seconds <= 0.01:
             return 0.0
-        requested = 0.5
-        return round(min(requested, previous_duration_seconds / 2, current_duration_seconds / 2), 3)
+        requested = min(0.5, previous_duration_seconds / 2, current_duration_seconds / 2)
+        if fps > 0:
+            frames = max(1, round(requested * fps))
+            snapped = frames / fps
+            # Never let frame snapping push the transition past half of either
+            # clip, which would make xfade drop a clip entirely.
+            while frames > 1 and snapped > min(previous_duration_seconds / 2, current_duration_seconds / 2):
+                frames -= 1
+                snapped = frames / fps
+            if snapped > min(previous_duration_seconds / 2, current_duration_seconds / 2):
+                return 0.0
+            return round(snapped, 6)
+        return round(requested, 3)
 
     def _concat_timeline_videos(
         self,
@@ -2831,25 +3026,47 @@ class TimelineService:
         video_items: list[dict[str, Any]],
         render_dir: Path,
         output_path: Path,
+        *,
+        timeline_plan: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Honor every timeline item's explicit duration before concatenation.
+        """Normalize every element, then concatenate on ONE frozen frame grid.
+
+        MED-03 root cause: the per-clip normalization unified size/SAR/pixel
+        format but never the frame rate or timebase, so a 24 fps clip and a
+        30 fps clip reached ``xfade`` with timebases ``1/12288`` and ``1/15360``
+        and the transition failed permanently even though preflight passed.
+        Every element is now resampled to the plan's target fps and to a common
+        timebase (``AVTB``) *before* any duration/frame validation and *before*
+        the transition is applied.
+
+        MED-05 root cause: the concatenation started at output 0 while audio and
+        subtitles stayed on the absolute timeline axis, so a timeline whose
+        first clip starts at 1 s rendered 2 s while OTIO exported 3 s.  A real
+        black/silent leader of exactly ``min(start_us)`` is now normalized and
+        concatenated first, so the rendered file and every export share the one
+        explicit origin 0.
 
         Source generations often have provider-defined durations that differ
         from the editor's immutable ``end_us - start_us``.  Each source is
-        therefore checked for sufficient coverage before trimming. Only a
-        single frame of rounding slack may be held at the end. A silent
-        audio stream is added when the source has none so concat always sees a
-        stable stream layout.
+        therefore checked for sufficient coverage before trimming; only a single
+        frame of rounding slack may be held at the end.  A silent audio stream is
+        added when the source has none so concat always sees a stable layout.
         """
         normalized: list[Path] = []
         item_durations_seconds: list[float] = []
         steps: list[dict[str, Any]] = []
-        target_duration_us = self._timeline_video_duration_us(video_items)
-        target_duration_seconds = target_duration_us / 1_000_000
-        # Check every input before creating any intermediate files. Worker
-        # execution must enforce this even when submission preflight was bypassed.
+        # Check every input before any other work and before creating any
+        # intermediate file: worker execution must reject an under-covered
+        # timeline even when submission preflight was bypassed.
         probes = [self._probe(path) for path in paths]
         budgets = [video_duration_budget(probe, item) for probe, item in zip(probes, video_items, strict=True)]
+        # The frozen plan is authoritative when the caller supplies it; a direct
+        # unit-test call derives the same fps from the sources it was handed.
+        plan = timeline_plan or self._timeline_plan_from_probes(video_items, probes)
+        target_fps = plan["fps_num"] / plan["fps_den"]
+        leading_blank_us = int(plan["leading_blank_us"])
+        target_duration_us = self._timeline_video_duration_us(video_items) - int(plan["transition_overlap_us"])
+        target_duration_seconds = target_duration_us / 1_000_000
         try:
             first_probe = probes[0]
             first_video = next(
@@ -2863,16 +3080,48 @@ class TimelineService:
             if width <= 0 or height <= 0:
                 raise DomainRuleError("TIMELINE_VIDEO_DIMENSIONS_INVALID", "时间线源视频尺寸无效")
 
+            if leading_blank_us > 0:
+                leader_path = render_dir / f".partial-{uuid.uuid4().hex}.leader.mp4"
+                leader_seconds = leading_blank_us / 1_000_000
+                leader_execution = self._run_ffmpeg(
+                    [
+                        "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r={plan['fps_num']}/{plan['fps_den']}",
+                        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+                        "-map", "0:v:0", "-map", "1:a:0",
+                        "-vf", "setsar=1,settb=AVTB,setpts=PTS-STARTPTS",
+                        "-t", f"{leader_seconds:.6f}", "-c:v", "libx264", "-preset", "veryfast",
+                        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-y", str(leader_path),
+                    ],
+                    timeout=900,
+                )
+                normalized.append(leader_path)
+                item_durations_seconds.append(leader_seconds)
+                steps.append(
+                    {
+                        "stage": "timeline-leader",
+                        "item_index": -1,
+                        "duration_us": leading_blank_us,
+                        "target_fps_num": plan["fps_num"],
+                        "target_fps_den": plan["fps_den"],
+                        "stdout_tail": leader_execution["stdout_tail"],
+                        "stderr_tail": leader_execution["stderr_tail"],
+                    }
+                )
+
             for index, (path, item) in enumerate(zip(paths, video_items, strict=True)):
                 duration_seconds = (int(item["end_us"]) - int(item["start_us"])) / 1_000_000
                 if duration_seconds <= 0:
                     raise DomainRuleError("TIMELINE_ITEM_DURATION_INVALID", "时间线视频项时长必须大于 0")
                 clip_path = render_dir / f".partial-{uuid.uuid4().hex}.timeline-clip.mp4"
+                # Register the target BEFORE encoding so a failing encode cannot
+                # orphan this attempt's partial clip (MED-07).
+                normalized.append(clip_path)
                 probe = probes[index]
                 has_audio = any(stream.get("codec_type") == "audio" for stream in probe.get("streams", []))
                 video_filter = (
                     f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
                     f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,"
+                    f"fps={plan['fps_num']}/{plan['fps_den']},settb=AVTB,"
                     f"tpad=stop_mode=clone:stop_duration={budgets[index]['tolerance_us'] / 1_000_000:.6f},"
                     f"trim=duration={duration_seconds:.6f},setpts=PTS-STARTPTS"
                 )
@@ -2894,17 +3143,22 @@ class TimelineService:
                     "-y", str(clip_path),
                 ]
                 execution = self._run_ffmpeg(args, timeout=900)
-                normalized.append(clip_path)
                 item_durations_seconds.append(duration_seconds)
                 steps.append(
                     {
                         "stage": "timeline-duration",
                         "item_index": index,
                         "duration_us": int(item["end_us"]) - int(item["start_us"]),
+                        "target_fps_num": plan["fps_num"],
+                        "target_fps_den": plan["fps_den"],
                         "stdout_tail": execution["stdout_tail"],
                         "stderr_tail": execution["stderr_tail"],
                     }
                 )
+
+            # The transition decision stays tied to the ORIGINAL video items;
+            # the optional leader is an extra normalized element at index 0.
+            leader_offset = 1 if leading_blank_us > 0 else 0
 
             if len(normalized) == 1:
                 concat_execution = self._concat_videos(normalized, output_path, duration_seconds=target_duration_seconds)
@@ -2921,7 +3175,7 @@ class TimelineService:
                 }
 
             transition_present = False
-            for item in video_items[1:]:
+            for item in video_items[leader_offset:]:
                 if self._timeline_transition_kind(item) != "CUT":
                     transition_present = True
                     break
@@ -2949,8 +3203,13 @@ class TimelineService:
             current_video_label = "v0"
             current_audio_label = "a0"
             current_duration = item_durations_seconds[0]
+            # Frame-exact accumulation: every element was normalized to the same
+            # target fps and timebase, so integer frame counts accumulate with
+            # zero drift across ten or more consecutive transitions.
+            current_frames = round(current_duration * target_fps)
             for index in range(1, len(normalized)):
-                item = video_items[index]
+                item_index = index - leader_offset
+                item = video_items[item_index]
                 transition_in = self._timeline_transition_kind(item)
                 if transition_in == "CUT":
                     next_video = f"v{index}_concat"
@@ -2960,7 +3219,9 @@ class TimelineService:
                     current_video_label = next_video
                     current_audio_label = next_audio
                 else:
-                    transition_seconds = self._timeline_transition_seconds(current_duration, item_durations_seconds[index])
+                    transition_seconds = self._timeline_transition_seconds(
+                        current_frames / target_fps, item_durations_seconds[index], fps=target_fps
+                    )
                     if transition_seconds <= 0.0:
                         next_video = f"v{index}_concat"
                         next_audio = f"a{index}_concat"
@@ -2970,31 +3231,57 @@ class TimelineService:
                         current_audio_label = next_audio
                     else:
                         transition = self._xfade_name(transition_in)
+                        transition_frames = max(1, round(transition_seconds * target_fps))
+                        # xfade starts the overlap at ``offset``; the last
+                        # ``transition_frames`` of the accumulated stream are
+                        # shared with the incoming element, so the episode ends
+                        # at the accumulated length instead of overrunning by
+                        # the transition window.
+                        offset_frames = max(0, current_frames - transition_frames)
                         v_ext = f"v{index}_ext"
                         v_out = f"v{index}_x"
-                        filter_pieces.append(f"[{current_video_label}]tpad=stop_mode=clone:stop_duration={transition_seconds:.3f}[{v_ext}]")
+                        filter_pieces.append(f"[{current_video_label}]tpad=stop_mode=clone:stop_duration={transition_seconds:.6f}[{v_ext}]")
                         filter_pieces.append(
-                            f"[{v_ext}][v{index}]xfade=transition={transition}:duration={transition_seconds:.3f}:offset={current_duration:.3f}[{v_out}]"
+                            f"[{v_ext}][v{index}]xfade=transition={transition}:duration={transition_seconds:.6f}:offset={offset_frames / target_fps:.6f}[{v_out}]"
                         )
                         next_audio = f"a{index}_concat"
                         filter_pieces.append(f"[{current_audio_label}][a{index}]concat=n=2:v=0:a=1[{next_audio}]")
                         current_video_label = v_out
                         current_audio_label = next_audio
+                        current_frames = offset_frames + transition_frames + max(0, round(item_durations_seconds[index] * target_fps) - transition_frames)
                         transition_pieces.append(
                             {
                                 "stage": "timeline-transition",
-                                "from_item_index": index - 1,
-                                "to_item_index": index,
+                                "from_item_index": item_index - 1,
+                                "to_item_index": item_index,
                                 "kind": transition_in,
                                 "duration_seconds": transition_seconds,
+                                "duration_frames": transition_frames,
+                                "offset_frames": offset_frames,
+                                "target_fps": target_fps,
                             }
                         )
+                        current_duration = current_frames / target_fps
+                        continue
 
+                current_frames += round(item_durations_seconds[index] * target_fps)
                 current_duration += item_durations_seconds[index]
 
             args = []
             for clip_path in normalized:
                 args += ["-i", str(clip_path)]
+
+            # The transition branch removes real time from the video, so the
+            # concatenated audio is longer than the picture.  Without an explicit
+            # audio trim the AAC stream runs past the last video frame, the
+            # container reports the longer duration, and the episode ends with
+            # sound over a frozen frame (the A/V drift MED-03 warns about).
+            audio_out_label = current_audio_label
+            if transition_present and target_duration_seconds > 0:
+                audio_out_label = "aout"
+                filter_pieces.append(
+                    f"[{current_audio_label}]atrim=duration={target_duration_seconds:.6f},asetpts=PTS-STARTPTS[{audio_out_label}]"
+                )
 
             concat_execution = self._run_ffmpeg(
                 [
@@ -3004,7 +3291,7 @@ class TimelineService:
                     "-map",
                     f"[{current_video_label}]",
                     "-map",
-                    f"[{current_audio_label}]",
+                    f"[{audio_out_label}]",
                     "-c:v",
                     "libx264",
                     "-preset",
@@ -3042,6 +3329,12 @@ class TimelineService:
 
     @staticmethod
     def _subtitle_filter_path(path: Path) -> str:
+        """Legacy FFmpeg filtergraph escaping (kept for callers outside the renderer).
+
+        The renderer no longer relies on multi-layer escaping: see
+        :meth:`_burn_subtitle`, which runs FFmpeg inside a controlled attempt
+        directory with a special-character-free relative subtitle filename.
+        """
         value = path.resolve().as_posix()
         return value.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'").replace("[", "\\[").replace("]", "\\]")
 
@@ -3052,12 +3345,25 @@ class TimelineService:
         output_path: Path,
         *,
         duration_seconds: float | None = None,
+        filter_cwd: Path | None = None,
     ) -> dict[str, Any]:
-        suffix = "." + str(subtitle["format"]).lower()
-        subtitle_path = output_path.parent / f".partial-{uuid.uuid4().hex}{suffix}"
+        """Burn the frozen subtitle revision with real FFmpeg.
+
+        The subtitle file is written into a controlled attempt directory under a
+        filename that contains no FFmpeg filtergraph metacharacter, and FFmpeg is
+        executed with that directory as its working directory, so the filter
+        receives the bare relative name ``subtitles=filename='sub.srt'``.  This
+        removes the multi-layer escaping problem entirely: FFmpeg's
+        ``subtitles`` filter cannot round-trip a single quote in a path, and a
+        user's project directory legitimately may contain one.
+        """
+        safe_name = f"sub-{uuid.uuid4().hex}.{str(subtitle['format']).lower()}"
+        attempt_dir = (filter_cwd or output_path.parent).resolve()
+        attempt_dir.mkdir(parents=True, exist_ok=True)
+        subtitle_path = attempt_dir / safe_name
         subtitle_path.write_text(str(subtitle["content_text"]), encoding="utf-8", newline="")
         try:
-            filter_spec = f"subtitles=filename='{self._subtitle_filter_path(subtitle_path)}'"
+            filter_spec = f"subtitles=filename='{safe_name}'"
             duration_args = ["-t", f"{duration_seconds:.6f}"] if duration_seconds is not None else []
             return self._run_ffmpeg(
                 [
@@ -3066,6 +3372,7 @@ class TimelineService:
                     "-movflags", "+faststart", "-y", str(output_path),
                 ],
                 timeout=900,
+                cwd=attempt_dir,
             )
         finally:
             subtitle_path.unlink(missing_ok=True)
@@ -3082,15 +3389,29 @@ class TimelineService:
         subtitle: dict[str, Any] | None = None,
         production_spec: dict[str, Any] | None = None,
         include_source_audio: bool = False,
+        timeline_plan: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Concat video, apply subtitle/geometry, then enforce audio policy.
 
         Source audio is preserved only when explicitly opted in. Otherwise a
         curated binding mix—or a standards-compliant silent track—is muxed so
         model-generated speech cannot leak into the episode by default.
+
+        Every intermediate file belongs to one attempt-scoped temporary
+        directory.  The whole pipeline runs inside a single outermost
+        ``try/finally`` so a failure at *any* stage — concat, subtitle burn-in,
+        upscale, mix or mux — removes this attempt's partial output without
+        touching any previously published render.
         """
         if video_items is not None:
-            target_duration_seconds = self._timeline_video_duration_us(video_items) / 1_000_000
+            # The frozen plan owns the target length.  Recomputing it from the
+            # raw span here would silently ignore the transition overlap the
+            # renderer actually removes, and the episode would keep the extra
+            # transition time as trailing audio over a frozen frame.
+            target_duration_seconds = (
+                self._timeline_video_duration_us(video_items)
+                - int((timeline_plan or {}).get("transition_overlap_us") or 0)
+            ) / 1_000_000
         elif target_duration_seconds is not None and target_duration_seconds <= 0:
             raise DomainRuleError("TIMELINE_ITEM_DURATION_INVALID", "时间线视频总时长必须大于 0")
         needs_upscale = (
@@ -3099,33 +3420,77 @@ class TimelineService:
             and isinstance(production_spec.get("generation"), dict)
             and str(production_spec["generation"].get("mode")) == "UPSCALE_COMPOSE"
         )
-        if include_source_audio and not bindings and not subtitle and video_items is None and not needs_upscale:
-            return self._concat_videos(paths, render_path, duration_seconds=target_duration_seconds)
-        concat_out = render_dir / f".partial-{uuid.uuid4().hex}.mp4"
-        concat_execution = (
-            self._concat_timeline_videos(paths, video_items, render_dir, concat_out)
-            if video_items is not None
-            else self._concat_videos(paths, concat_out, duration_seconds=target_duration_seconds)
-        )
-        current_video = concat_out
-        subtitle_out: Path | None = None
-        subtitle_execution: dict[str, Any] | None = None
-        scaled_out: Path | None = None
-        scale_execution: dict[str, Any] | None = None
-        if subtitle is not None:
-            subtitle_out = render_dir / f".partial-{uuid.uuid4().hex}.subtitled.mp4"
-            subtitle_execution = self._burn_subtitle(current_video, subtitle, subtitle_out, duration_seconds=target_duration_seconds)
-            current_video = subtitle_out
-        if needs_upscale:
-            scaled_out = render_dir / f".partial-{uuid.uuid4().hex}.delivery.mp4"
-            scale_execution = self._upscale_to_delivery(current_video, scaled_out, production_spec, duration_seconds=target_duration_seconds)
-            current_video = scaled_out
-        mixed_wav = render_dir / f".partial-{uuid.uuid4().hex}.mix.wav"
+        attempt_dir = render_dir / f".attempt-{uuid.uuid4().hex}"
+        attempt_dir.mkdir(parents=True, exist_ok=False)
+        # Files this attempt created and that are NOT the published output.
+        owned: list[Path] = []
         try:
+            if include_source_audio and not bindings and not subtitle and video_items is None and not needs_upscale:
+                execution = self._concat_videos(paths, render_path, duration_seconds=target_duration_seconds)
+                owned.append(render_path)
+                replace_path(render_path, render_path)
+                return execution
+            concat_out = attempt_dir / "concat.mp4"
+            owned.append(concat_out)
+            concat_execution = (
+                self._concat_timeline_videos(paths, video_items, attempt_dir, concat_out, timeline_plan=timeline_plan)
+                if video_items is not None
+                else self._concat_videos(
+                    paths,
+                    concat_out,
+                    duration_seconds=target_duration_seconds,
+                    leading_blank_us=int((timeline_plan or {}).get("leading_blank_us") or 0),
+                )
+            )
+            current_video = concat_out
+            subtitle_out: Path | None = None
+            subtitle_execution: dict[str, Any] | None = None
+            scaled_out: Path | None = None
+            scale_execution: dict[str, Any] | None = None
+            if subtitle is not None:
+                subtitle_out = attempt_dir / "subtitled.mp4"
+                owned.append(subtitle_out)
+                subtitle_execution = self._burn_subtitle(
+                    current_video, subtitle, subtitle_out,
+                    duration_seconds=target_duration_seconds,
+                    filter_cwd=attempt_dir,
+                )
+                current_video = subtitle_out
+            if needs_upscale:
+                scaled_out = attempt_dir / "delivery.mp4"
+                owned.append(scaled_out)
+                scale_execution = self._upscale_to_delivery(current_video, scaled_out, production_spec, duration_seconds=target_duration_seconds)
+                current_video = scaled_out
+            mixed_wav = attempt_dir / "mix.wav"
+            owned.append(mixed_wav)
             observed_duration = self._probe(current_video)["duration_ms"] / 1000
+            # A container duration is not the episode length: AAC padding, and
+            # any earlier stage that left audio longer than the picture, makes
+            # the container report more than the frozen plan's span.  The frozen
+            # target therefore always wins over the observed container, and the
+            # observed value is only a fallback when no plan was supplied.
             video_duration = target_duration_seconds if target_duration_seconds is not None else observed_duration
             if video_duration <= 0:
                 raise DomainRuleError("RENDER_DURATION_INVALID", "整集渲染时长无效，无法混音")
+            if target_duration_seconds is not None and observed_duration > video_duration:
+                # Trim the picture too, so the muxed video stream cannot outlive
+                # the plan (or fall short of it) after a transition.
+                trimmed_out = attempt_dir / "trimmed.mp4"
+                owned.append(trimmed_out)
+                self._run_ffmpeg(
+                    [
+                        "-i", str(current_video),
+                        "-map", "0:v:0", "-map", "0:a?",
+                        "-vf", "setpts=PTS-STARTPTS",
+                        "-af", "asetpts=PTS-STARTPTS",
+                        "-t", f"{video_duration:.6f}",
+                        "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                        "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
+                        "-y", str(trimmed_out),
+                    ],
+                    timeout=900,
+                )
+                current_video = trimmed_out
             needs_audio_remix = bool(bindings) or not include_source_audio
             if needs_audio_remix:
                 mix_execution = self._mix_audio(
@@ -3133,52 +3498,59 @@ class TimelineService:
                     include_source_audio=include_source_audio,
                 )
                 mux_args = ["-i", str(current_video), "-i", str(mixed_wav), "-map", "0:v:0", "-map", "1:a:0", "-t", f"{video_duration:.6f}", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-y", str(render_path)]
+                owned.append(render_path)
                 mux_execution = self._run_ffmpeg(mux_args, timeout=900)
             else:
                 mix_execution = None
                 final_execution = scale_execution or subtitle_execution or concat_execution
                 mux_args = final_execution["args"]
-                shutil.move(str(current_video), str(render_path))
+                owned.append(render_path)
+                replace_path(current_video, render_path)
                 mux_execution = final_execution
+            # The render is now durable; stop tracking it as an owned partial so
+            # the cleanup below can never delete a published artifact.
+            owned = [path for path in owned if path != render_path]
+            detailed_steps = list(concat_execution.get("steps", []))
+            if not detailed_steps:
+                detailed_steps.append({"stage": "concat", "stdout_tail": concat_execution["stdout_tail"], "stderr_tail": concat_execution["stderr_tail"]})
+            if subtitle_execution is not None:
+                detailed_steps.append({"stage": "subtitle", "stdout_tail": subtitle_execution["stdout_tail"], "stderr_tail": subtitle_execution["stderr_tail"]})
+            if scale_execution is not None:
+                geometry = self._production_snapshot_geometry(production_spec)
+                detailed_steps.append(
+                    {
+                        "stage": "COMPOSE_QC_UPSCALE",
+                        "executor_ref": "builtin:ffmpeg",
+                        "stdout_tail": scale_execution["stdout_tail"],
+                        "stderr_tail": scale_execution["stderr_tail"],
+                        "source_geometry": geometry["source"] if geometry else None,
+                        "delivery_geometry": geometry["delivery"] if geometry else None,
+                    }
+                )
+            if mix_execution is not None:
+                detailed_steps.extend(
+                    [
+                        {"stage": "mix", "stdout_tail": mix_execution["stdout_tail"], "stderr_tail": mix_execution["stderr_tail"]},
+                        {"stage": "mux", "stdout_tail": mux_execution["stdout_tail"], "stderr_tail": mux_execution["stderr_tail"]},
+                    ]
+                )
+            return {
+                "executable": mux_execution["executable"],
+                "args": mux_args,
+                "returncode": mux_execution["returncode"],
+                "stdout_tail": mux_execution["stdout_tail"],
+                "stderr_tail": mux_execution["stderr_tail"],
+                "steps": detailed_steps,
+            }
         finally:
-            concat_out.unlink(missing_ok=True)
-            if subtitle_out is not None:
-                subtitle_out.unlink(missing_ok=True)
-            if scaled_out is not None:
-                scaled_out.unlink(missing_ok=True)
-            mixed_wav.unlink(missing_ok=True)
-        detailed_steps = list(concat_execution.get("steps", []))
-        if not detailed_steps:
-            detailed_steps.append({"stage": "concat", "stdout_tail": concat_execution["stdout_tail"], "stderr_tail": concat_execution["stderr_tail"]})
-        if subtitle_execution is not None:
-            detailed_steps.append({"stage": "subtitle", "stdout_tail": subtitle_execution["stdout_tail"], "stderr_tail": subtitle_execution["stderr_tail"]})
-        if scale_execution is not None:
-            geometry = self._production_snapshot_geometry(production_spec)
-            detailed_steps.append(
-                {
-                    "stage": "COMPOSE_QC_UPSCALE",
-                    "executor_ref": "builtin:ffmpeg",
-                    "stdout_tail": scale_execution["stdout_tail"],
-                    "stderr_tail": scale_execution["stderr_tail"],
-                    "source_geometry": geometry["source"] if geometry else None,
-                    "delivery_geometry": geometry["delivery"] if geometry else None,
-                }
-            )
-        if mix_execution is not None:
-            detailed_steps.extend(
-                [
-                    {"stage": "mix", "stdout_tail": mix_execution["stdout_tail"], "stderr_tail": mix_execution["stderr_tail"]},
-                    {"stage": "mux", "stdout_tail": mux_execution["stdout_tail"], "stderr_tail": mux_execution["stderr_tail"]},
-                ]
-            )
-        return {
-            "executable": mux_execution["executable"],
-            "args": mux_args,
-            "returncode": mux_execution["returncode"],
-            "stdout_tail": mux_execution["stdout_tail"],
-            "stderr_tail": mux_execution["stderr_tail"],
-            "steps": detailed_steps,
-        }
+            # Cancellation, timeout and provider failure all land here. Remove
+            # only this attempt's files; the published render path is excluded.
+            for path in owned:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            shutil.rmtree(attempt_dir, ignore_errors=True)
 
     def _upscale_to_delivery(
         self,
@@ -3245,11 +3617,15 @@ class TimelineService:
     ) -> dict[str, Any]:
         """Build one deliberate audio stream from opted-in source audio and bindings.
 
-        Each binding is placed at its ``start_us`` with ``adelay``, ``gain_db``
-        applied as linear volume, optional loop (``atrim`` to the binding
-        range) and optional fade in/out.  Every input is normalized
-        (fltp/48 kHz/stereo) before ``amix`` so mixed sample formats can never
-        fail; ``apad`` + ``-t`` pin the mix to the exact video duration.
+        Every binding is compiled as one deliberate chain regardless of
+        ``loop_enabled``: normalize format -> source trim (``start_us``) ->
+        ``asetpts=PTS-STARTPTS`` -> loudness/gain -> fade in/out -> target trim
+        (``end_us - start_us``) -> ``adelay``.  Looping decides only whether the
+        source repeats; it must never decide whether the declared end point is
+        honored, otherwise a non-looping BGM/SFX/dialogue tail bleeds into every
+        later shot.  Every input is normalized (fltp/48 kHz/stereo) before
+        ``amix`` so mixed sample formats can never fail; ``apad`` + ``-t`` pin
+        the mix to the exact video duration.
         """
         probe = self._probe(video_path)
         video_has_audio = any(str(stream.get("codec_type")) == "audio" for stream in probe.get("streams", []))
@@ -3270,31 +3646,51 @@ class TimelineService:
                 args += ["-i", str(source_path)]
             start_us = int(binding["start_us"])
             end_us = int(binding["end_us"])
+            if end_us <= start_us:
+                raise DomainRuleError(
+                    "TIMELINE_AUDIO_RANGE_INVALID",
+                    "音轨绑定的结束点必须晚于开始点；不能把无效范围静默交给混音",
+                    {"binding_id": str(binding.get("id") or ""), "start_us": start_us, "end_us": end_us},
+                )
             duration_s = (end_us - start_us) / 1_000_000
-            start_ms = int(start_us / 1000)
+            source_offset_s = int(binding.get("source_start_us") or 0) / 1_000_000
+            if source_offset_s < 0:
+                source_offset_s = 0.0
             gain_db = float(binding.get("gain_db") or 0.0)
             fade_in_s = int(binding.get("fade_in_us") or 0) / 1_000_000
             fade_out_s = int(binding.get("fade_out_us") or 0) / 1_000_000
+            # ``adelay`` is in MILLISECONDS.  Passing microsecond text here does
+            # not raise -- it delays by 1000x and, for any realistic clip, pushes
+            # the whole track past the output window so the mix is silent.  The
+            # value stays integer milliseconds.
+            start_ms_arg = max(0, int(start_us // 1000))
+            # One chain shape for looping and non-looping bindings.  A source
+            # offset trims the source first; loudness/gain then apply to the
+            # audible binding, and the declared ``end_us`` is honored for ALL
+            # tracks.  ``loop_enabled`` decides only whether the source repeats.
             chain = f"[{input_index}:a]"
+            if source_offset_s > 0:
+                chain += f"atrim=start={source_offset_s:.6f},asetpts=PTS-STARTPTS,"
             if str(binding.get("track_type") or "").upper() == "DIALOGUE":
                 # TTS candidates can differ materially in recording level.
                 # Normalize each spoken line before user gain and the final mix
                 # so a quiet line remains intelligible beside BGM and other TTS.
                 chain += "loudnorm=I=-18:TP=-3:LRA=7,"
+            else:
+                chain += "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
             chain += f"volume={10 ** (gain_db / 20):.6f}"
             if fade_in_s > 0:
-                chain += f",afade=t=in:st=0:d={fade_in_s:.3f}"
+                chain += f",afade=t=in:st=0:d={fade_in_s:.6f}"
             if fade_out_s > 0:
-                chain += f",afade=t=out:st={max(0.0, duration_s - fade_out_s):.3f}:d={fade_out_s:.3f}"
-            if binding.get("loop_enabled"):
-                chain += f",atrim=duration={duration_s:.3f}"
-            chain += f",adelay={start_ms}:all=1,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a{index}]"
+                chain += f",afade=t=out:st={max(0.0, duration_s - fade_out_s):.6f}:d={fade_out_s:.6f}"
+            chain += f",atrim=duration={duration_s:.6f},asetpts=PTS-STARTPTS"
+            chain += f",adelay={start_ms_arg}:all=1[a{index}]"
             chains.append(chain)
             mix_inputs.append(f"[a{index}]")
             input_index += 1
         if not mix_inputs:
             args += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
-            chains.append(f"[{input_index}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[silence]")
+            chains.append(f"[{input_index}:a]anull,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[silence]")
             mix_inputs.append("[silence]")
         filter_complex = (
             ";".join(chains)
@@ -3919,6 +4315,121 @@ class TimelineService:
             )
         return path, f"{package['episode_code']}-{package_id[:8]}.mp4"
 
+    def delivery_file_download_path(self, package_id: str, file_id: str) -> tuple[Path, str, dict[str, Any]]:
+        """Resolve ONE registered delivery file by its server-owned file id.
+
+        MED-08: the delivery page could only ever fetch the MP4, so a package
+        that was explicitly built with external subtitles left the .srt/.ass/.vtt
+        and the manifest unreachable from a remote browser.  The client names a
+        ``delivery_files`` row — never a filesystem path — and the server
+        resolves the path from the verified manifest list, so no client-supplied
+        path can escape the project.
+        """
+        package = self._delivery_package_row(package_id)
+        if package is None:
+            raise DomainRuleError("DELIVERY_PACKAGE_NOT_FOUND", "交付包不存在")
+        if str(package["status"]) not in {"VERIFIED", "WITHDRAWN"}:
+            raise DomainRuleError("DELIVERY_NOT_VERIFIED", "只有 manifest verify 通过的交付包可以下载")
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM delivery_files WHERE delivery_package_id=? AND id=?",
+                (package_id, file_id),
+            ).fetchone()
+        if row is None:
+            raise DomainRuleError("DELIVERY_FILE_NOT_FOUND", "交付包不包含该文件标识", {"file_id": file_id})
+        root = self.settings.resolve_project_root(str(package["root_rel"]))
+        if not root.is_dir() or root.is_symlink():
+            raise DomainRuleError("PROJECT_ROOT_INVALID", "项目根目录无效")
+        path = controlled_path(
+            root,
+            str(row["rel_path"]),
+            must_exist=True,
+            require_file=True,
+            code="DELIVERY_FILE_INVALID",
+        )
+        digest, size = _hash_file(path)
+        if not hmac.compare_digest(digest, str(row["sha256"])) or size != int(row["byte_size"]):
+            raise DomainRuleError(
+                "DELIVERY_FILE_TAMPERED",
+                "交付文件与其登记摘要不一致，已拒绝下载",
+                {"file_id": file_id, "expected_sha256": str(row["sha256"]), "observed_sha256": digest},
+            )
+        return path, Path(str(row["rel_path"])).name, dict(row)
+
+    def delivery_archive_path(self, package_id: str) -> tuple[Path, str]:
+        """Build (or reuse) one complete, integrity-verified delivery ZIP.
+
+        The archive contains exactly the files the package manifest already
+        registered, re-verified against their recorded SHA-256 before packing,
+        so a missing or tampered file can never yield a "successfully downloaded
+        complete delivery package".
+        """
+        package = self._delivery_package_row(package_id)
+        if package is None:
+            raise DomainRuleError("DELIVERY_PACKAGE_NOT_FOUND", "交付包不存在")
+        if str(package["status"]) not in {"VERIFIED", "WITHDRAWN"}:
+            raise DomainRuleError("DELIVERY_NOT_VERIFIED", "只有 manifest verify 通过的交付包可以下载")
+        root = self.settings.resolve_project_root(str(package["root_rel"]))
+        if not root.is_dir() or root.is_symlink():
+            raise DomainRuleError("PROJECT_ROOT_INVALID", "项目根目录无效")
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM delivery_files WHERE delivery_package_id=? ORDER BY rel_path",
+                (package_id,),
+            ).fetchall()
+        if not rows:
+            raise DomainRuleError("DELIVERY_FILES_EMPTY", "交付包没有已登记文件，无法打包")
+        package_dir = controlled_path(root, str(package["rel_path"]), must_exist=True, code="DELIVERY_FILE_INVALID")
+        episode_code = canonical_relative_path(str(package["episode_code"]), code="INVALID_EPISODE_CODE")
+        members: list[tuple[Path, str]] = []
+        for row in rows:
+            path = controlled_path(root, str(row["rel_path"]), must_exist=True, require_file=True, code="DELIVERY_FILE_INVALID")
+            if not path.is_relative_to(package_dir):
+                raise DomainRuleError(
+                    "DELIVERY_FILE_OUTSIDE_PACKAGE",
+                    "交付文件不在该交付包目录内，拒绝打包",
+                    {"rel_path": str(row["rel_path"])},
+                )
+            digest, size = _hash_file(path)
+            if not hmac.compare_digest(digest, str(row["sha256"])) or size != int(row["byte_size"]):
+                raise DomainRuleError(
+                    "DELIVERY_FILE_TAMPERED",
+                    "交付文件与其登记摘要不一致，拒绝生成完整交付包",
+                    {"rel_path": str(row["rel_path"]), "expected_sha256": str(row["sha256"]), "observed_sha256": digest},
+                )
+            members.append((path, path.relative_to(package_dir).as_posix()))
+        archive_dir = self.settings.work_root / "delivery-archives"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        archive_name = f"{episode_code}-{package_id[:8]}-delivery.zip"
+        archive = archive_dir / archive_name
+        partial = archive_dir / f".partial-{uuid.uuid4().hex}.zip"
+        try:
+            import zipfile
+
+            with zipfile.ZipFile(partial, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6, allowZip64=True) as output:
+                for source, member_name in sorted(members, key=lambda item: item[1]):
+                    output.write(source, f"{episode_code}/{member_name}")
+            replace_path(partial, archive)
+        finally:
+            partial.unlink(missing_ok=True)
+        # One bounded audit event per archive hand-off, with the same key set the
+        # single-file download path records so delivery history stays uniform.
+        now = _now()
+        note = _json(
+            {
+                "file_rel_path": archive_name,
+                "file_sha256": _hash_file(archive)[0],
+                "file_byte_size": archive.stat().st_size,
+                "transport": "LOCAL_FILESYSTEM",
+            }
+        )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO delivery_events (id, delivery_package_id, action, manifest_sha256, note, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, 'DOWNLOAD', ?, ?, ?, ?, ?, 1, 'v3')",
+                (str(uuid.uuid4()), package_id, str(package["manifest_sha256"] or ""), note, now, now, "local-user"),
+            )
+        return archive, archive_name
+
     def verify_delivery(self, package_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             package = connection.execute("SELECT dp.*, e.code AS episode_code, p.root_rel FROM delivery_packages dp JOIN episode_render_versions erv ON erv.id=dp.episode_render_version_id JOIN episodes e ON e.id=erv.episode_id JOIN seasons s ON s.id=e.season_id JOIN projects p ON p.id=s.project_id WHERE dp.id=?", (package_id,)).fetchone()
@@ -4111,7 +4622,7 @@ class TimelineService:
             return "progress", raw_value
         return None
 
-    def _run_ffmpeg(self, args: list[str], *, timeout: int) -> dict[str, Any]:
+    def _run_ffmpeg(self, args: list[str], *, timeout: int, cwd: Path | None = None) -> dict[str, Any]:
         ffmpeg = self.settings.ffmpeg_path
         if not ffmpeg or not Path(ffmpeg).is_file():
             raise DomainRuleError("FFMPEG_UNAVAILABLE", "本机 FFmpeg 不可用")
@@ -4124,6 +4635,7 @@ class TimelineService:
                 encoding="utf-8",
                 errors="replace",
                 bufsize=1,
+                cwd=str(cwd) if cwd is not None else None,
             )
             deadline = monotonic() + timeout
             process_stdout = getattr(process, "stdout", None)

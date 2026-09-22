@@ -11,6 +11,7 @@ from typing import Any, cast
 from local_drama.application.audio_requirements import canonical_tts_requirements
 from local_drama.application.ports.dialogue import DialogueJobPort, DialogueMediaPort, DialogueUnitOfWork
 from local_drama.application.reviews import ReviewService
+from local_drama.application.worker_handlers.tts_job import tts_parameter_capabilities
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.filesystem.path_policy import controlled_path
@@ -632,6 +633,22 @@ class DialogueService:
             or provider_kind is None
         ):
             raise DomainRuleError("TTS_PUBLISHED_LOCAL_PROFILE_REQUIRED", "正式 TTS Job 必须绑定 Published 本地 TTS Profile（sapi: 或 voxcpm2: 音色）")
+        # Accept a parameter only when the selected provider can actually honor
+        # it.  Silently freezing a value the runtime ignores is what made the
+        # UI show a speech rate that never changed the audio.
+        capabilities = tts_parameter_capabilities(provider_kind)
+        unsupported = {
+            name: value
+            for name, value in (("speech_rate", speech_rate), ("emotion", emotion))
+            if capabilities.requires_rejection(name, value)
+        }
+        if unsupported:
+            blocked = capabilities.parameters[next(iter(unsupported))]
+            raise DomainRuleError(
+                "TTS_PARAMETER_UNSUPPORTED",
+                f"{blocked.reason}（不支持的参数：{'、'.join(unsupported)}）",
+                {"provider_kind": provider_kind, "unsupported": unsupported, "capabilities": capabilities.as_dict()},
+            )
         snapshot = {
             "schema_version": "localdrama.tts-job.v1",
             "text_revision_id": text_revision_id,
@@ -701,7 +718,10 @@ class DialogueService:
                 emotion=str(snapshot["emotion"]),
                 speech_rate=float(snapshot["speech_rate"]),
                 seed=None,
-                model_ref="WINDOWS_SAPI_LOCAL",
+                # The formal candidate must name the provider that really ran;
+                # a VoxCPM2 job labelled WINDOWS_SAPI_LOCAL misreports its own
+                # provenance to every downstream review and licence record.
+                model_ref=str(snapshot.get("provider_kind") or "WINDOWS_SAPI_LOCAL"),
                 candidate_kind="FORMAL",
                 actor=actor,
             )

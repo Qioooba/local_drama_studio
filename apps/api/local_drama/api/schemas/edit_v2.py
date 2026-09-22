@@ -50,6 +50,13 @@ class EditTimelineRevisionFact(StrictModel):
     audio_count: int = Field(ge=0)
     subtitle_revision_id: str | None = None
     upstream_fingerprint: str | None = None
+    #: FE-07: the four frozen timeline switches.  ``None`` means the revision
+    #: never recorded the value (older revisions) and must be shown as unknown
+    #: rather than replaced by a default.
+    include_dialogue: bool | None = None
+    include_music_and_sfx: bool | None = None
+    include_source_audio: bool | None = None
+    include_subtitles: bool | None = None
     created_at: str
     created_by: str
 

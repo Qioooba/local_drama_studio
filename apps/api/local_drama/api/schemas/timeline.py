@@ -147,6 +147,15 @@ class TimelineItem(_TimelineResponse):
     parameters: dict[str, Any]
 
 
+class TimelineVersionSignature(_TimelineResponse):
+    """What a freeze/dirty decision must depend on, as one explicit signature."""
+
+    signature: str
+    duration_us: int
+    has_dialogue: bool
+    audio_tracks: list[dict[str, Any]]
+
+
 class TimelineRevision(_TimelineResponse):
     id: str
     episode_id: str
@@ -161,6 +170,9 @@ class TimelineRevision(_TimelineResponse):
     content: list[dict[str, Any]]
     input_snapshot: dict[str, Any]
     items: list[TimelineItem]
+    #: Present so a client can tell whether the on-screen settings still match
+    #: this revision before it freezes one.
+    version_signature: TimelineVersionSignature | None = None
 
 
 class TimelineRevisionEnvelope(_TimelineResponse):

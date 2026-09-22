@@ -168,6 +168,16 @@ class SqliteEpisodeEditRepository:
         content = json.loads(str(item["content_json"] or "[]"))
         video = [clip for clip in content if str(clip.get("track_type", "")).upper() == "VIDEO"]
         audio = [clip for clip in content if str(clip.get("track_type", "")).upper() != "VIDEO"]
+
+        def _switch(name: str) -> bool | None:
+            # FE-07: the four timeline switches are stored in the revision's
+            # input_snapshot.  A revision that never recorded one must report
+            # ``None`` (unknown), never a substituted default, so the editor can
+            # tell "the user chose false" apart from "this revision predates the
+            # switch" instead of silently showing a wrong setting.
+            value = snapshot.get(name)
+            return None if value is None else bool(value)
+
         return {
             "id": str(item["id"]),
             "revision_no": int(item["revision_no"]),
@@ -178,6 +188,10 @@ class SqliteEpisodeEditRepository:
             "audio_count": len(audio),
             "subtitle_revision_id": snapshot.get("subtitle_revision_id"),
             "upstream_fingerprint": snapshot.get("upstream_fingerprint") or snapshot.get("upstream_selection_fingerprint"),
+            "include_dialogue": _switch("include_dialogue"),
+            "include_music_and_sfx": _switch("include_music_and_sfx"),
+            "include_source_audio": _switch("include_source_audio"),
+            "include_subtitles": _switch("include_subtitles"),
             "created_at": str(item["created_at"]),
             "created_by": str(item["created_by"]),
         }

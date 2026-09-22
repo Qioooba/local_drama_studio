@@ -66,6 +66,67 @@ def _video_probe_size(media: dict[str, Any]) -> tuple[int | None, int | None]:
         return None, None
 
 
+#: Audio-track parameters that the frozen timeline actually applies at render
+#: time.  A base editing interchange format has no portable equivalent, so the
+#: export must say so explicitly instead of writing ``effects=[]`` and letting a
+#: user believe the mix survived.
+_AUDIO_MIX_PARAMETERS = ("gain_db", "fade_in_us", "fade_out_us", "loop_enabled", "source_start_us")
+
+_TRANSITION_KIND_OTIO = {"DISSOLVE": "dissolve", "FADE": "fade"}
+
+
+def _otio_transition_effect(item: dict[str, Any], rate: float, transition_seconds: float) -> dict[str, object]:
+    """Encode a transition as a widely-readable OTIO ``LinearTimeWarp`` effect.
+
+    OTIO has no first-class cross-dissolve object; a ``LinearTimeWarp`` is what
+    the OTIO adapters and most Python consumers understand.  The exact authored
+    value is also written into ``metadata.localdrama_transition`` so nothing is
+    lost even if a target editor ignores the effect.
+    """
+    kind = str((item.get("parameters") or {}).get("transition_in") or "CUT").upper()
+    return {
+        "OTIO_SCHEMA": "LinearTimeWarp.1",
+        "name": f"localdrama_{kind.lower()}_transition",
+        "effect_name": _TRANSITION_KIND_OTIO.get(kind, "fade"),
+        "time_scalar": 1.0,
+        "metadata": {
+            "localdrama_transition": kind,
+            "duration_seconds": transition_seconds,
+            "duration_frames": round(transition_seconds * rate),
+        },
+    }
+
+
+def _audio_item_losses(item: dict[str, Any], rel_path: str) -> list[dict[str, Any]]:
+    """List the audio-mix parameters that a base exchange export cannot carry."""
+    parameters = item.get("parameters") or {}
+    losses: list[dict[str, Any]] = []
+    labels = {
+        "gain_db": "相对音量",
+        "fade_in_us": "淡入",
+        "fade_out_us": "淡出",
+        "loop_enabled": "循环",
+        "source_start_us": "源入点",
+    }
+    for name in _AUDIO_MIX_PARAMETERS:
+        value = parameters.get(name)
+        if value in (None, 0, 0.0, False):
+            continue
+        losses.append(
+            {
+                "rel_path": rel_path,
+                "timeline_item_id": str(item["id"]),
+                "track_type": str(item["track_type"]),
+                "feature": f"AUDIO_{name.upper()}",
+                "label": labels.get(name, name),
+                "value": value,
+                "reason": "基础剪辑交换格式没有可移植的混音参数表达；原始值保留在导出 manifest 的 localdrama_item_parameters 中",
+                "recoverable_from_manifest": True,
+            }
+        )
+    return losses
+
+
 class TimelineExportService:
     """Export a frozen timeline revision without mutating SQLite state.
 
@@ -127,7 +188,7 @@ class TimelineExportService:
         return verified
 
     @staticmethod
-    def _otio(revision: dict[str, Any], items: list[dict[str, Any]], rate: float) -> dict[str, object]:
+    def _otio(revision: dict[str, Any], items: list[dict[str, Any]], rate: float, losses: list[dict[str, Any]] | None = None) -> dict[str, object]:
         tracks: list[dict[str, object]] = []
         grouped: dict[str, list[dict[str, Any]]] = {}
         for item in items:
@@ -152,6 +213,24 @@ class TimelineExportService:
                 media = item["media"]
                 source_start = int(item["source_start_us"]) * rate / 1_000_000
                 duration = int(item["duration_us"]) * rate / 1_000_000
+                clip_effects: list[dict[str, object]] = []
+                transition_seconds = 0.0
+                if track_type == "VIDEO":
+                    transition_seconds = float(
+                        ((item.get("parameters") or {}).get("transition_duration_seconds") or 0.0)
+                    )
+                    if TimelineExportService._transition_kind(item) != "CUT" and transition_seconds > 0:
+                        clip_effects.append(_otio_transition_effect(item, rate, transition_seconds))
+                clip_metadata: dict[str, Any] = {
+                    "localdrama_timeline_item_id": item["id"],
+                    # The authored parameters travel with the clip so a human can
+                    # restore what this base interchange format cannot express.
+                    "localdrama_item_parameters": dict(item.get("parameters") or {}),
+                }
+                if track_type != "VIDEO":
+                    clip_metadata["localdrama_audio_mix_parameters"] = {
+                        name: (item.get("parameters") or {}).get(name) for name in _AUDIO_MIX_PARAMETERS
+                    }
                 children.append(
                     {
                         "OTIO_SCHEMA": "Clip.2",
@@ -173,8 +252,8 @@ class TimelineExportService:
                             },
                         },
                         "active_media_reference_key": "DEFAULT_MEDIA",
-                        "metadata": {"localdrama_timeline_item_id": item["id"]},
-                        "effects": [],
+                        "metadata": clip_metadata,
+                        "effects": clip_effects,
                         "markers": [],
                         "enabled": True,
                     }
@@ -204,8 +283,13 @@ class TimelineExportService:
                 "revision_hash": revision["revision_hash"],
                 "fps_num": revision["fps_num"],
                 "fps_den": revision["fps_den"],
+                "localdrama_export_losses": losses or [],
             },
         }
+
+    @staticmethod
+    def _transition_kind(item: dict[str, Any]) -> str:
+        return str((item.get("parameters") or {}).get("transition_in") or "CUT").upper()
 
     @staticmethod
     def _edl(revision: dict[str, Any], items: list[dict[str, Any]], nominal_fps: int) -> str:
@@ -218,13 +302,28 @@ class TimelineExportService:
             source_in = int(item["source_start_us"])
             source_out = source_in + int(item["duration_us"])
             reel = str(item["media_version_id"]).replace("-", "")[:8].upper()
-            lines.append(
-                f"{event_no:03d}  {reel:<8} V     C        "
-                f"{_edl_timecode(source_in, nominal_fps)} {_edl_timecode(source_out, nominal_fps)} "
-                f"{_edl_timecode(int(item['start_us']), nominal_fps)} {_edl_timecode(int(item['end_us']), nominal_fps)}"
-            )
+            # CMX 3600 has no native transition event.  The event is emitted as a
+            # `D` (dissolve) with an explicit duration in frames when the frozen
+            # timeline carries one, instead of always writing a hard `C`.
+            transition_kind = TimelineExportService._transition_kind(item)
+            transition_seconds = float(((item.get("parameters") or {}).get("transition_duration_seconds") or 0.0))
+            if transition_kind != "CUT" and transition_seconds > 0:
+                transition_frames = max(1, round(transition_seconds * nominal_fps))
+                lines.append(
+                    f"{event_no:03d}  {reel:<8} V     D    {transition_frames:03d} "
+                    f"{_edl_timecode(source_in, nominal_fps)} {_edl_timecode(source_out, nominal_fps)} "
+                    f"{_edl_timecode(int(item['start_us']), nominal_fps)} {_edl_timecode(int(item['end_us']), nominal_fps)}"
+                )
+            else:
+                lines.append(
+                    f"{event_no:03d}  {reel:<8} V     C        "
+                    f"{_edl_timecode(source_in, nominal_fps)} {_edl_timecode(source_out, nominal_fps)} "
+                    f"{_edl_timecode(int(item['start_us']), nominal_fps)} {_edl_timecode(int(item['end_us']), nominal_fps)}"
+                )
             lines.append(f"* FROM CLIP NAME: {item['media']['source_name']}")
             lines.append(f"* LOCALDRAMA MEDIA VERSION: {item['media_version_id']} SHA256: {item['media']['sha256']}")
+            if transition_kind != "CUT":
+                lines.append(f"* LOCALDRAMA TRANSITION: {transition_kind} {transition_seconds:.6f}s")
             lines.append("")
         if event_no == 0:
             raise DomainRuleError("TIMELINE_VIDEO_REQUIRED_FOR_EDL", "EDL 导出至少需要一个 VIDEO item")
@@ -307,6 +406,7 @@ class TimelineExportService:
         if nominal_fps <= 0 or nominal_fps > 99:
             raise DomainRuleError("EDL_FPS_UNSUPPORTED", "EDL 仅支持 1—99 的名义帧率")
         items = self._verified_items(revision, raw_items)
+        losses = self._export_losses(items, format_label="OTIO/EDL")
         identity = {
             "schema_version": "localdrama.timeline-export.v1",
             "writer_version": 2,
@@ -342,19 +442,81 @@ class TimelineExportService:
             partial.mkdir(parents=True)
             otio_path = partial / f'{revision["episode_code"]}-v{revision["revision_no"]}.otio'
             edl_path = partial / f'{revision["episode_code"]}-v{revision["revision_no"]}.edl'
-            otio_path.write_bytes(_canonical(self._otio(revision, items, rate)) + b"\n")
+            otio_path.write_bytes(_canonical(self._otio(revision, items, rate, losses)) + b"\n")
             edl_path.write_text(self._edl(revision, items, nominal_fps), encoding="utf-8", newline="\n")
             files = [
                 {"rel_path": path.name, "byte_size": path.stat().st_size, "sha256": _sha256(path)}
                 for path in (otio_path, edl_path)
             ]
-            manifest = {**identity, "export_hash": export_hash, "files": files, "database_mutated": False}
+            manifest = {
+                **identity,
+                "export_hash": export_hash,
+                "files": files,
+                "database_mutated": False,
+                # MED-09: an exchange export is "base editing interchange"; the
+                # effects it cannot express are listed explicitly instead of
+                # being silently dropped from effects=[] / a hard-coded `C`.
+                "losses": losses,
+                "unsupported_features": sorted({str(item["feature"]) for item in losses}),
+                "localdrama_item_parameters": [
+                    {"id": item["id"], "track_type": str(item["track_type"]), "parameters": dict(item.get("parameters") or {})}
+                    for item in items
+                ],
+            }
             (partial / "manifest.json").write_bytes(_canonical(manifest) + b"\n")
             replace_path(partial, final)
         except Exception:
             shutil.rmtree(partial, ignore_errors=True)
             raise
         return self._result(project_root, final, manifest, reused=False)
+
+    @staticmethod
+    def _export_losses(items: list[dict[str, Any]], *, format_label: str) -> list[dict[str, Any]]:
+        """List every frozen effect this exchange format cannot reproduce.
+
+        An export must never present "file written" as "editing effects fully
+        preserved".  Transitions that the format can express are encoded (see
+        ``_otio`` and ``_edl``) and therefore are NOT losses; everything else is
+        reported here with the item that owns it.
+        """
+        losses: list[dict[str, Any]] = []
+        for item in items:
+            rel_path = str(item["media"]["rel_path"])
+            track_type = str(item["track_type"])
+            parameters = item.get("parameters") or {}
+            if track_type == "VIDEO":
+                kind = TimelineExportService._transition_kind(item)
+                duration = float(parameters.get("transition_duration_seconds") or 0.0)
+                if kind != "CUT" and duration <= 0:
+                    losses.append(
+                        {
+                            "rel_path": rel_path,
+                            "timeline_item_id": str(item["id"]),
+                            "track_type": track_type,
+                            "feature": f"TRANSITION_{kind}",
+                            "label": f"入场转场 {kind}",
+                            "value": kind,
+                            "reason": f"{format_label} 只能表达带时长的转场；该 item 冻结参数没有 transition_duration_seconds",
+                            "recoverable_from_manifest": True,
+                        }
+                    )
+                for name, label in (("lut", "LUT"), ("speed", "变速"), ("mask", "遮罩")):
+                    if parameters.get(name):
+                        losses.append(
+                            {
+                                "rel_path": rel_path,
+                                "timeline_item_id": str(item["id"]),
+                                "track_type": track_type,
+                                "feature": name.upper(),
+                                "label": label,
+                                "value": parameters.get(name),
+                                "reason": f"{format_label} 基础交换不承载该效果；需要烘焙后的画面才能保留",
+                                "recoverable_from_manifest": False,
+                            }
+                        )
+            else:
+                losses.extend(_audio_item_losses(item, rel_path))
+        return losses
 
     def _subtitle_revision(self, revision: dict[str, Any], subtitle_revision_id: str) -> dict[str, Any]:
         """Read a frozen subtitle revision (read-only) for the jianying text track."""
@@ -590,12 +752,23 @@ class TimelineExportService:
             files.append(
                 {"rel_path": f"{draft_folder_name}/draft_content.json", "byte_size": draft_path.stat().st_size, "sha256": _sha256(draft_path)}
             )
+            losses = self._export_losses(items, format_label="剪映草稿")
             manifest = {
                 **identity,
                 "export_hash": export_hash,
                 "files": files,
                 "database_mutated": False,
                 "media_copy": "BUNDLED",
+                # 剪映 keeps the repository's declared best-effort boundary: the
+                # draft is produced, and everything it cannot carry is listed
+                # rather than implied to be preserved.
+                "best_effort": True,
+                "losses": losses,
+                "unsupported_features": sorted({str(item["feature"]) for item in losses}),
+                "localdrama_item_parameters": [
+                    {"id": item["id"], "track_type": str(item["track_type"]), "parameters": dict(item.get("parameters") or {})}
+                    for item in items
+                ],
             }
             (partial / "manifest.json").write_bytes(_canonical(manifest) + b"\n")
             replace_path(partial, final)
@@ -627,6 +800,11 @@ class TimelineExportService:
             "manifest_rel_path": (final / "manifest.json").relative_to(project_root).as_posix(),
             "files": manifest["files"],
             "export_hash": manifest["export_hash"],
+            # MED-09: the caller must be able to show "what was dropped" before
+            # the user treats the exported project as a faithful copy.
+            "losses": list(manifest.get("losses") or []),
+            "unsupported_features": list(manifest.get("unsupported_features") or []),
+            "fidelity": "BASE_EDITING_INTERCHANGE" if not manifest.get("losses") else "BASE_EDITING_INTERCHANGE_WITH_LOSSES",
             "reused": reused,
             "database_mutated": False,
             "runtime_contacted": False,

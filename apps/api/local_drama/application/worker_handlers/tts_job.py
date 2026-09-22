@@ -1,15 +1,130 @@
-"""TTS_GENERATION job handler: SAPI speech synthesis with deterministic headroom."""
+"""TTS_GENERATION job handler: local speech synthesis with an explicit parameter contract."""
 
 from __future__ import annotations
 
+import inspect
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Mapping, Protocol
 
 from local_drama.domain.errors import DomainRuleError
 from local_drama.platform.contracts import TtsRuntimeError
 
 FfmpegRunner = Callable[[list[str]], None]
 AtomicWriter = Callable[[Path, Callable[[Path], object]], None]
+
+
+def _parameter_token(value: Any) -> Any:
+    """Normalize a TTS parameter for default comparison.
+
+    Strings compare case-insensitively (``NEUTRAL`` == ``neutral``); every other
+    type keeps identity/equality semantics so ``1.0`` is not coerced to ``"1.0"``.
+    """
+    if isinstance(value, str):
+        return value.strip().casefold()
+    return value
+
+
+@dataclass(frozen=True)
+class TtsParameterCapability:
+    """What one local TTS provider can actually do with a user-set parameter.
+
+    ``mode`` is the honest answer the UI and the submit path both need:
+
+    * ``NATIVE`` — the value is compiled into the runtime request.
+    * ``POST_PROCESSING`` — the runtime has no native control, so this product
+      applies a clearly labelled FFmpeg post-process (for example ``atempo``)
+      and records that its output length is not the model's own length.
+    * ``METADATA_ONLY`` — the value is a real, frozen product parameter that is
+      deliberately NOT an audio control for this provider (it is persisted on
+      the candidate and in the Job snapshot for provenance, and never sent to
+      the runtime).  This is reported as such so no surface can imply the
+      provider acted on it.
+    * ``UNSUPPORTED`` — the parameter cannot be honored at all.  The UI must
+      disable it with ``reason`` and the service must reject non-default values
+      instead of accepting and silently ignoring them.
+    """
+
+    mode: str
+    reason: str
+    default: Any = None
+
+
+@dataclass(frozen=True)
+class TtsProviderParameterCapabilities:
+    provider_kind: str
+    parameters: Mapping[str, TtsParameterCapability] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "provider_kind": self.provider_kind,
+            "parameters": {
+                name: {"mode": item.mode, "reason": item.reason, "default": item.default}
+                for name, item in sorted(self.parameters.items())
+            },
+        }
+
+    def applied_parameters(self) -> list[str]:
+        """Parameters this provider genuinely turns into runtime/audio behaviour."""
+        return sorted(name for name, item in self.parameters.items() if item.mode in {"NATIVE", "POST_PROCESSING"})
+
+    def metadata_only_parameters(self) -> list[str]:
+        """Frozen product parameters that are recorded but never sent to the runtime."""
+        return sorted(name for name, item in self.parameters.items() if item.mode == "METADATA_ONLY")
+
+    def requires_rejection(self, parameter: str, value: Any) -> bool:
+        """True when ``value`` is a non-default setting the provider cannot honor.
+
+        String values are compared case-insensitively: the product's canonical
+        emotion is the uppercase ``NEUTRAL`` (see the dialogue API schema and the
+        batch submit default), while a provider may declare its default in any
+        casing. Treating ``NEUTRAL`` as a non-default request would reject the
+        product's own default through the batch endpoint.
+        """
+        capability = self.parameters.get(parameter)
+        if capability is None:
+            return True
+        if capability.mode != "UNSUPPORTED":
+            return False
+        return bool(_parameter_token(value) != _parameter_token(capability.default))
+
+
+SAPI_PARAMETER_CAPABILITIES = TtsProviderParameterCapabilities(
+    provider_kind="WINDOWS_SAPI_LOCAL",
+    parameters={
+        # System.Speech consumes rate as an integer -10..10; the product maps a
+        # 0.5-2.0 multiplier onto that scale (see the handler below).
+        "speech_rate": TtsParameterCapability("NATIVE", "Windows SAPI 通过 SSML/System.Speech Rate 原生支持语速", 1.0),
+        # Emotion has never been a SAPI audio control, but it IS part of the
+        # frozen candidate provenance the product records.  Reporting it as
+        # METADATA_ONLY keeps that behaviour while stating plainly that SAPI does
+        # not act on it, instead of implying the emotion changed the voice.
+        "emotion": TtsParameterCapability("METADATA_ONLY", "Windows SAPI 没有情绪通道；情绪只作为候选元数据记录，不影响合成语音", "NEUTRAL"),
+    },
+)
+
+VOXCPM2_PARAMETER_CAPABILITIES = TtsProviderParameterCapabilities(
+    provider_kind="VOXCPM2_LOCAL",
+    parameters={
+        # VoxCPM2's ``generate`` has no speed/rate argument, so this product
+        # applies a declared FFmpeg atempo post-process.  The applied value is
+        # recorded in the attempt's parameter evidence.
+        "speech_rate": TtsParameterCapability("POST_PROCESSING", "VoxCPM2 无原生语速参数；本机 FFmpeg 以 atempo 后处理并记录 applied_parameters", 1.0),
+        # Same reasoning as SAPI: the emotion is a real frozen product value used
+        # for candidate provenance, but VoxCPM2 has no emotion input, so it must
+        # never be presented as having shaped the audio.
+        "emotion": TtsParameterCapability("METADATA_ONLY", "VoxCPM2 运行时没有情绪输入通道；情绪只作为候选元数据记录，不影响合成语音", "NEUTRAL"),
+    },
+)
+
+
+def tts_parameter_capabilities(provider_kind: str) -> TtsProviderParameterCapabilities:
+    """Resolve the declared parameter capability for one local TTS provider."""
+    if provider_kind == "VOXCPM2_LOCAL":
+        return VOXCPM2_PARAMETER_CAPABILITIES
+    if provider_kind == "WINDOWS_SAPI_LOCAL":
+        return SAPI_PARAMETER_CAPABILITIES
+    raise DomainRuleError("TTS_PROVIDER_UNSUPPORTED", f"未知的本机 TTS provider：{provider_kind}", {"provider_kind": provider_kind})
 
 
 class WorkerPersistencePort(Protocol):
@@ -35,7 +150,12 @@ class WorkerTtsRuntimePort(Protocol):
 
 
 class WorkerVoxcpmRuntimePort(Protocol):
-    """Offline VoxCPM2 subprocess port for zero-shot cloned speech."""
+    """Offline VoxCPM2 subprocess port for zero-shot cloned speech.
+
+    ``speed`` is the declared product speech-rate parameter.  A concrete
+    adapter that has no native control simply does not declare the keyword; the
+    handler then relies on the declared FFmpeg ``atempo`` post-process.
+    """
 
     def synthesize(
         self,
@@ -44,8 +164,41 @@ class WorkerVoxcpmRuntimePort(Protocol):
         *,
         prompt_audio: Path | None = None,
         prompt_text: str | None = None,
+        speed: float | None = None,
     ) -> Any:  # pragma: no cover - protocol boundary
         ...
+
+
+def _runtime_parameter_names(runtime: object) -> frozenset[str]:
+    """Names the concrete runtime really accepts, so a real control is used.
+
+    A stub or an older adapter that predates the speed/emotion channel simply
+    does not advertise the name, and the handler then relies on the declared
+    post-processing mode instead of inventing a parameter the runtime would
+    reject.
+    """
+    try:
+        signature = inspect.signature(runtime.synthesize)  # type: ignore[attr-defined]
+    except (AttributeError, TypeError, ValueError):
+        return frozenset()
+    names = {name for name in signature.parameters if name != "self"}
+    if any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in signature.parameters.values()):
+        names.add("**kwargs")
+    return frozenset(names)
+
+
+def _atempo_chain(speed: float) -> str:
+    """FFmpeg atempo respects a 0.5-2.0 factor per stage; chain longer factors."""
+    factors: list[float] = []
+    remaining = speed
+    while remaining > 2.0:
+        factors.append(2.0)
+        remaining /= 2.0
+    while remaining < 0.5:
+        factors.append(0.5)
+        remaining /= 0.5
+    factors.append(remaining)
+    return ",".join(f"atempo={factor:.6f}" for factor in factors)
 
 
 class WorkerTtsMediaOpsPort(Protocol):
@@ -109,12 +262,35 @@ def run_tts_job(
         raise DomainRuleError("TTS_JOB_SNAPSHOT_INVALID", "TTS Job 快照与最新持久化文本、音色或 Published Profile 不匹配")
     voice_ref = str(voice["voice_ref"])
     text = str(text_revision["text"])
+    # The declared capability is the single authority for both branches: a
+    # non-default value the provider cannot honor is rejected here, so a Job can
+    # never be reported successful while a user-visible parameter was ignored.
+    capabilities = tts_parameter_capabilities(provider_kind)
+    requested_speech_rate = float(snapshot.get("speech_rate", 1.0))
+    requested_emotion = str(snapshot.get("emotion", "neutral"))
+    if capabilities.requires_rejection("emotion", requested_emotion):
+        raise DomainRuleError(
+            "TTS_PARAMETER_UNSUPPORTED",
+            capabilities.parameters["emotion"].reason,
+            {"provider_kind": provider_kind, "parameter": "emotion", "value": requested_emotion},
+        )
+    applied_parameters: dict[str, Any] = {
+        "requested": {"speech_rate": requested_speech_rate, "emotion": requested_emotion},
+        "provider_kind": provider_kind,
+        "modes": {name: item.mode for name, item in capabilities.parameters.items()},
+        # These parameters are recorded but never sent to the runtime.  Naming
+        # them here is what stops any surface from implying the provider acted
+        # on a value it has no channel for.
+        "metadata_only": capabilities.metadata_only_parameters(),
+    }
+    raw_parameter_filter: str | None = None
     if provider_kind == "WINDOWS_SAPI_LOCAL":
         if not voice_ref.startswith("sapi:") or not voice_ref.removeprefix("sapi:").strip():
             raise DomainRuleError("TTS_VOICE_REF_INVALID", "Windows SAPI Job 必须使用 sapi: 音色引用")
         raw_output = output_root / "speech.sapi.wav"
-        speech_rate = float(snapshot.get("speech_rate", 1.0))
-        sapi_rate = max(-10, min(10, round((speech_rate - 1.0) * 10)))
+        sapi_rate = max(-10, min(10, round((requested_speech_rate - 1.0) * 10)))
+        applied_parameters["applied"] = {"speech_rate": requested_speech_rate, "sapi_rate": sapi_rate, "emotion": None}
+        applied_parameters["emotion_channel"] = "NONE"
 
         def synthesize(target: Path) -> None:
             try:
@@ -145,15 +321,32 @@ def run_tts_job(
         else:
             prompt_audio = Path(prompt_audio_ref.strip())
         raw_output = output_root / "speech.voxcpm2.wav"
+        # The runtime only receives a name it really declares; the concrete
+        # LocalAiSubprocessRuntime adapter accepts ``speed`` and forwards it as
+        # ``--speed``.  Either way the audible rate is enforced by the declared
+        # atempo post-process below, and ``applied`` records both facts.
+        runtime_parameters = _runtime_parameter_names(voxcpm_runtime)
+        runtime_accepts_speed = "speed" in runtime_parameters or "**kwargs" in runtime_parameters
+        applied_parameters["applied"] = {
+            "speech_rate": requested_speech_rate,
+            "runtime_speed_argument": runtime_accepts_speed,
+            "post_processing": None,
+        }
+        applied_parameters["emotion_channel"] = "NONE"
+        if requested_speech_rate != 1.0:
+            raw_parameter_filter = _atempo_chain(requested_speech_rate)
+            applied_parameters["applied"]["post_processing"] = "atempo"
+            applied_parameters["applied"]["atempo_filters"] = raw_parameter_filter
 
         def synthesize(target: Path) -> None:
+            kwargs: dict[str, Any] = {
+                "prompt_audio": prompt_audio,
+                "prompt_text": prompt_text.strip() or None,
+            }
+            if runtime_accepts_speed:
+                kwargs["speed"] = requested_speech_rate
             try:
-                voxcpm_runtime.synthesize(
-                    text,
-                    target,
-                    prompt_audio=prompt_audio,
-                    prompt_text=prompt_text.strip() or None,
-                )
+                voxcpm_runtime.synthesize(text, target, **kwargs)
             except TtsRuntimeError as error:
                 raise DomainRuleError("TTS_RUNTIME_FAILED", "本机 VoxCPM2 执行失败", {"reason": type(error).__name__}) from error
 
@@ -164,6 +357,7 @@ def run_tts_job(
         # safety ceiling.  Freeze deterministic local headroom into the actual
         # Job artifact instead of asking a reviewer to approve a technically
         # failing WAV.
+        final_filter = "volume=-1.5dB" + (f",{raw_parameter_filter}" if raw_parameter_filter else "")
         atomic_writer(
             output,
             lambda target: run_ffmpeg(
@@ -171,7 +365,7 @@ def run_tts_job(
                     "-i",
                     str(raw_output),
                     "-filter:a",
-                    "volume=-1.5dB",
+                    final_filter,
                     "-c:a",
                     "pcm_s16le",
                     "-y",

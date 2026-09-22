@@ -654,6 +654,20 @@ async def verify_delivery_post(package_id: str, request: Request) -> dict[str, o
         raise api_error_from_domain(error) from error
 
 
+def _delivery_media_type(filename: str) -> str:
+    """Media type for one delivery file, restricted to what delivery emits."""
+    suffix = Path(filename).suffix.lower()
+    return {
+        ".mp4": "video/mp4",
+        ".srt": "application/x-subrip",
+        ".vtt": "text/vtt",
+        ".ass": "text/x-ssa",
+        ".json": "application/json",
+        ".txt": "text/plain; charset=utf-8",
+        ".zip": "application/zip",
+    }.get(suffix, "application/octet-stream")
+
+
 @router.get(
     "/delivery-packages/{package_id}/download",
     operation_id="downloadDeliveryPackage",
@@ -668,13 +682,59 @@ async def download_delivery(package_id: str, request: Request) -> FileResponse:
 
 
 @router.get(
+    "/delivery-packages/{package_id}/files/{file_id}/download",
+    operation_id="downloadDeliveryPackageFile",
+    response_model=None,
+)
+async def download_delivery_file(package_id: str, file_id: str, request: Request) -> FileResponse:
+    """Download ONE registered delivery file (MP4, SRT/ASS/VTT or manifest).
+
+    MED-08: the delivery page previously offered only the MP4, so a package built
+    with SIDECAR/BOTH subtitles left those files unreachable from a remote
+    browser.  The caller names a server-owned ``delivery_files`` row, never a
+    path.
+    """
+    try:
+        path, filename, _row = service(request).delivery_file_download_path(package_id, file_id)
+        return FileResponse(path, media_type=_delivery_media_type(filename), filename=filename)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get(
+    "/delivery-packages/{package_id}/archive:download",
+    operation_id="downloadDeliveryPackageArchive",
+    response_model=None,
+)
+async def download_delivery_archive(package_id: str, request: Request) -> FileResponse:
+    """Download the complete delivery package as one verified ZIP."""
+    try:
+        path, filename = service(request).delivery_archive_path(package_id)
+        return FileResponse(path, media_type="application/zip", filename=filename)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.get(
     "/delivery-packages/{package_id}/files",
     operation_id="listDeliveryPackageFiles",
     response_model=DeliveryFilePage,
 )
 async def list_delivery_package_files(package_id: str, request: Request) -> dict[str, object]:
     try:
-        return {"items": service(request).list_delivery_files(package_id)}
+        timeline = service(request)
+        items = timeline.list_delivery_files(package_id)
+        # MED-08: each row carries its own controlled download URL so the
+        # delivery page can hand every generated file to a remote browser
+        # instead of printing a server-local path.
+        for item in items:
+            item["download_url"] = f"/api/v1/delivery-packages/{package_id}/files/{item['id']}/download"
+            item["download_filename"] = str(item["rel_path"]).rsplit("/", 1)[-1]
+            item["media_type"] = _delivery_media_type(str(item["rel_path"]))
+        return {
+            "items": items,
+            "archive_download_url": f"/api/v1/delivery-packages/{package_id}/archive:download",
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
