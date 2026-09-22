@@ -1,12 +1,23 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import struct
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
+
+_CHUNK = 1024 * 1024
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(_CHUNK):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _format_status(path: Path, declared: str) -> tuple[bool, str]:
@@ -70,6 +81,19 @@ def verify(lock_path: Path, *, probe_ollama: bool = False) -> dict[str, Any]:
                 actual = path.stat().st_size
                 valid_format, detail = _format_status(path, str(expected["format"]))
                 valid = actual == int(expected["bytes"]) and valid_format
+                # A pinned component is only complete when the real digest
+                # matches; a size match alone cannot distinguish a truncated or
+                # substituted file from the released weights.
+                expected_sha = str(expected.get("sha256") or "").strip().lower()
+                if expected_sha:
+                    item["expected_sha256"] = expected_sha
+                    if valid:
+                        actual_sha = _sha256(path)
+                        item["actual_sha256"] = actual_sha
+                        if actual_sha != expected_sha:
+                            detail, valid = "DIGEST_MISMATCH", False
+                    else:
+                        detail = f"{detail}+SIZE_MISMATCH"
                 item.update(status="PASS" if valid else detail, actual_bytes=actual, valid=valid)
             files.append(item)
         models.append(

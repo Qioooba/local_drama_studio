@@ -54,6 +54,8 @@ class ComfyWorkflowProfileService:
         runtime_model_installation_id: str,
         capability_code: str,
         workflow_binding_id: str | None,
+        *,
+        profile_code_suffix: str | None = None,
     ) -> ProvisionedComfyWorkflowProfile:
         binding = self._binding(runtime_model_installation_id, capability_code, workflow_binding_id)
         workflow = self.workflows.get_version(str(binding["workflow_version_id"]))
@@ -61,7 +63,12 @@ class ComfyWorkflowProfileService:
         self._source_smoke(binding)
         contracts = self._ensure_contracts(str(binding["capability_id"]))
         capability = str(binding["capability_code"])
-        profile_code = f"comfy-{str(binding['model_release_code'])}-{capability.lower()}"
+        # A capability may legitimately own more than one frozen graph -- the
+        # single- and two-reference Qwen-Image-2.1 edits do.  The suffix keeps
+        # those as separate Profiles instead of two versions of one Profile,
+        # which would reintroduce "which version is production?" ambiguity.
+        suffix = f"-{profile_code_suffix.strip().lower()}" if profile_code_suffix and profile_code_suffix.strip() else ""
+        profile_code = f"comfy-{str(binding['model_release_code'])}-{capability.lower()}{suffix}"
         execution_binding = {
             "template": _TEMPLATE,
             "workflow_binding_id": str(binding["id"]),

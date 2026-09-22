@@ -1,0 +1,60 @@
+{
+  "schema_version": "localdrama.model-licensing.v1",
+  "note": "模型许可与商用授权状态。这里记录的是部署范围决定，不是显卡能力判断。未记录商用授权时，模型只能进入许可允许的研究/评估流程，不得成为商业生产默认。",
+  "updated_at": "2026-09-22",
+  "deployment_decision": {
+    "instance": "default",
+    "recorded_at": "2026-09-22",
+    "qwen_image_2_1_scope": "RESEARCH_EVALUATION_ONLY",
+    "rationale": "Qwen-Image-2.1 使用 Qwen Research License，商用需单独授权。本机未记录该授权，因此 2.1 已作为可选路由发布（创建页/批量页可见，可显式选择），但不会成为自动默认。",
+    "enforcement": [
+      "activate_qwen21.py 在 environment=production 且未记录授权时拒绝发布 2.1 Profile（除非显式 --acknowledge-research-only）。",
+      "legacy 2.1 Profile 在 model_bundle 记录 model_code；auto_profile() 跳过未记录商用授权的模型，因此自动默认仍为 Apache-2.0 的 2512/2511 链路。",
+      "每个 2.1 工作流契约携带 contract.license.commercial_use_requires_authorization=true。"
+    ],
+    "to_enable_as_commercial_default": [
+      "1. 取得并记录 Qwen-Image-2.1 商用授权。",
+      "2. 在 models[] 的该条目下把 commercial_use 置 true，并填写 authorization.recorded=true / recorded_at / reference。",
+      "3. 重新运行 scripts/qwen21/publish_qwen21_legacy_profiles.py，使 2.1 路由成为最新发布版本。",
+      "4. 不改写历史项目引用：历史任务继续绑定其原有 workflow/Profile 版本。"
+    ]
+  },
+  "models": [
+    {
+      "code": "qwen-image-2512-q5-k-m",
+      "license_id": "apache-2.0",
+      "commercial_use": true,
+      "authorization": {
+        "recorded": true,
+        "recorded_at": "2026-08-28",
+        "reference": "https://huggingface.co/Qwen/Qwen-Image-2512"
+      },
+      "role": "商业生产默认（旧链，保留）"
+    },
+    {
+      "code": "qwen-image-edit-2511-q5-k-m",
+      "license_id": "apache-2.0",
+      "commercial_use": true,
+      "authorization": {
+        "recorded": true,
+        "recorded_at": "2026-08-28",
+        "reference": "https://huggingface.co/Qwen/Qwen-Image-Edit-2511"
+      },
+      "role": "商业生产默认（旧链，保留）"
+    },
+    {
+      "code": "qwen-image-2.1-int8-convrot",
+      "license_id": "qwen-research",
+      "license_name": "Qwen Research License",
+      "license_url": "https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE",
+      "commercial_use": false,
+      "authorization": {
+        "recorded": false,
+        "recorded_at": null,
+        "reference": null
+      },
+      "role": "研究/评估用途。非商业用途在许可中被定义为研究或评估；商业使用需要单独许可。",
+      "note": "满足授权后也不改写历史项目引用；历史任务继续绑定其原有 workflow/Profile 版本。"
+    }
+  ]
+}

@@ -1,0 +1,137 @@
+# Build the isolated ComfyUI runtime that provides the native Qwen-Image-2.1
+# nodes (TextEncodeQwenImage21 / QwenImage21Cache).
+#
+# The production runtime on 8188 is left completely untouched: this creates a
+# separate checkout, a separate virtual environment and a separate I/O root.
+# Re-running is safe and idempotent.
+#
+#   pwsh -File scripts/qwen21/install_comfy_runtime.ps1
+#   pwsh -File scripts/qwen21/install_comfy_runtime.ps1 -WhatIfOnly
+#
+[CmdletBinding()]
+param(
+    [switch]$WhatIfOnly,
+    [switch]$SkipTorch
+)
+
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$pinPath = Join-Path $repoRoot 'config\comfyui-qwen21-runtime.json'
+if (-not (Test-Path $pinPath)) { throw "runtime pin not found: $pinPath" }
+$pin = Get-Content $pinPath -Raw | ConvertFrom-Json
+
+$installRoot = [IO.Path]::GetFullPath($pin.install_root)
+$checkout = Join-Path $installRoot 'ComfyUI'
+$venv = Join-Path $installRoot 'venv'
+$venvPython = Join-Path $venv 'Scripts\python.exe'
+$ioRoot = [IO.Path]::GetFullPath($pin.io_root)
+
+Write-Host "=== ComfyUI Qwen-Image-2.1 isolated runtime ==="
+Write-Host "  runtime_code : $($pin.runtime_code)"
+Write-Host "  commit       : $($pin.comfy_commit)"
+Write-Host "  install_root : $installRoot"
+Write-Host "  endpoint     : http://$($pin.host):$($pin.port)"
+Write-Host "  torch        : $($pin.torch)+cu130 / python $($pin.python)"
+Write-Host ""
+
+if ($WhatIfOnly) {
+    Write-Host "[WhatIfOnly] no changes made."
+    return
+}
+
+# ---------------------------------------------------------------- checkout ---
+if (-not (Test-Path (Join-Path $checkout '.git'))) {
+    Write-Host "[1/6] cloning ComfyUI into $checkout"
+    New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
+    & git clone $pin.comfy_repository $checkout
+    if ($LASTEXITCODE -ne 0) { throw "git clone failed ($LASTEXITCODE)" }
+} else {
+    Write-Host "[1/6] checkout already present"
+}
+Push-Location $checkout
+try {
+    # A dirty tree would make the pin meaningless; refuse rather than guess.
+    $dirty = & git status --porcelain
+    if ($dirty) { throw "checkout has local modifications; refusing to move the pinned commit" }
+    Write-Host "[2/6] checking out pinned commit $($pin.comfy_commit)"
+    # Fetch the ref normally: fetching an arbitrary SHA is not reliably
+    # supported, and the pinned commit is on the default branch.
+    & git fetch --tags origin
+    if ($LASTEXITCODE -ne 0) { throw "git fetch failed ($LASTEXITCODE)" }
+    & git checkout --detach $pin.comfy_commit
+    if ($LASTEXITCODE -ne 0) { throw "git checkout $($pin.comfy_commit) failed; the pin may not be on origin" }
+    $head = (& git rev-parse HEAD).Trim()
+    if ($head -ne $pin.comfy_commit) { throw "checkout is $head, expected $($pin.comfy_commit)" }
+} finally {
+    Pop-Location
+}
+
+# -------------------------------------------------------------------- venv ---
+if (-not (Test-Path $venvPython)) {
+    Write-Host "[3/6] creating venv (python $($pin.python))"
+    & py "-$($pin.python)" -m venv $venv
+    if ($LASTEXITCODE -ne 0) { throw "venv creation failed; is Python $($pin.python) installed?" }
+} else {
+    Write-Host "[3/6] venv already present"
+}
+& $venvPython -m pip install --upgrade pip wheel
+if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed" }
+
+# ------------------------------------------------------------------- torch ---
+# torch/torchvision/torchaudio must be installed as one group: this workflow
+# only renders images, but a missing torchaudio still breaks the Comfy import
+# graph and is therefore not optional.
+if (-not $SkipTorch) {
+    Write-Host "[4/6] installing torch trio from $($pin.torch_index)"
+    & $venvPython -m pip install `
+        "torch==$($pin.torch)" `
+        "torchvision==$($pin.torchvision)" `
+        "torchaudio==$($pin.torchaudio)" `
+        --index-url $pin.torch_index
+    if ($LASTEXITCODE -ne 0) { throw "torch install failed ($LASTEXITCODE)" }
+} else {
+    Write-Host "[4/6] torch install skipped by request"
+}
+
+# -------------------------------------------------- comfy requirements -------
+Write-Host "[5/6] installing ComfyUI requirements and pinned extras"
+& $venvPython -m pip install -r (Join-Path $checkout 'requirements.txt')
+if ($LASTEXITCODE -ne 0) { throw "requirements install failed ($LASTEXITCODE)" }
+& $venvPython -m pip install `
+    "transformers==$($pin.transformers)" `
+    "comfy-kitchen==$($pin.comfy_kitchen)" `
+    "comfyui-frontend-package==$($pin.frontend)"
+if ($LASTEXITCODE -ne 0) { throw "pinned extras install failed ($LASTEXITCODE)" }
+
+# ----------------------------------------------------------- model paths -----
+# The three 2.1 weights live in the shared canonical model library.  Reuse them
+# through extra_model_paths.yaml instead of copying 17.28 GB.
+Write-Host "[6/6] writing extra_model_paths.yaml and I/O root"
+$library = $pin.model_library_root -replace '/', '\'
+$extra = @"
+# Generated by scripts/qwen21/install_comfy_runtime.ps1 for runtime '$($pin.runtime_code)'.
+# Weights are reused from the canonical LocalDramaStudio model library; this
+# runtime never owns a second copy of the 17.28 GB Qwen-Image-2.1 set.
+local_drama_models:
+  base_path: $library
+  is_default: true
+  diffusion_models: diffusion_models
+  text_encoders: text_encoders
+  vae: vae
+  loras: loras
+  upscale_models: upscale_models
+  checkpoints: checkpoints
+"@
+Set-Content -Path (Join-Path $checkout 'extra_model_paths.yaml') -Value $extra -Encoding UTF8
+
+foreach ($sub in @('input', 'output', 'temp', 'user')) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $ioRoot $sub) | Out-Null
+}
+
+Write-Host ""
+Write-Host "Install complete."
+Write-Host "  1. seed smoke references : .venv\Scripts\python.exe scripts\qwen21\seed_qwen21_inputs.py"
+Write-Host "  2. start the runtime     : pwsh -File scripts/qwen21/start_comfy_qwen21.ps1"
+Write-Host "  3. verify nodes          : .venv\Scripts\python.exe scripts\qwen21\check_comfy_runtime.py"

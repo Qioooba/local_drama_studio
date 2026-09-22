@@ -1,0 +1,53 @@
+{
+  "schema_version": "localdrama.comfyui-runtime-pin.v1",
+  "runtime_code": "comfyui-qwen21",
+  "title": "ComfyUI · Qwen-Image-2.1 隔离运行时",
+  "purpose": "为 Qwen-Image-2.1 提供原生 TextEncodeQwenImage21 / QwenImage21Cache 节点。现有 8188 生产运行时停留在 v0.33.1，缺少这两个节点，因此本运行时在 8189 端口隔离验收，不改动既有 H3 视频链路。",
+  "comfy_repository": "https://github.com/Comfy-Org/ComfyUI.git",
+  "comfy_commit": "0f74f7fb9f83a78bf46188fd4fd53e6bc44c1ae8",
+  "comfy_min_version": "0.37.0",
+  "python": "3.12",
+  "torch": "2.11.0",
+  "torchvision": "0.26.0",
+  "torchaudio": "2.11.0",
+  "torch_index": "https://download.pytorch.org/whl/cu130",
+  "transformers": "5.17.0",
+  "comfy_kitchen": "0.2.35",
+  "frontend": "1.53.6",
+  "validated_date": "2026-09-21",
+  "validated_platform": "linux-x86_64",
+  "windows_note": "上游完整安装验证在 Linux 完成；Windows 使用同一组已发布 wheel，本机安装与运行结果必须单独记录，不得直接引用 Linux 数字。",
+  "required_nodes": [
+    "UNETLoader",
+    "CLIPLoader",
+    "VAELoader",
+    "TextEncodeQwenImage21",
+    "QwenImage21Cache",
+    "EmptyLatentImage",
+    "KSampler",
+    "VAEDecode",
+    "SaveImage",
+    "LoadImage"
+  ],
+  "forbidden_nodes": [
+    "ModelSamplingAuraFlow",
+    "EmptySD3LatentImage"
+  ],
+  "host": "127.0.0.1",
+  "port": 8189,
+  "install_root": "F:/AI_Models/LocalDramaStudio/Runtimes/ComfyUI-Qwen21",
+  "model_library_root": "F:/AI_Models/LocalDramaStudio/ComfyUI",
+  "io_root": "F:/AI_Projects/h3/local_drama_studio/work/comfy-qwen21",
+  "launch_args": [
+    "--listen",
+    "127.0.0.1",
+    "--port",
+    "8189",
+    "--disable-auto-launch",
+    "--disable-dynamic-vram",
+    "--reserve-vram",
+    "1"
+  ],
+  "launch_args_note": "固定采用上游已验证启动基线。不追加 Sage/CK attention、TeaCache 或编译开关；不强制 --highvram/--gpu-only/长期 --lowvram。",
+  "single_gpu_policy": "本运行时与 8188 共用同一张 RTX 3090 Ti。验收期间两者不得同时执行 GPU 重任务；由 GpuRuntimeCoordinator 的 GPU:0:EXCLUSIVE 租约保证互斥。"
+}

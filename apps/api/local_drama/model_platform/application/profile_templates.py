@@ -53,7 +53,14 @@ class ProfileTemplateService:
         self.database = database
         self.settings = settings
 
-    def provision(self, runtime_model_installation_id: str, capability_code: str, *, workflow_binding_id: str | None = None) -> ProvisionedProfileTemplate:
+    def provision(
+        self,
+        runtime_model_installation_id: str,
+        capability_code: str,
+        *,
+        workflow_binding_id: str | None = None,
+        profile_code_suffix: str | None = None,
+    ) -> ProvisionedProfileTemplate:
         runtime_kind = self._offering_runtime_kind(runtime_model_installation_id, capability_code)
         result: (
             ProvisionedOllamaProfile
@@ -68,7 +75,9 @@ class ProfileTemplateService:
         elif runtime_kind == "PYTORCH_PROCESS":
             result = PyTorchEmbeddingProfileService(self.database, self.settings).provision(runtime_model_installation_id, capability_code)
         elif runtime_kind == "COMFYUI":
-            result = ComfyWorkflowProfileService(self.database, self.settings).provision(runtime_model_installation_id, capability_code, workflow_binding_id)
+            result = ComfyWorkflowProfileService(self.database, self.settings).provision(
+                runtime_model_installation_id, capability_code, workflow_binding_id, profile_code_suffix=profile_code_suffix
+            )
         else:
             raise DomainRuleError("MP_PROFILE_TEMPLATE_UNAVAILABLE", "该运行时/能力没有已安装的 V2 Profile 模板。")
         return ProvisionedProfileTemplate(result.profile_version_id, result.profile_code, result.created)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from local_drama.application.job_resources import resolve_profile_gpu_policy
 from local_drama.application.jobs import JobService
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -57,9 +58,22 @@ class ExecutionSubmissionService:
         if preview.execution_profile_version_id is None or preview.adapter_code is None:
             raise DomainRuleError("MP_EXECUTION_NOT_READY", "当前能力没有可提交的 V2 Profile。")
         handler = self.handlers.resolve(preview.capability_code, preview.adapter_code)
-        scheduler_snapshot: dict[str, str | None] = {"execution_snapshot_id": None, "content_hash": None}
-        if handler.gpu_runtime:
-            scheduler_snapshot["scheduler_runtime"] = handler.gpu_runtime.strip().upper()
+        # The published Profile resource policy owns the runtime choice; the
+        # handler descriptor is only the fallback.  This fails closed before
+        # the Job exists when the two disagree.
+        gpu_runtime, gpu_policy = resolve_profile_gpu_policy(
+            preview.resource_policy,
+            handler_gpu_runtime=handler.gpu_runtime,
+        )
+        scheduler_snapshot: dict[str, object] = {"execution_snapshot_id": None, "content_hash": None}
+        if gpu_runtime is not None:
+            scheduler_snapshot["scheduler_runtime"] = gpu_runtime.value
+        if gpu_policy.gpu_runtime is not None or gpu_policy.exclusive_gpu or gpu_policy.gpu_concurrency is not None:
+            scheduler_snapshot["scheduler_resource_policy"] = {
+                "gpu_runtime": gpu_policy.gpu_runtime.value if gpu_policy.gpu_runtime is not None else None,
+                "exclusive_gpu": gpu_policy.exclusive_gpu,
+                "gpu_heavy_concurrency": gpu_policy.gpu_concurrency,
+            }
         scope = _job_scope(request.scope)
         draft = ExecutionSnapshotDraft(
             capability_code=preview.capability_code,

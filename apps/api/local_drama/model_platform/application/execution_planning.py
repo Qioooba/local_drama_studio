@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Mapping, cast
 
@@ -63,6 +63,10 @@ class ExecutionPreview:
     runtime_ready: bool
     blockers: tuple[str, ...]
     resolution_hash: str
+    # The exact published Profile resource policy this preview resolved.  It is
+    # carried so submission can make gpu_runtime/exclusive_gpu authoritative
+    # without re-reading a Profile that may have been superseded.
+    resource_policy: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def executable(self) -> bool:
@@ -130,7 +134,8 @@ class ExecutionPlanningService:
         resolved_parameters = self.parameters.resolve(contract, policy, tuple(overrides))
         runtime_ready = str(profile["runtime_status"]) == "ACTIVE"
         blockers = () if runtime_ready else ("RUNTIME_INSTALLATION_VERSION_NOT_ACTIVE",)
-        network_policy = _network_policy(_object_json(profile["resource_policy_json"], "MP_RESOURCE_POLICY_INVALID"))
+        resource_policy = _frozen_mapping(_object_json(profile["resource_policy_json"], "MP_RESOURCE_POLICY_INVALID"))
+        network_policy = _network_policy(resource_policy)
         resolution_hash = _hash(
             {
                 "capability_code": capability_code,
@@ -143,6 +148,7 @@ class ExecutionPlanningService:
                 "assignment_overrides": dict(resolution.assignment_overrides) if explicit_profile_id is None else {},
                 "semantic_inputs": dict(request.semantic_inputs),
                 "run_overrides": dict(request.run_overrides),
+                "resource_policy": dict(resource_policy),
             }
         )
         return ExecutionPreview(
@@ -157,6 +163,7 @@ class ExecutionPlanningService:
             runtime_ready=runtime_ready,
             blockers=blockers,
             resolution_hash=resolution_hash,
+            resource_policy=resource_policy,
         )
 
     def assert_submit_fresh(self, preview: ExecutionPreview, expected_resolution_hash: str | None) -> None:
@@ -258,6 +265,12 @@ def _network_policy(resource_policy: Mapping[str, Any]) -> Mapping[str, Any]:
     value = resource_policy.get("network_policy", resource_policy.get("network", {"mode": "LOCAL_ONLY"}))
     if not isinstance(value, Mapping):
         raise DomainRuleError("MP_RESOURCE_POLICY_INVALID", "资源策略的 network_policy 必须是 JSON 对象。")
+    return MappingProxyType({str(key): item for key, item in value.items()})
+
+
+def _frozen_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Expose a persisted policy read-only so a preview cannot be mutated."""
+
     return MappingProxyType({str(key): item for key, item in value.items()})
 
 

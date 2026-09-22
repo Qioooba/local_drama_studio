@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable, Mapping
+from urllib.parse import urlparse
 
 from local_drama.application.comfy_smoke_contract import parse_comfy_smoke_contract
 from local_drama.application.workflows import WorkflowService
@@ -19,6 +20,7 @@ _HANDLER_CODE = "comfy.workflow.v2"
 _HANDLER_VERSION = "v1"
 _ADAPTER_CODE = "comfy.workflow.v1"
 _TEMPLATE = "comfy.workflow.profile.v1"
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 def make_comfy_workflow_handler(
@@ -27,27 +29,32 @@ def make_comfy_workflow_handler(
     workflows: WorkflowService | WorkflowServicePlaceholder | None = None,
     comfy: ComfyClient | None = None,
 ) -> Callable[[WorkerExecutionSnapshot, Path], tuple[str, str]]:
-    """Build the only formal V2 handler for Profile-owned Comfy workflows."""
+    """Build the only formal V2 handler for Profile-owned Comfy workflows.
+
+    When no client is injected the handler resolves the ComfyUI endpoint from
+    the *frozen runtime configuration* of the execution snapshot instead of the
+    process-wide ``comfy_base_url``.  That is the project's existing
+    multi-runtime routing: a Profile bound to a ComfyUI runtime version records
+    its own loopback endpoint, so a second ComfyUI instance (for example an
+    isolated Qwen-Image-2.1 runtime on another port) can serve its own Profiles
+    without pretending the global setting addresses every Profile.
+    """
 
     workflows = workflows or WorkflowServicePlaceholder(settings)
-    comfy = comfy or ComfyClient(
-        settings.comfy_base_url,
-        settings.comfy_output_root,
-        allow_private_network=settings.allows_private_network,
-    )
 
     def execute(snapshot: WorkerExecutionSnapshot, output_root: Path) -> tuple[str, str]:
         binding = _binding(snapshot)
         workflow = workflows.get_version(binding["workflow_version_id"])
         _assert_workflow(binding, workflow)
+        client = comfy if comfy is not None else _comfy_client(settings, snapshot)
         semantic_inputs = materialize_v2_comfy_artifact_inputs(Database(settings.database_path), settings, snapshot.semantic_inputs)
         _assert_semantic_inputs(workflow, semantic_inputs)
         compiled = workflows.compile_semantic_inputs(binding["workflow_version_id"], semantic_inputs)
-        response = comfy.queue_prompt(compiled["workflow"], client_id=f"local-drama-v2-{snapshot.job_id}")
-        waited = comfy.wait_history(str(response["prompt_id"]), timeout_seconds=float(binding["timeout_seconds"]))
+        response = client.queue_prompt(compiled["workflow"], client_id=f"local-drama-v2-{snapshot.job_id}")
+        waited = client.wait_history(str(response["prompt_id"]), timeout_seconds=float(binding["timeout_seconds"]))
         if str(waited.get("status")) != "success":
             raise DomainRuleError("MP_COMFY_EXECUTION_FAILED", "正式 Comfy V2 执行没有成功完成。")
-        outputs = comfy.collect_outputs(dict(waited.get("history") or {}))
+        outputs = client.collect_outputs(dict(waited.get("history") or {}))
         expected = binding["expected_output"]
         assert_comfy_outputs(
             outputs,
@@ -64,6 +71,32 @@ def make_comfy_workflow_handler(
         return "COMFY_OUTPUT", relative
 
     return execute
+
+
+def _comfy_client(settings: Settings, snapshot: WorkerExecutionSnapshot) -> ComfyClient:
+    """Resolve the frozen ComfyUI endpoint and output root for one snapshot."""
+
+    configuration = snapshot.runtime_configuration if isinstance(snapshot.runtime_configuration, Mapping) else {}
+    base_url = str(configuration.get("base_url") or settings.comfy_base_url).strip()
+    parsed = urlparse(base_url)
+    if parsed.scheme != "http" or (parsed.hostname or "").casefold() not in _LOOPBACK_HOSTS:
+        raise DomainRuleError(
+            "MP_COMFY_EXECUTION_RUNTIME_NOT_LOOPBACK",
+            "冻结的 ComfyUI 运行时地址必须是本机 loopback HTTP 端点。",
+            {"base_url_scheme": parsed.scheme, "host": parsed.hostname or ""},
+        )
+    output_root = settings.comfy_output_root
+    raw_output_root = configuration.get("output_root")
+    if isinstance(raw_output_root, str) and raw_output_root.strip():
+        candidate = Path(raw_output_root).resolve()
+        if not candidate.is_relative_to(settings.work_root.resolve()):
+            raise DomainRuleError(
+                "MP_COMFY_EXECUTION_OUTPUT_ROOT_INVALID",
+                "冻结的 ComfyUI 输出目录必须位于受控 work_root 内。",
+                {"output_root_configured": True},
+            )
+        output_root = candidate
+    return ComfyClient(base_url, output_root, allow_private_network=False)
 
 
 class WorkflowServicePlaceholder:
