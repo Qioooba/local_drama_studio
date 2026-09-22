@@ -16,6 +16,10 @@ class NetworkConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = Field(default=3210, ge=1, le=65535)
     allowed_origins: tuple[str, ...] = ()
+    # Explicit authorities a same-origin write may arrive on.  ``None`` derives them
+    # from the configured origins; set it to make the trusted Host set explicit, or
+    # to an empty list to trust no Host at all.
+    trusted_hosts: tuple[str, ...] | None = None
     firewall_remote_address: str = "LocalSubnet"
     trusted_lan_unauthenticated: bool = False
 
@@ -196,6 +200,7 @@ def settings_values(config: MachineConfig) -> dict[str, Any]:
         "host": config.network.host,
         "port": config.network.port,
         "trusted_lan_unauthenticated": config.network.trusted_lan_unauthenticated,
+        "trusted_hosts": config.network.trusted_hosts,
         "comfy_base_url": config.runtime.comfy_base_url,
         "ollama_base_url": config.runtime.ollama_base_url,
         "llm_provider": config.runtime.llm_provider,

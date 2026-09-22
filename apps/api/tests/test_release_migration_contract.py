@@ -88,6 +88,8 @@ def test_release_migration_contract_matches_graph_and_package_authority() -> Non
         "0098_production_session_identity_inputs",
         "0099_production_session_asset_inputs",
         "0100_production_session_waiting_user",
+        "0101_versioned_source_parsing",
+        "0102_explainer_factory_foundation",
     ]
     graph = {revision.revision for revision in scripts.walk_revisions()}
     assert set(revisions).issubset(graph)

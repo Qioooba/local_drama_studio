@@ -11,6 +11,13 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from local_drama.application.jobs import (
+    DELETED,
+    OUTCOME_UNKNOWN,
+    JobStateFacts,
+    decide_job_state,
+    resolve_next_run_at,
+)
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -294,7 +301,9 @@ class WorkerSessionService:
             placeholders = ",".join("?" for _ in abandoned_session_ids)
             with self.database.transaction() as connection:
                 attempts = connection.execute(
-                    f"""SELECT a.id,a.job_id,a.attempt_no,a.provider_job_id,a.progress_json,j.project_id,j.max_attempts
+                    f"""SELECT a.id,a.job_id,a.attempt_no,a.provider_job_id,a.progress_json,
+                    j.project_id,j.max_attempts,j.state AS job_state,j.next_run_at AS job_next_run_at,
+                    j.cancel_requested_at AS job_cancel_requested_at,j.deleted_at AS job_deleted_at
                     FROM job_attempts a JOIN jobs j ON j.id=a.job_id
                     WHERE a.worker_session_id IN ({placeholders}) AND a.state IN ('CLAIMED','RUNNING')""",
                     abandoned_session_ids,
@@ -302,23 +311,40 @@ class WorkerSessionService:
                 for attempt in attempts:
                     progress = json.loads(str(attempt["progress_json"] or "{}"))
                     uncertain = bool(attempt["provider_job_id"]) or progress.get("phase") == "SUBMITTING_TO_PROVIDER"
-                    next_job_state = "NEEDS_ATTENTION" if uncertain or int(attempt["attempt_no"]) >= int(attempt["max_attempts"]) else "QUEUED"
+                    # Session recovery uses the same state decision authority as
+                    # lease expiry and completion acknowledgement, so a user
+                    # cancellation or pause survives a stopped worker.
+                    decision = decide_job_state(
+                        JobStateFacts(
+                            state=str(attempt["job_state"]),
+                            deleted=attempt["job_deleted_at"] is not None,
+                            cancel_requested=attempt["job_cancel_requested_at"] is not None,
+                            resume_requested=attempt["job_next_run_at"] is not None,
+                            provider_accepted=uncertain,
+                            attempt_no=int(attempt["attempt_no"]),
+                            max_attempts=int(attempt["max_attempts"]),
+                        ),
+                        OUTCOME_UNKNOWN,
+                    )
+                    next_job_state = decision.job_state
+                    next_run_at = resolve_next_run_at(decision.next_run_at, now=_iso(observed))
                     connection.execute(
                         """UPDATE job_attempts SET state='ORPHANED',error_code='WORKER_SESSION_STALE',
                         error_detail_redacted='worker session heartbeat expired; reconciled locally',
                         lease_token=NULL,updated_at=?,revision=revision+1 WHERE id=?""",
                         (_iso(observed), attempt["id"]),
                     )
-                    connection.execute(
-                        """UPDATE jobs SET state=?,next_run_at=?,last_error_code='WORKER_SESSION_STALE',
-                        updated_at=?,revision=revision+1 WHERE id=?""",
-                        (
-                            next_job_state,
-                            _iso(observed) if next_job_state == "QUEUED" else None,
-                            _iso(observed),
-                            attempt["job_id"],
-                        ),
-                    )
+                    if next_job_state != DELETED:
+                        connection.execute(
+                            """UPDATE jobs SET state=?,next_run_at=?,last_error_code='WORKER_SESSION_STALE',
+                            updated_at=?,revision=revision+1 WHERE id=?""",
+                            (
+                                next_job_state,
+                                next_run_at,
+                                _iso(observed),
+                                attempt["job_id"],
+                            ),
+                        )
                     connection.execute(
                         "UPDATE job_resource_leases SET released_at=? WHERE attempt_id=? AND released_at IS NULL",
                         (_iso(observed), attempt["id"]),
@@ -334,7 +360,8 @@ class WorkerSessionService:
                             "attempt_state": "ORPHANED",
                             "job_state": next_job_state,
                             "uncertain_side_effect": uncertain,
-                            "reason": "worker_session_stale",
+                            "reason": decision.reason,
+                            "reason_scope": "worker_session_stale",
                         },
                     )
                     session_recovered.append(
@@ -377,6 +404,36 @@ class WorkerSupervisor:
         self.sessions = WorkerSessionService(database, settings)
         self._sleep = sleep
 
+    def explainer_schedule_tick(
+        self, executor: Any, *, owner: str, now_utc: Any = None
+    ) -> dict[str, Any]:
+        """One resident explainer-schedule tick inside the worker loop.
+
+        The explainer factory's scheduled production is owned by this local worker:
+        it is not a browser timer and not an external reminder service.  The tick only
+        claims due trigger points and hands them to the existing automation workflow.
+        ``now_utc`` exists so a test can drive a specific instant; production leaves it
+        unset and the executor reads the clock itself.
+
+        A single failing tick must never kill the worker, so the failure is recorded
+        in its own result instead of propagating.  A failure is *reported*, not
+        swallowed: ``error``/``detail`` are part of the returned value and are
+        surfaced through the session's ``maintenance.explainer_schedules``.
+        """
+
+        try:
+            kwargs: dict[str, Any] = {"owner": owner}
+            if now_utc is not None:
+                kwargs["now_utc"] = now_utc
+            return dict(executor.tick(**kwargs))
+        except Exception as error:  # noqa: BLE001 - background tick must not kill the worker
+            return {
+                "claimed": 0,
+                "started": [],
+                "error": type(error).__name__,
+                "detail": str(error)[:200],
+            }
+
     def run_until_idle(
         self,
         worker_id: str,
@@ -392,6 +449,7 @@ class WorkerSupervisor:
     ) -> dict[str, Any]:
         from local_drama.application.comfy_jobs import ComfyGenerationService
         from local_drama.application.episode_production_runs import EpisodeProductionRunService
+        from local_drama.application.explainers.runtime_adapters import ExplainerScheduleExecutor
         from local_drama.application.gpu_runtime import GpuRuntimeCoordinator
         from local_drama.application.jobs import JobService
         from local_drama.application.production_session_runner import ProductionSessionRunner
@@ -442,6 +500,11 @@ class WorkerSupervisor:
         last_episode_watchdog = startup_reconcile["episode_runs"]
         last_production_session_reconcile = startup_reconcile["production_sessions"]
         last_provider_reconcile = provider_reconcile
+        # 解说工厂定时生产驻留在本机 Worker 内：不是浏览器计时器，也不是外部提醒
+        # 服务。它只领取触发点并交给既有 automation workflow 执行。
+        schedule_executor = ExplainerScheduleExecutor(self.database, self.settings)
+        last_explainer_schedule_tick_at = 0.0
+        last_explainer_schedule_tick: dict[str, Any] = {"claimed": 0, "started": []}
         heartbeat_stop = threading.Event()
         heartbeat_errors: list[BaseException] = []
 
@@ -485,6 +548,11 @@ class WorkerSupervisor:
                             actor="worker-periodic-reconcile"
                         )
                         last_episode_watchdog_at = now_monotonic
+                    if now_monotonic - last_explainer_schedule_tick_at >= 30.0:
+                        last_explainer_schedule_tick_at = now_monotonic
+                        last_explainer_schedule_tick = self.explainer_schedule_tick(
+                            schedule_executor, owner=f"explainer-scheduler-{session_id}"
+                        )
                     result = None
                     cpu_channels = [item for item in requested_channels if item != "GPU_H3"]
                     # A verified media version is not usable in the creator UI
@@ -558,6 +626,7 @@ class WorkerSupervisor:
                     "episode_runs": last_episode_watchdog,
                     "production_sessions": last_production_session_reconcile,
                     "provider_successes": last_provider_reconcile,
+                    "explainer_schedules": last_explainer_schedule_tick,
                 },
             }
         except Exception:

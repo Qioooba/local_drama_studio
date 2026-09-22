@@ -1,10 +1,64 @@
 from __future__ import annotations
 
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.explainers.contracts import (
+    ERROR_NEXT_STEP,
+    RETRYABLE_ERROR_CODES,
+    ExplainerContractError,
+    ExplainerErrorCode,
+)
 from local_drama.errors import ApiError
+
+#: Explainer error code -> HTTP status.  The explainer domain uses its own
+#: structured codes (design §14), so they are mapped here instead of being added
+#: to the long legacy ``DomainRuleError`` code lists.
+_EXPLAINER_STATUS: dict[str, int] = {
+    ExplainerErrorCode.NOT_FOUND.value: 404,
+    ExplainerErrorCode.SCHEMA_INVALID.value: 422,
+    ExplainerErrorCode.INVALID_REQUEST.value: 400,
+    ExplainerErrorCode.SOURCE_EVIDENCE_MISSING.value: 422,
+    ExplainerErrorCode.CLAIM_CONFLICT.value: 409,
+    ExplainerErrorCode.CAPABILITY_UNAVAILABLE.value: 409,
+    ExplainerErrorCode.INFERENCE_EGRESS_DENIED.value: 403,
+    ExplainerErrorCode.GPU_CAPACITY_UNAVAILABLE.value: 503,
+    ExplainerErrorCode.BUDGET_EXCEEDED.value: 409,
+    ExplainerErrorCode.STALE_PLAN.value: 409,
+    ExplainerErrorCode.STALE_REVISION.value: 409,
+    ExplainerErrorCode.QC_BLOCKED.value: 409,
+    ExplainerErrorCode.LICENSE_SCOPE_UNVERIFIED.value: 409,
+    ExplainerErrorCode.OUTPUT_VALIDATION_FAILED.value: 422,
+    ExplainerErrorCode.IDEMPOTENCY_CONFLICT.value: 409,
+    "IDEMPOTENCY_KEY_REQUIRED": 400,
+    "IDEMPOTENCY_PAYLOAD_MISMATCH": 409,
+}
+
+
+def api_error_from_explainer(error: ExplainerContractError) -> ApiError:
+    """Translate an explainer domain error into the shared API error envelope."""
+
+    status = _EXPLAINER_STATUS.get(error.code, 422)
+    return ApiError(
+        error.code,
+        error.message,
+        status_code=status,
+        details=dict(error.details),
+        retryable=error.code in RETRYABLE_ERROR_CODES,
+        suggested_action=ERROR_NEXT_STEP.get(error.code),
+    )
 
 
 def api_error_from_domain(error: DomainRuleError) -> ApiError:
+    if error.code == "PROJECT_CREATE_CONTENDED":
+        # Concurrent creation held the project write lock past the busy timeout.
+        # This is transient and safe to retry, so it must not become a raw 500.
+        return ApiError(
+            error.code,
+            error.message,
+            status_code=503,
+            details=error.details,
+            retryable=True,
+            suggested_action=error.suggested_action,
+        )
     if error.code in {"AUTOMATION_TOKEN_REQUIRED", "AUTOMATION_TOKEN_INVALID", "AUTOMATION_SCOPE_FORBIDDEN", "AUTOMATION_PROJECT_FORBIDDEN"}:
         status = 403
     elif error.code.endswith("_NOT_FOUND") or error.code in {"PROJECT_NOT_FOUND", "SHOT_NOT_FOUND"}:
@@ -21,6 +75,14 @@ def api_error_from_domain(error: DomainRuleError) -> ApiError:
     elif error.code in {
         "PIPELINE_ALREADY_RUNNING",
         "PIPELINE_STATE_INVALID",
+        "PIPELINE_CURSOR_STALE",
+        "PIPELINE_COVERAGE_COMPLETE",
+        "IMPORT_COMMIT_SCOPE_CONFLICT",
+        "PROJECT_ROOT_EXISTS",
+        "SHOT_PROJECT_MISMATCH",
+        "SHOT_GROUP_PROJECT_MISMATCH",
+        "PROJECT_PACKAGE_OUTPUT_CONFLICT",
+        "PROJECT_PACKAGE_IDENTITY_CONFLICT",
         "MP_PROFILE_CROSSWALK_ACTIVE_MAPPING_EXISTS",
         "MP_PROFILE_CROSSWALK_NOT_APPROVED",
         "REVISION_CONFLICT",

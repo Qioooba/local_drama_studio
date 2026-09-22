@@ -1,0 +1,132 @@
+{
+  "schema_version": "1.0",
+  "document_kind": "EXPLAINER_RUN_INTENT",
+  "usage": "DESIGN_FIXTURE",
+  "product_kind": "EXPLAINER",
+  "title": "灯塔最后一页值班记录",
+  "content_kind": "ORIGINAL_FICTION",
+  "input": {
+    "kind": "DOCUMENT_IMPORT",
+    "source_refs": [
+      {
+        "reference": "fixture:sample_episode.json",
+        "role": "AUTHORED_FICTION_PACK"
+      }
+    ]
+  },
+  "channel_profile_ref": {
+    "id": "fixture:STYLE_GRAYBLUE_COPPER_V1",
+    "revision": 1
+  },
+  "source_locale": "zh-CN",
+  "duration": {
+    "mode": "FIXED",
+    "target_seconds": 300,
+    "tolerance_percent": 0
+  },
+  "outputs": [
+    {
+      "edition_key": "zh-clean-169",
+      "voice_locale": "zh-CN",
+      "subtitle_locales": [],
+      "subtitle_mode": "NONE",
+      "aspect_ratio": "16:9",
+      "fps": {
+        "num": 25,
+        "den": 1
+      },
+      "duration_policy": "USE_SOURCE_TARGET",
+      "allow_soft_subtitle_fallback": false
+    },
+    {
+      "edition_key": "zh-bilingual-169",
+      "voice_locale": "zh-CN",
+      "subtitle_locales": [
+        "zh-CN",
+        "en-US"
+      ],
+      "subtitle_mode": "BURNED",
+      "aspect_ratio": "16:9",
+      "fps": {
+        "num": 25,
+        "den": 1
+      },
+      "duration_policy": "USE_SOURCE_TARGET",
+      "allow_soft_subtitle_fallback": false
+    },
+    {
+      "edition_key": "en-captioned-169",
+      "voice_locale": "en-US",
+      "subtitle_locales": [
+        "en-US"
+      ],
+      "subtitle_mode": "BURNED",
+      "aspect_ratio": "16:9",
+      "fps": {
+        "num": 25,
+        "den": 1
+      },
+      "duration_policy": "NATURAL_NARRATION",
+      "allow_soft_subtitle_fallback": false
+    },
+    {
+      "edition_key": "zh-captioned-916",
+      "voice_locale": "zh-CN",
+      "subtitle_locales": [
+        "zh-CN"
+      ],
+      "subtitle_mode": "BURNED",
+      "aspect_ratio": "9:16",
+      "fps": {
+        "num": 25,
+        "den": 1
+      },
+      "duration_policy": "USE_SOURCE_TARGET",
+      "allow_soft_subtitle_fallback": false
+    }
+  ],
+  "automation_mode": "AUTO_WITH_EXCEPTIONS",
+  "inference": {
+    "mode": "LOCAL_ONLY",
+    "allow_automatic_cloud_fallback": false,
+    "configured_cloud_provider_ids": []
+  },
+  "research": {
+    "mode": "OFFLINE_IMPORT",
+    "allowed_domains": [],
+    "max_external_requests": 0
+  },
+  "budget": {
+    "max_gpu_seconds": 36000,
+    "max_wall_seconds": 43200,
+    "initial_candidates_per_ordinary_beat": 1,
+    "initial_candidates_per_key_identity": 2,
+    "max_creative_repairs_per_beat": 2,
+    "max_technical_retries_per_step": 2
+  },
+  "fallback_policy": {
+    "allowed_visual_fallbacks": [
+      "I2V_TO_MOTION_STILL",
+      "I2V_TO_INFORMATION_GRAPHIC"
+    ],
+    "preserve_must_be_motion": true,
+    "preserve_human_locks": true,
+    "script_rewrite_policy": "NO_AUTOMATIC_REWRITE",
+    "max_script_revisions": 0
+  },
+  "publication": {
+    "requested_action": "EXPORT_ONLY",
+    "intended_territories": [
+      "GLOBAL"
+    ],
+    "target_platforms": [
+      "YOUTUBE",
+      "BILIBILI",
+      "DOUYIN",
+      "TIKTOK",
+      "WEIXIN_CHANNELS"
+    ],
+    "account_authorization_refs": [],
+    "license_policy": "REQUIRE_VERIFIED_SCOPE"
+  }
+}

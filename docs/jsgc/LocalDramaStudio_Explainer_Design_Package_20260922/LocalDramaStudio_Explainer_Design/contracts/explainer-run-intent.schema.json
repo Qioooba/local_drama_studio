@@ -1,0 +1,665 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:local-drama-studio:explainer-run-intent:1.0",
+  "title": "解说工厂生产意图合同 v1.0",
+  "description": "设计合同。预检前的输入意图，不是执行计划或成片证明。服务端必须解析真实版本引用、建立来源与许可证记录、检查能力/用途/预算/锁定并冻结plan_hash后才允许提交；客户端不提供机器审批或成片检测结果。",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "document_kind": {
+      "const": "EXPLAINER_RUN_INTENT"
+    },
+    "usage": {
+      "type": "string",
+      "enum": [
+        "DESIGN_FIXTURE",
+        "APPLICATION_REQUEST"
+      ]
+    },
+    "product_kind": {
+      "const": "EXPLAINER"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "content_kind": {
+      "type": "string",
+      "enum": [
+        "FACTUAL_EXPLAINER",
+        "ORIGINAL_FICTION"
+      ]
+    },
+    "input": {
+      "$ref": "#/$defs/input"
+    },
+    "channel_profile_ref": {
+      "$ref": "#/$defs/revision_ref"
+    },
+    "source_locale": {
+      "type": "string",
+      "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+    },
+    "duration": {
+      "$ref": "#/$defs/duration"
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/output"
+      },
+      "minItems": 1
+    },
+    "automation_mode": {
+      "type": "string",
+      "enum": [
+        "AUTO_WITH_EXCEPTIONS",
+        "REVIEW_BEFORE_RENDER",
+        "MANUAL_REVIEW"
+      ]
+    },
+    "inference": {
+      "$ref": "#/$defs/inference"
+    },
+    "research": {
+      "$ref": "#/$defs/research"
+    },
+    "budget": {
+      "$ref": "#/$defs/budget"
+    },
+    "fallback_policy": {
+      "$ref": "#/$defs/fallback_policy"
+    },
+    "publication": {
+      "$ref": "#/$defs/publication"
+    },
+    "schedule_context": {
+      "$ref": "#/$defs/schedule_context"
+    }
+  },
+  "required": [
+    "schema_version",
+    "document_kind",
+    "usage",
+    "product_kind",
+    "title",
+    "content_kind",
+    "input",
+    "channel_profile_ref",
+    "source_locale",
+    "duration",
+    "outputs",
+    "automation_mode",
+    "inference",
+    "research",
+    "budget",
+    "fallback_policy",
+    "publication"
+  ],
+  "$defs": {
+    "revision_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "id",
+        "revision"
+      ]
+    },
+    "fps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "num": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120000
+        },
+        "den": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1001
+        }
+      },
+      "required": [
+        "num",
+        "den"
+      ]
+    },
+    "source_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "RESEARCH_SOURCE",
+            "NARRATION_SCRIPT",
+            "AUTHORED_FICTION_PACK"
+          ]
+        }
+      },
+      "required": [
+        "reference",
+        "role"
+      ],
+      "description": "reference由预检解析为已导入、同项目、不可变来源；fixture:引用仅供设计样例。"
+    },
+    "input": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "TOPIC"
+            },
+            "topic": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/source_ref"
+              },
+              "minItems": 0
+            }
+          },
+          "required": [
+            "kind",
+            "topic",
+            "source_refs"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "PASTED_SCRIPT"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/source_ref"
+              },
+              "minItems": 0
+            }
+          },
+          "required": [
+            "kind",
+            "text",
+            "source_refs"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "DOCUMENT_IMPORT"
+            },
+            "source_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/source_ref"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "kind",
+            "source_refs"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "REFERENCE_LINKS"
+            },
+            "reference_urls": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^https?://"
+              },
+              "minItems": 1
+            },
+            "source_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/source_ref"
+              },
+              "minItems": 0
+            }
+          },
+          "required": [
+            "kind",
+            "reference_urls",
+            "source_refs"
+          ]
+        }
+      ]
+    },
+    "duration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "TARGET",
+            "FIXED"
+          ]
+        },
+        "target_seconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 7200
+        },
+        "tolerance_percent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 25
+        }
+      },
+      "required": [
+        "mode",
+        "target_seconds",
+        "tolerance_percent"
+      ],
+      "description": "是编辑目标，不是已测语音时长。FIXED最终必须达到目标帧数；语音不能被截断。",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "FIXED"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "tolerance_percent": {
+                "const": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "edition_key": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{2,63}$"
+        },
+        "voice_locale": {
+          "type": "string",
+          "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+        },
+        "subtitle_locales": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "subtitle_mode": {
+          "type": "string",
+          "enum": [
+            "NONE",
+            "BURNED",
+            "SOFT"
+          ]
+        },
+        "aspect_ratio": {
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "3:4",
+            "1:1"
+          ]
+        },
+        "fps": {
+          "$ref": "#/$defs/fps"
+        },
+        "duration_policy": {
+          "type": "string",
+          "enum": [
+            "USE_SOURCE_TARGET",
+            "NATURAL_NARRATION"
+          ]
+        },
+        "allow_soft_subtitle_fallback": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "edition_key",
+        "voice_locale",
+        "subtitle_locales",
+        "subtitle_mode",
+        "aspect_ratio",
+        "fps",
+        "duration_policy",
+        "allow_soft_subtitle_fallback"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "subtitle_mode": {
+                "const": "NONE"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "subtitle_locales": {
+                "maxItems": 0
+              },
+              "allow_soft_subtitle_fallback": {
+                "const": false
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "subtitle_locales": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "inference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "LOCAL_ONLY",
+            "ALLOW_CONFIGURED_CLOUD"
+          ]
+        },
+        "allow_automatic_cloud_fallback": {
+          "const": false
+        },
+        "configured_cloud_provider_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "mode",
+        "allow_automatic_cloud_fallback",
+        "configured_cloud_provider_ids"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "LOCAL_ONLY"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "configured_cloud_provider_ids": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "research": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "OFFLINE_IMPORT",
+            "WEB_RESEARCH"
+          ]
+        },
+        "allowed_domains": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "max_external_requests": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "mode",
+        "allowed_domains",
+        "max_external_requests"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "OFFLINE_IMPORT"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "max_external_requests": {
+                "const": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_gpu_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_wall_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "initial_candidates_per_ordinary_beat": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "initial_candidates_per_key_identity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "max_creative_repairs_per_beat": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "max_technical_retries_per_step": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        }
+      },
+      "required": [
+        "max_gpu_seconds",
+        "max_wall_seconds",
+        "initial_candidates_per_ordinary_beat",
+        "initial_candidates_per_key_identity",
+        "max_creative_repairs_per_beat",
+        "max_technical_retries_per_step"
+      ],
+      "description": "授权预算上限，绝不是该设备的实测性能或预计完成时间。"
+    },
+    "fallback_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed_visual_fallbacks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "I2V_TO_MOTION_STILL",
+              "I2V_TO_INFORMATION_GRAPHIC",
+              "APPROVED_LOWER_RESOURCE_PROFILE"
+            ]
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "preserve_must_be_motion": {
+          "const": true
+        },
+        "preserve_human_locks": {
+          "const": true
+        },
+        "script_rewrite_policy": {
+          "type": "string",
+          "enum": [
+            "ALLOW_NEW_REVISION_WITHIN_BUDGET",
+            "NO_AUTOMATIC_REWRITE"
+          ]
+        },
+        "max_script_revisions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        }
+      },
+      "required": [
+        "allowed_visual_fallbacks",
+        "preserve_must_be_motion",
+        "preserve_human_locks",
+        "script_rewrite_policy",
+        "max_script_revisions"
+      ]
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requested_action": {
+          "type": "string",
+          "enum": [
+            "EXPORT_ONLY",
+            "PUBLISH_IF_AUTHORIZED"
+          ]
+        },
+        "intended_territories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "target_platforms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "account_authorization_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "license_policy": {
+          "const": "REQUIRE_VERIFIED_SCOPE"
+        }
+      },
+      "required": [
+        "requested_action",
+        "intended_territories",
+        "target_platforms",
+        "account_authorization_refs",
+        "license_policy"
+      ]
+    },
+    "schedule_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schedule_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scheduled_for": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+        },
+        "config_revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "schedule_id",
+        "scheduled_for",
+        "config_revision"
+      ],
+      "description": "由调度服务生成；数据库去重仅(schedule_id, scheduled_for)，不包含config_revision。"
+    }
+  }
+}

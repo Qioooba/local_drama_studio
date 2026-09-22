@@ -101,6 +101,11 @@ class Settings(BaseModel):
         "http://127.0.0.1:5173",
         "http://localhost:5173",
     )
+    # Explicit authorities a same-origin write may arrive on. ``None`` derives them
+    # from ``allowed_origins``; an empty tuple trusts no Host at all.  This is the
+    # independent Host check that a DNS-rebinding client cannot satisfy, because it
+    # never compares the client's own Origin with the client's own Host.
+    trusted_hosts: tuple[str, ...] | None = None
     tool_fallback_dirs: tuple[str, ...] = ()
     ffmpeg_override: Path | None = Field(default=None, exclude=True)
     ffprobe_override: Path | None = Field(default=None, exclude=True)
@@ -293,6 +298,17 @@ class Settings(BaseModel):
     @property
     def workflow_packages_root(self) -> Path:
         return self.work_root / "workflow_packages"
+
+    @property
+    def explainer_frames_root(self) -> Path:
+        """Where extracted explainer QC frames live.
+
+        The explainer visual QC layer reads real decoded frames; the sampling step
+        writes them here and the provider refuses any frame path that escapes this
+        root, so a job payload can never point the reader at an arbitrary file.
+        """
+
+        return self.work_root / "explainer_frames"
 
     def resolve_project_root(self, root_rel: str | Path, *, must_exist: bool = True) -> Path:
         """Resolve the canonical database ``projects.root_rel`` contract."""

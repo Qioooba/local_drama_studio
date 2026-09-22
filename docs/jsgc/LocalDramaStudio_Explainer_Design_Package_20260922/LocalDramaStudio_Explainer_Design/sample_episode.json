@@ -1,0 +1,4207 @@
+{
+  "schema_version": "1.0.0",
+  "fixture_id": "FICTION_LIGHTHOUSE_HANDOVER_300S_V1",
+  "title": "灯塔最后一页值班记录",
+  "display_title": "虚构故事工程验收样片｜灯塔最后一页值班记录",
+  "purpose": "验收叙事、实体一致性、本地 TTS、字幕、合成、多语言与审查闭环；不验收真实历史事实检索或史实真伪。",
+  "status": "specification_only_no_media_generated",
+  "fiction": true,
+  "created_content_provenance": {
+    "type": "original_authored_fixture",
+    "external_sources": [],
+    "historical_authenticity_claimed": false
+  },
+  "format": {
+    "master_width": 1920,
+    "master_height": 1080,
+    "fps": 25,
+    "planned_duration_s": 300,
+    "planned_frames": 7500,
+    "frame_interval": "half_open_start_inclusive_end_exclusive",
+    "timing_status": "planned",
+    "audio_sample_rate_hz": 48000,
+    "master_aspect": "16:9"
+  },
+  "language_plan": {
+    "source_locale": "zh-CN",
+    "locales": [
+      "zh-CN",
+      "en-US"
+    ],
+    "voice_tracks_separate": true,
+    "bilingual_subtitles": true,
+    "english_translation_status": "human_readable_authored_translation_not_tts_tested",
+    "proper_noun_dictionary": {
+      "岚湾灯塔": "Lanwan Lighthouse",
+      "沈砚": "Shen Yan",
+      "林澄": "Lin Cheng",
+      "周禾": "Zhou He"
+    },
+    "retiming": "Each locale must synthesize and align separately. Shared shot semantics may be retimed; planned Chinese timestamps must not be copied as actual English timestamps.",
+    "on_screen_text_dictionary": {
+      "虚构故事工程验收样片": "Fictional Story · Engineering Acceptance Sample",
+      "灯塔最后一页值班记录": "The Lighthouse Logbook’s Last Page",
+      "原创虚构 · AI画面演绎": "Original Fiction · AI Visualization",
+      "交接检查": "Handover Inspection",
+      "观察窗": "Observation Window",
+      "光源亮": "Light Source On",
+      "观察窗无光": "Observation Window Dark",
+      "原因待核": "Cause Unconfirmed",
+      "时间回溯 21:05": "Rewind · 21:05",
+      "回到 21:20": "Back to 21:20",
+      "计划": "Plan",
+      "结果": "Results",
+      "检查后补记": "Added After Inspection",
+      "局部记录": "Partial Record",
+      "记录内容示意": "Record Content · Diagram",
+      "检查过程": "Inspection Process",
+      "窗口变化": "Window Change",
+      "三声铃后，检查观察窗": "After Three Bell Rings, Inspect the Observation Window",
+      "灯未熄灭，观察窗完成检查": "Light Remained On; Observation-Window Inspection Completed"
+    },
+    "localize_cards_and_disclosures": true
+  },
+  "text_statistics": {
+    "zh_han_characters": 1117,
+    "zh_characters_with_punctuation": 1252,
+    "en_whitespace_tokens": 696,
+    "english_count_method": "Sum len(segment.narration[en-US].split()); text size estimate only, not measured TTS duration."
+  },
+  "style_profile": {
+    "id": "STYLE_GRAYBLUE_COPPER_V1",
+    "render_style": "灰蓝与铜色的叙事插画，稳定线条、适度纸张纹理、暖铜光源、克制悬疑",
+    "colors": {
+      "dark_blue_gray": "#263C4D",
+      "slate_blue": "#667D8D",
+      "copper": "#B78254",
+      "paper": "#E4DDD0"
+    },
+    "prohibited": [
+      "假档案馆印章",
+      "真实史料水印",
+      "新闻台标",
+      "第四个人物",
+      "鬼怪或暗中反派",
+      "随机可读文字",
+      "血腥或凶杀",
+      "主灯熄灭",
+      "虚构的航海操作教程"
+    ],
+    "disclosure": "片头明确虚构；全片角标“原创虚构 · AI画面演绎”；片尾再说明工程验收用途。"
+  },
+  "entities": [
+    {
+      "id": "SHEN",
+      "type": "character",
+      "name": "沈砚",
+      "latin_name": "Shen Yan",
+      "age": 55,
+      "role": "守灯员，次日退休",
+      "appearance": "男性；方长脸，短灰发，细眉；无胡须；身形中等略瘦",
+      "wardrobe": "深灰蓝旧呢外套、暗铜色纽扣、米灰围巾；本片不换装",
+      "continuity": "总站三人组左侧时保持左侧，只有镜头说明重新排位时可变；不演成阴险嫌疑人",
+      "reference_pack": [
+        "正脸半身",
+        "左前四分之三半身",
+        "全身服装参考"
+      ],
+      "three_view_required": false
+    },
+    {
+      "id": "LIN",
+      "type": "character",
+      "name": "林澄",
+      "latin_name": "Lin Cheng",
+      "age": 28,
+      "role": "负责交接检查的检修员",
+      "appearance": "女性；椭圆脸，齐耳黑短发，清晰直眉；中等身高",
+      "wardrobe": "灰蓝工装、浅米领口、铜色胸扣；不加未设定工具腰带",
+      "continuity": "门边翻纸与检查灯室镜头使用同一发型和袖口；动作克制",
+      "reference_pack": [
+        "正脸半身",
+        "右前四分之三半身",
+        "袖口与服装局部"
+      ],
+      "three_view_required": false
+    },
+    {
+      "id": "ZHOU",
+      "type": "character",
+      "name": "周禾",
+      "latin_name": "Zhou He",
+      "age": 19,
+      "role": "记录学徒",
+      "appearance": "男性；窄圆脸，短黑发，脸上无胡须；比沈砚略高",
+      "wardrobe": "浅灰蓝棉外套、深蓝领口；全片无帽子",
+      "continuity": "保持年轻但成年；疑惑不等于惊恐；记录行为不画成销毁记录",
+      "reference_pack": [
+        "正脸半身",
+        "右前四分之三半身"
+      ],
+      "three_view_required": false
+    },
+    {
+      "id": "LOC_LANTERN",
+      "type": "location",
+      "name": "灯室",
+      "description": "楼上圆形灯室，铜色固定灯具始终亮；灰蓝墙面；门内右侧有固定纸夹；观察构件为虚构场景装置",
+      "layout_locks": [
+        "灯具位于场景中心偏左",
+        "固定纸夹在门内右侧",
+        "门边在干燥室内",
+        "禁止把光源直接熄灭"
+      ],
+      "reference_pack": [
+        "室内主视角",
+        "门边反打视角"
+      ]
+    },
+    {
+      "id": "LOC_WATCH",
+      "type": "location",
+      "name": "值班室",
+      "description": "楼下室内，木质桌面；一侧为看见户外风雨的外窗，另一侧为通向灯室光源的内部观察窗；两窗用途必须区分",
+      "layout_locks": [
+        "外窗只能显示风雨，不承担灯光是否熄灭的证据",
+        "内部观察窗固定在桌后墙面",
+        "日志主要在桌面中间"
+      ],
+      "reference_pack": [
+        "三人桌面主视角",
+        "观察窗近景"
+      ]
+    },
+    {
+      "id": "PROP_LOG",
+      "type": "prop",
+      "name": "值班日志",
+      "description": "深棕封面、米灰纸页，末页属于该日志；可拆夹式记录册，取下页不是撕毁；仅一册与一张末页",
+      "continuity": "21:10 到21:30末页在灯室门边或被取下检查；21:30后回册；原始原因待核记录保留",
+      "reference_pack": [
+        "合上封面",
+        "打开与末页版式"
+      ],
+      "text_rendering": "所有可读文字由排版引擎绘制，图像模型不负责字符正确性"
+    },
+    {
+      "id": "PROP_BELL",
+      "type": "prop",
+      "name": "铜铃",
+      "description": "小型铜色手持铃，深棕短柄；只有一个",
+      "continuity": "21:16 在沈砚手中；21:32 在值班室合上日志旁；不得无故复制",
+      "reference_pack": [
+        "侧前三分之四单张"
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "id": "F001",
+      "statement": "虚构世界设定：1936 年冬夜、岚湾灯塔；地名、人物和事件均为原创虚构，不对应真实事件。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F002",
+      "statement": "沈砚为即将退休的守灯员；林澄为负责交接检查的检修员；周禾为负责记录的学徒；当晚只有这三人，三人未离开灯塔。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F003",
+      "statement": "仅两个叙事场景：楼上的灯室、楼下的值班室；灯室门边属于灯室场景，楼梯只作剪辑关系，不创建第三个场景。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F004",
+      "statement": "当晚有风雨；灯室门内干燥，雨在室外；值班室方向的观察窗通过内部观察位置看见灯室光源。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F005",
+      "statement": "两个核心可移动道具：深棕封面的值班日志（末页属于同一道具）与铜铃；窗、遮挡构件、门边固定纸夹属于场景固定装置。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F006",
+      "statement": "21:05，沈砚在日志末页写“交接检查”“三声铃后，检查观察窗”，计划 21:17 检查，结果栏留白。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F007",
+      "statement": "21:10，沈砚让周禾把日志末页送到灯室门边固定纸夹；周禾照办，纸的背面向外且未读正面；纸自此一直在该处。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F008",
+      "statement": "21:12，林澄读检查安排并查看灯光；整个故事期间灯室光源一直亮着，未熄灭。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F009",
+      "statement": "21:16，沈砚在灯室敲铜铃三次，作为预先约定的准备信号；楼下风雨声较强，周禾没有听清三下铃。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F010",
+      "statement": "21:17:00，林澄进行预定的内部观察窗检查，遮住朝向值班室的内部观察位置，造成值班室观察窗无光；这不是关闭光源。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F011",
+      "statement": "21:17:47，内部观察位置恢复，观察窗重新明亮；检查持续 47 秒；林澄在检查完成后补记开始与结束时间。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F012",
+      "statement": "21:18，周禾在日志前一页写“观察窗无光四十七秒，原因待核”；他记录了所见，但没有完整听到准备信号。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F013",
+      "statement": "21:20，三人在值班室比对情况，发现日志末页不在本中；没有人销毁或伪造记录。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F014",
+      "statement": "21:24，三人到灯室门边找到纸，林澄翻转它，正面标题“交接检查”露出，周禾确认这是自己送来的日志末页。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F015",
+      "statement": "21:26，比对计划、检查结果与周禾观察，47 秒一致；计划时间预先写，实际结果检查后写，不存在预知结果。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F016",
+      "statement": "21:30，周禾补正“灯未熄灭，观察窗完成检查”；三人签名；末页放回日志，没有覆盖或抹去原先“原因待核”的记录。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F017",
+      "statement": "21:32，三人回值班室，铜铃放在合上日志旁，灯光稳定；此次为沈砚退休前最后一次交接。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    },
+    {
+      "id": "F018",
+      "statement": "唯一结局：预定检查导致观察窗短暂无光，末页被按安排放到灯室门边；不存在破坏、鬼怪、第四人或另一重反转。",
+      "source_kind": "authored_fiction_fact_pack",
+      "verified_as_history": false
+    }
+  ],
+  "diegetic_timeline": [
+    {
+      "local_time": "21:05:00",
+      "claim_ids": [
+        "F006"
+      ]
+    },
+    {
+      "local_time": "21:10:00",
+      "claim_ids": [
+        "F007"
+      ]
+    },
+    {
+      "local_time": "21:12:00",
+      "claim_ids": [
+        "F008"
+      ]
+    },
+    {
+      "local_time": "21:16:00",
+      "claim_ids": [
+        "F009"
+      ]
+    },
+    {
+      "local_time": "21:17:00",
+      "claim_ids": [
+        "F010"
+      ]
+    },
+    {
+      "local_time": "21:17:47",
+      "claim_ids": [
+        "F011"
+      ]
+    },
+    {
+      "local_time": "21:18:00",
+      "claim_ids": [
+        "F012"
+      ]
+    },
+    {
+      "local_time": "21:20:00",
+      "claim_ids": [
+        "F013"
+      ]
+    },
+    {
+      "local_time": "21:24:00",
+      "claim_ids": [
+        "F014"
+      ]
+    },
+    {
+      "local_time": "21:26:00",
+      "claim_ids": [
+        "F015"
+      ]
+    },
+    {
+      "local_time": "21:30:00",
+      "claim_ids": [
+        "F016"
+      ]
+    },
+    {
+      "local_time": "21:32:00",
+      "claim_ids": [
+        "F017"
+      ]
+    }
+  ],
+  "narration_segments": [
+    {
+      "id": "N01",
+      "timing_status": "planned",
+      "planned_start_s": 0,
+      "planned_end_s": 5,
+      "planned_duration_s": 5,
+      "planned_start_frame": 0,
+      "planned_end_frame_exclusive": 125,
+      "narration": {
+        "zh-CN": "虚构验收故事：灯真灭了四十七秒？",
+        "en-US": "A fictional test story: Did the light really go out for forty-seven seconds?"
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F001",
+        "F010",
+        "F011"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": "疑问句不作为事件事实断言；结尾提问属于原创表达。",
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S01"
+      ]
+    },
+    {
+      "id": "N02",
+      "timing_status": "planned",
+      "planned_start_s": 5,
+      "planned_end_s": 18,
+      "planned_duration_s": 13,
+      "planned_start_frame": 125,
+      "planned_end_frame_exclusive": 450,
+      "narration": {
+        "zh-CN": "一九三六年，一个虚构的冬夜，岚湾灯塔被风雨围住。值班室的观察窗突然没有了亮光，日志的最后一页也找不到了。",
+        "en-US": "On an invented winter night in 1936, wind and rain surrounded Lanwan Lighthouse. The watch-room observation window suddenly went dark. The logbook’s final page was missing, too."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F001",
+        "F003",
+        "F004",
+        "F013"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S02",
+        "S03"
+      ]
+    },
+    {
+      "id": "N03",
+      "timing_status": "planned",
+      "planned_start_s": 18,
+      "planned_end_s": 30,
+      "planned_duration_s": 12,
+      "planned_start_frame": 450,
+      "planned_end_frame_exclusive": 750,
+      "narration": {
+        "zh-CN": "塔里只有三个人：即将退休的守灯员沈砚，来接手检查的检修员林澄，以及负责记录的学徒周禾。三人都没有离开。",
+        "en-US": "Only three people were inside: Shen Yan, the keeper approaching retirement; Lin Cheng, the technician handling the inspection; and Zhou He, the apprentice taking notes. None had left."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F002"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S04",
+        "S05"
+      ]
+    },
+    {
+      "id": "N04",
+      "timing_status": "planned",
+      "planned_start_s": 30,
+      "planned_end_s": 42,
+      "planned_duration_s": 12,
+      "planned_start_frame": 750,
+      "planned_end_frame_exclusive": 1050,
+      "narration": {
+        "zh-CN": "晚上九点二十分，周禾把日志摊开。他刚记下观察窗无光四十七秒，原因待核，可翻到最后，记录竟少了一页。",
+        "en-US": "At 9:20 p.m., Zhou opened the logbook. He had written, “Observation window dark for forty-seven seconds; cause unconfirmed.” But when he reached the end, a page was missing."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F012",
+        "F013"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S06",
+        "S07"
+      ]
+    },
+    {
+      "id": "N05",
+      "timing_status": "planned",
+      "planned_start_s": 42,
+      "planned_end_s": 56,
+      "planned_duration_s": 14,
+      "planned_start_frame": 1050,
+      "planned_end_frame_exclusive": 1400,
+      "narration": {
+        "zh-CN": "那一页本来用于今晚的交接。检查刚刚结束，纸却不在原处。纸页离开册子，不等于记录已经消失。是被谁收走了，还是周禾把两件无关的事情连在了一起？",
+        "en-US": "That page was meant for tonight’s handover. The inspection had just ended, yet the sheet was gone. Outside the book did not mean lost. Had someone removed it, or was Zhou connecting two unrelated things?"
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F006",
+        "F013"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": "疑问句不作为事件事实断言；结尾提问属于原创表达。",
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S08",
+        "S09"
+      ]
+    },
+    {
+      "id": "N06",
+      "timing_status": "planned",
+      "planned_start_s": 56,
+      "planned_end_s": 68,
+      "planned_duration_s": 12,
+      "planned_start_frame": 1400,
+      "planned_end_frame_exclusive": 1700,
+      "narration": {
+        "zh-CN": "沈砚没有责备他。林澄也没有急着下结论。他们先把问题分开：观察窗的光为什么消失，最后一页又究竟去了哪里。每个判断，都要找到对应的记录。",
+        "en-US": "Shen did not blame him, and Lin did not rush to a conclusion. They separated the questions: Why had the window gone dark, and where had the final page gone? Each claim needed a matching record."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F013"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S10",
+        "S11"
+      ]
+    },
+    {
+      "id": "N07",
+      "timing_status": "planned",
+      "planned_start_s": 68,
+      "planned_end_s": 81,
+      "planned_duration_s": 13,
+      "planned_start_frame": 1700,
+      "planned_end_frame_exclusive": 2025,
+      "narration": {
+        "zh-CN": "把时间拨回九点零五分。沈砚在日志末页写下标题和预定检查时间，结果一栏留白。此时，四十七秒的检查还没有发生。",
+        "en-US": "Rewind to 9:05. On the final page, Shen wrote a heading and the planned inspection time. He left the results blank. The forty-seven-second inspection had not happened yet."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F006"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S12"
+      ]
+    },
+    {
+      "id": "N08",
+      "timing_status": "planned",
+      "planned_start_s": 81,
+      "planned_end_s": 93,
+      "planned_duration_s": 12,
+      "planned_start_frame": 2025,
+      "planned_end_frame_exclusive": 2325,
+      "narration": {
+        "zh-CN": "九点十分，沈砚让周禾把这一页送上楼，夹在灯室门边。纸的背面朝外，周禾只顾把它夹稳，没有读到正面的字。",
+        "en-US": "At 9:10, Shen asked Zhou to take the sheet upstairs and clip it beside the lantern-room door. Its blank back faced outward. Zhou secured it without reading the front."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F007"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S13",
+        "S14"
+      ]
+    },
+    {
+      "id": "N09",
+      "timing_status": "planned",
+      "planned_start_s": 93,
+      "planned_end_s": 107,
+      "planned_duration_s": 14,
+      "planned_start_frame": 2325,
+      "planned_end_frame_exclusive": 2675,
+      "narration": {
+        "zh-CN": "九点十二分，林澄来到灯室。她先看了门边的安排，再查看灯光。灯室一直明亮，接下来要检查的，是内部观察窗。",
+        "en-US": "At 9:12, Lin entered the lantern room. She read the plan by the door, then checked the light. The room stayed bright. The upcoming inspection concerned the internal observation window."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F008"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S15",
+        "S16"
+      ]
+    },
+    {
+      "id": "N10",
+      "timing_status": "planned",
+      "planned_start_s": 107,
+      "planned_end_s": 119,
+      "planned_duration_s": 12,
+      "planned_start_frame": 2675,
+      "planned_end_frame_exclusive": 2975,
+      "narration": {
+        "zh-CN": "九点十六分，沈砚敲了三下铜铃。这是纸上写好的准备信号。铃声在灯室响起，楼下却混着风声和不断拍窗的雨。",
+        "en-US": "At 9:16, Shen rang the brass bell three times: the preparation signal written on the sheet. The bell sounded upstairs, while wind and driving rain filled the room below."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F009"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S17",
+        "S18"
+      ]
+    },
+    {
+      "id": "N11",
+      "timing_status": "planned",
+      "planned_start_s": 119,
+      "planned_end_s": 133,
+      "planned_duration_s": 14,
+      "planned_start_frame": 2975,
+      "planned_end_frame_exclusive": 3325,
+      "narration": {
+        "zh-CN": "周禾在值班室，没有听清那三下铃。他盯着观察窗。九点十七分，熟悉的亮光消失了，于是开始记下这段没有光的时间。",
+        "en-US": "Down in the watch room, Zhou did not hear the three rings clearly. He watched the observation window. At 9:17, its familiar glow disappeared, and he began recording the interval."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F009",
+        "F010",
+        "F012"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S19",
+        "S20"
+      ]
+    },
+    {
+      "id": "N12",
+      "timing_status": "planned",
+      "planned_start_s": 133,
+      "planned_end_s": 145,
+      "planned_duration_s": 12,
+      "planned_start_frame": 3325,
+      "planned_end_frame_exclusive": 3625,
+      "narration": {
+        "zh-CN": "可是，同一时刻的灯室并没有变黑。林澄正在进行约定的观察窗检查，遮住的是通向值班室的观察位置，并不是灯本身。",
+        "en-US": "But the lantern room did not go dark. Lin was carrying out the agreed observation-window inspection. What was covered was the viewing opening toward the watch room, not the light itself."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F008",
+        "F010"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S21",
+        "S22"
+      ]
+    },
+    {
+      "id": "N13",
+      "timing_status": "planned",
+      "planned_start_s": 145,
+      "planned_end_s": 158,
+      "planned_duration_s": 13,
+      "planned_start_frame": 3625,
+      "planned_end_frame_exclusive": 3950,
+      "narration": {
+        "zh-CN": "四十七秒后，观察窗恢复明亮。林澄完成检查，补上开始和结束的时刻。周禾在楼下，也把自己看见的变化写进日志。",
+        "en-US": "Forty-seven seconds later, the window brightened again. Lin finished the inspection and added its start and end times. Downstairs, Zhou recorded the change he had seen in the logbook."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F011",
+        "F012"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S23",
+        "S24"
+      ]
+    },
+    {
+      "id": "N14",
+      "timing_status": "planned",
+      "planned_start_s": 158,
+      "planned_end_s": 170,
+      "planned_duration_s": 12,
+      "planned_start_frame": 3950,
+      "planned_end_frame_exclusive": 4250,
+      "narration": {
+        "zh-CN": "两份记录都说了真话，却各自只记下一部分。一个记的是检查过程，一个记的是窗口变化，它们还没有被放在一起。",
+        "en-US": "Both records were truthful, but each held only part of the story. One described the inspection; the other described the window. Nobody had compared them side by side yet."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F011",
+        "F012",
+        "F015"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S25",
+        "S26"
+      ]
+    },
+    {
+      "id": "N15",
+      "timing_status": "planned",
+      "planned_start_s": 170,
+      "planned_end_s": 184,
+      "planned_duration_s": 14,
+      "planned_start_frame": 4250,
+      "planned_end_frame_exclusive": 4600,
+      "narration": {
+        "zh-CN": "所以，九点二十分那个看似离奇的空缺，并不能直接证明有人动了手脚。要弄清楚，还得回到那张纸最后出现的位置。",
+        "en-US": "The apparently mysterious gap at 9:20 therefore did not prove that anyone had tampered with the record. To understand it, they needed to return to the sheet’s last known location."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F013",
+        "F018"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S27"
+      ]
+    },
+    {
+      "id": "N16",
+      "timing_status": "planned",
+      "planned_start_s": 184,
+      "planned_end_s": 196,
+      "planned_duration_s": 12,
+      "planned_start_frame": 4600,
+      "planned_end_frame_exclusive": 4900,
+      "narration": {
+        "zh-CN": "九点二十四分，三人来到灯室门边。纸还夹在那里，背面朝外。林澄把它翻过来，标题终于完整露出：交接检查。",
+        "en-US": "At 9:24, all three reached the lantern-room door. The sheet was still clipped there, its back facing outward. Lin turned it over. The full heading appeared: “Handover Inspection.”"
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F014"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S28",
+        "S29"
+      ]
+    },
+    {
+      "id": "N17",
+      "timing_status": "planned",
+      "planned_start_s": 196,
+      "planned_end_s": 210,
+      "planned_duration_s": 14,
+      "planned_start_frame": 4900,
+      "planned_end_frame_exclusive": 5250,
+      "narration": {
+        "zh-CN": "下面写着：三声铃后，检查观察窗。预定时间是九点十七分。旁边的结果是检查后补写的，不能把计划误读成事先知道结果。",
+        "en-US": "Below it: “After three bell rings, inspect the observation window.” The scheduled time was 9:17. The results were added afterward; the plan did not predict the outcome in advance."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F006",
+        "F011",
+        "F015"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S30"
+      ]
+    },
+    {
+      "id": "N18",
+      "timing_status": "planned",
+      "planned_start_s": 210,
+      "planned_end_s": 222,
+      "planned_duration_s": 12,
+      "planned_start_frame": 5250,
+      "planned_end_frame_exclusive": 5550,
+      "narration": {
+        "zh-CN": "记录的开始时刻是九点十七分，结束是九点十七分四十七秒。这个间隔，与周禾在楼下记下的四十七秒正好一致。",
+        "en-US": "The recorded start was 9:17:00, and the end was 9:17:47. That interval matched the forty-seven seconds Zhou had recorded from the watch room below."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F011",
+        "F012",
+        "F015"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S31",
+        "S32"
+      ]
+    },
+    {
+      "id": "N19",
+      "timing_status": "planned",
+      "planned_start_s": 222,
+      "planned_end_s": 235,
+      "planned_duration_s": 13,
+      "planned_start_frame": 5550,
+      "planned_end_frame_exclusive": 5875,
+      "narration": {
+        "zh-CN": "周禾这才确认，自己送上来的那张白纸，就是日志的最后一页。它没有被藏起来，只是翻了一个面，又换了一个位置。",
+        "en-US": "Zhou now confirmed that the apparently blank sheet he had carried upstairs was the logbook’s final page. Nobody had hidden it. It had simply been turned over and moved."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F007",
+        "F014"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S33"
+      ]
+    },
+    {
+      "id": "N20",
+      "timing_status": "planned",
+      "planned_start_s": 235,
+      "planned_end_s": 247,
+      "planned_duration_s": 12,
+      "planned_start_frame": 5875,
+      "planned_end_frame_exclusive": 6175,
+      "narration": {
+        "zh-CN": "而他看到的没有光，也只属于那扇观察窗。灯室里的光源一直亮着。把观察到的现象，直接当成整个灯塔的状态，误会就出现了。",
+        "en-US": "And the darkness he saw belonged only to that observation window. The light source upstairs had stayed on. The misunderstanding came from treating one observed change as the state of the whole lighthouse."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F008",
+        "F010",
+        "F018"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S34",
+        "S35"
+      ]
+    },
+    {
+      "id": "N21",
+      "timing_status": "planned",
+      "planned_start_s": 247,
+      "planned_end_s": 261,
+      "planned_duration_s": 14,
+      "planned_start_frame": 6175,
+      "planned_end_frame_exclusive": 6525,
+      "narration": {
+        "zh-CN": "三个人终于把同一件事拼完整：沈砚安排检查，林澄执行并补记结果，周禾记录窗口变化。缺的不是答案，而是彼此手里的那一部分。",
+        "en-US": "Together, their accounts formed one complete event: Shen planned the inspection, Lin performed it and added the results, and Zhou recorded the window. Each had held a different piece."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F006",
+        "F009",
+        "F010",
+        "F011",
+        "F012",
+        "F015"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S36"
+      ]
+    },
+    {
+      "id": "N22",
+      "timing_status": "planned",
+      "planned_start_s": 261,
+      "planned_end_s": 273,
+      "planned_duration_s": 12,
+      "planned_start_frame": 6525,
+      "planned_end_frame_exclusive": 6825,
+      "narration": {
+        "zh-CN": "九点三十分，周禾补正了记录：灯未熄灭，观察窗完成检查。三人分别签名。最后一页回到日志中，两段时间也对上了。",
+        "en-US": "At 9:30, Zhou corrected the entry: “Light remained on; observation-window inspection completed.” All three signed. The final page returned to the logbook, and the two time records agreed."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F016"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S37",
+        "S38"
+      ]
+    },
+    {
+      "id": "N23",
+      "timing_status": "planned",
+      "planned_start_s": 273,
+      "planned_end_s": 288,
+      "planned_duration_s": 15,
+      "planned_start_frame": 6825,
+      "planned_end_frame_exclusive": 7200,
+      "narration": {
+        "zh-CN": "九点三十二分，他们回到值班室，把铜铃放在合上的日志旁。这是沈砚退休前的最后一次交接。风雨还在，灯光始终稳定。",
+        "en-US": "At 9:32, they returned to the watch room and placed the brass bell beside the closed logbook. This was Shen’s final handover before retirement. The storm continued; the light remained steady."
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F017"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": null,
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S39"
+      ]
+    },
+    {
+      "id": "N24",
+      "timing_status": "planned",
+      "planned_start_s": 288,
+      "planned_end_s": 300,
+      "planned_duration_s": 12,
+      "planned_start_frame": 7200,
+      "planned_end_frame_exclusive": 7500,
+      "narration": {
+        "zh-CN": "故事的答案到这里就结束了，没有另一个藏在暗处的人。如果只留下四十七秒的黑暗，你会不会也太快认定，灯真的灭过？",
+        "en-US": "That is the whole answer. There was no hidden fourth person. If all you had seen were forty-seven seconds of darkness, might you also have decided too quickly that the light went out?"
+      },
+      "speaker_id": "NARRATOR_01",
+      "claim_ids": [
+        "F018"
+      ],
+      "content_kind": "original_fiction_narration",
+      "editorial_note": "疑问句不作为事件事实断言；结尾提问属于原创表达。",
+      "tts_status": "not_generated",
+      "audio_asset_id": null,
+      "alignment_status": "not_run",
+      "caption_timing_status": "not_aligned",
+      "shot_ids": [
+        "S40"
+      ]
+    }
+  ],
+  "shots": [
+    {
+      "id": "S01",
+      "narration_segment_id": "N01",
+      "type": "information_or_scene_detail",
+      "timing_status": "planned",
+      "planned_start_s": 0,
+      "planned_end_s": 5,
+      "planned_duration_s": 5,
+      "planned_start_frame": 0,
+      "planned_end_frame_exclusive": 125,
+      "planned_in_timecode": "00:00:00:00",
+      "planned_out_timecode_exclusive": "00:00:05:00",
+      "visual_description": "灰蓝灯塔剪影与标题卡；显著文字“虚构故事工程验收样片”，副标题“灯塔最后一页值班记录”；提出“灯真的灭过？”",
+      "entity_ids": [
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F001",
+        "F018"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "文字淡入，禁止拟造档案或新闻台标",
+      "keyframe_ids": [
+        "KF_S01_A"
+      ],
+      "keyframe_plan": "文字、数值、箭头由排版/合成器绘制；背景插画只做底图。",
+      "fallback": null,
+      "provider_capability_required": [
+        "exact_text_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": false,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S02",
+      "narration_segment_id": "N02",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 5,
+      "planned_end_s": 11,
+      "planned_duration_s": 6,
+      "planned_start_frame": 125,
+      "planned_end_frame_exclusive": 275,
+      "planned_in_timecode": "00:00:05:00",
+      "planned_out_timecode_exclusive": "00:00:11:00",
+      "visual_description": "从值班室室内望见窗上风雨；画面边缘留出稳定的室内灰蓝铜色关系",
+      "entity_ids": [
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F001",
+        "F003",
+        "F004"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "缓慢横移，雨只作用窗外区域",
+      "keyframe_ids": [
+        "KF_S02_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S03",
+      "narration_segment_id": "N02",
+      "type": "i2v",
+      "timing_status": "planned",
+      "planned_start_s": 11,
+      "planned_end_s": 18,
+      "planned_duration_s": 7,
+      "planned_start_frame": 275,
+      "planned_end_frame_exclusive": 450,
+      "planned_in_timecode": "00:00:11:00",
+      "planned_out_timecode_exclusive": "00:00:18:00",
+      "visual_description": "值班室的内部观察窗由明转暗；不拍塔外航标熄灭",
+      "entity_ids": [
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F010",
+        "F011"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "锁定机位；亮度在观察窗遮罩内变化",
+      "keyframe_ids": [
+        "KF_S03_A",
+        "KF_S03_B"
+      ],
+      "keyframe_plan": "首帧必须验收；若本地 I2V 明确支持首尾帧，再使用末帧条件；否则不伪造双端控制能力，改用首帧条件 + 已审核末端切出。",
+      "fallback": "降级为同一已审核首帧的确定性轻推/平移，保持本镜头语义；输出记录降级原因和实际类型。",
+      "provider_capability_required": [
+        "image_to_video"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S04",
+      "narration_segment_id": "N03",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 18,
+      "planned_end_s": 24,
+      "planned_duration_s": 6,
+      "planned_start_frame": 450,
+      "planned_end_frame_exclusive": 600,
+      "planned_in_timecode": "00:00:18:00",
+      "planned_out_timecode_exclusive": "00:00:24:00",
+      "visual_description": "沈砚、林澄、周禾在值班室的三人定位镜头；左中右次序固定",
+      "entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F002",
+        "F003"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "轻微推进；三人无夸张表情",
+      "keyframe_ids": [
+        "KF_S04_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S05",
+      "narration_segment_id": "N03",
+      "type": "information_or_scene_detail",
+      "timing_status": "planned",
+      "planned_start_s": 24,
+      "planned_end_s": 30,
+      "planned_duration_s": 6,
+      "planned_start_frame": 600,
+      "planned_end_frame_exclusive": 750,
+      "planned_in_timecode": "00:00:24:00",
+      "planned_out_timecode_exclusive": "00:00:30:00",
+      "visual_description": "三张半身人物卡并排，姓名和职责由排版层绘制",
+      "entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU"
+      ],
+      "claim_ids": [
+        "F002"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "依次强调姓名；人物图层完全不变形",
+      "keyframe_ids": [
+        "KF_S05_A"
+      ],
+      "keyframe_plan": "文字、数值、箭头由排版/合成器绘制；背景插画只做底图。",
+      "fallback": null,
+      "provider_capability_required": [
+        "exact_text_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S06",
+      "narration_segment_id": "N04",
+      "type": "i2v",
+      "timing_status": "planned",
+      "planned_start_s": 30,
+      "planned_end_s": 36,
+      "planned_duration_s": 6,
+      "planned_start_frame": 750,
+      "planned_end_frame_exclusive": 900,
+      "planned_in_timecode": "00:00:30:00",
+      "planned_out_timecode_exclusive": "00:00:36:00",
+      "visual_description": "周禾在值班室打开日志，停在仍保留原始待核记录的一页",
+      "entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F012",
+        "F013"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "中近景，小幅翻开封面；文字使用稳定叠加层",
+      "keyframe_ids": [
+        "KF_S06_A",
+        "KF_S06_B"
+      ],
+      "keyframe_plan": "首帧必须验收；若本地 I2V 明确支持首尾帧，再使用末帧条件；否则不伪造双端控制能力，改用首帧条件 + 已审核末端切出。",
+      "fallback": "降级为同一已审核首帧的确定性轻推/平移，保持本镜头语义；输出记录降级原因和实际类型。",
+      "provider_capability_required": [
+        "image_to_video"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S07",
+      "narration_segment_id": "N04",
+      "type": "information_or_scene_detail",
+      "timing_status": "planned",
+      "planned_start_s": 36,
+      "planned_end_s": 42,
+      "planned_duration_s": 6,
+      "planned_start_frame": 900,
+      "planned_end_frame_exclusive": 1050,
+      "planned_in_timecode": "00:00:36:00",
+      "planned_out_timecode_exclusive": "00:00:42:00",
+      "visual_description": "日志结构示意：前一页有“原因待核”，末页位置空缺；不用撕裂痕迹暗示毁证",
+      "entity_ids": [
+        "PROP_LOG"
+      ],
+      "claim_ids": [
+        "F012",
+        "F013"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "精确文字和页标渐显",
+      "keyframe_ids": [
+        "KF_S07_A"
+      ],
+      "keyframe_plan": "文字、数值、箭头由排版/合成器绘制；背景插画只做底图。",
+      "fallback": null,
+      "provider_capability_required": [
+        "exact_text_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S08",
+      "narration_segment_id": "N05",
+      "type": "i2v",
+      "timing_status": "planned",
+      "planned_start_s": 42,
+      "planned_end_s": 49,
+      "planned_duration_s": 7,
+      "planned_start_frame": 1050,
+      "planned_end_frame_exclusive": 1225,
+      "planned_in_timecode": "00:00:42:00",
+      "planned_out_timecode_exclusive": "00:00:49:00",
+      "visual_description": "周禾看向空缺页位，林澄侧身靠近，两人保持思考而非惊恐",
+      "entity_ids": [
+        "ZHOU",
+        "LIN",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F002",
+        "F013"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "微推，视线指向同一日志位置",
+      "keyframe_ids": [
+        "KF_S08_A",
+        "KF_S08_B"
+      ],
+      "keyframe_plan": "首帧必须验收；若本地 I2V 明确支持首尾帧，再使用末帧条件；否则不伪造双端控制能力，改用首帧条件 + 已审核末端切出。",
+      "fallback": "降级为同一已审核首帧的确定性轻推/平移，保持本镜头语义；输出记录降级原因和实际类型。",
+      "provider_capability_required": [
+        "image_to_video"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S09",
+      "narration_segment_id": "N05",
+      "type": "i2v",
+      "timing_status": "planned",
+      "planned_start_s": 49,
+      "planned_end_s": 56,
+      "planned_duration_s": 7,
+      "planned_start_frame": 1225,
+      "planned_end_frame_exclusive": 1400,
+      "planned_in_timecode": "00:00:49:00",
+      "planned_out_timecode_exclusive": "00:00:56:00",
+      "visual_description": "沈砚将手停在日志旁示意先核对，其他两人看向他",
+      "entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F013"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "手臂只一次缓慢示意，不接触或凭空改变纸页",
+      "keyframe_ids": [
+        "KF_S09_A",
+        "KF_S09_B"
+      ],
+      "keyframe_plan": "首帧必须验收；若本地 I2V 明确支持首尾帧，再使用末帧条件；否则不伪造双端控制能力，改用首帧条件 + 已审核末端切出。",
+      "fallback": "降级为同一已审核首帧的确定性轻推/平移，保持本镜头语义；输出记录降级原因和实际类型。",
+      "provider_capability_required": [
+        "image_to_video"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S10",
+      "narration_segment_id": "N06",
+      "type": "information_or_scene_detail",
+      "timing_status": "planned",
+      "planned_start_s": 56,
+      "planned_end_s": 62,
+      "planned_duration_s": 6,
+      "planned_start_frame": 1400,
+      "planned_end_frame_exclusive": 1550,
+      "planned_in_timecode": "00:00:56:00",
+      "planned_out_timecode_exclusive": "00:01:02:00",
+      "visual_description": "双问题信息卡：“观察窗为什么无光？”“末页去了哪里？”；问题标记为待查",
+      "entity_ids": [
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F010",
+        "F013"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "两个问题依次出现，避免结论先行",
+      "keyframe_ids": [
+        "KF_S10_A"
+      ],
+      "keyframe_plan": "文字、数值、箭头由排版/合成器绘制；背景插画只做底图。",
+      "fallback": null,
+      "provider_capability_required": [
+        "exact_text_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S11",
+      "narration_segment_id": "N06",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 62,
+      "planned_end_s": 68,
+      "planned_duration_s": 6,
+      "planned_start_frame": 1550,
+      "planned_end_frame_exclusive": 1700,
+      "planned_in_timecode": "00:01:02:00",
+      "planned_out_timecode_exclusive": "00:01:08:00",
+      "visual_description": "三人在值班室平静核对，日志位于画面中心",
+      "entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F013"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "固定人物位置，缓慢拉远",
+      "keyframe_ids": [
+        "KF_S11_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S12",
+      "narration_segment_id": "N07",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 68,
+      "planned_end_s": 81,
+      "planned_duration_s": 13,
+      "planned_start_frame": 1700,
+      "planned_end_frame_exclusive": 2025,
+      "planned_in_timecode": "00:01:08:00",
+      "planned_out_timecode_exclusive": "00:01:21:00",
+      "visual_description": "回溯 21:05，沈砚写安排；画面明确“计划”与空白“结果”栏，标题先以景深弱化",
+      "entity_ids": [
+        "SHEN",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F006"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "纸页局部慢推；叠加“时间回溯 21:05”，文字后期合成",
+      "keyframe_ids": [
+        "KF_S12_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S13",
+      "narration_segment_id": "N08",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 81,
+      "planned_end_s": 87,
+      "planned_duration_s": 6,
+      "planned_start_frame": 2025,
+      "planned_end_frame_exclusive": 2175,
+      "planned_in_timecode": "00:01:21:00",
+      "planned_out_timecode_exclusive": "00:01:27:00",
+      "visual_description": "21:10，周禾在灯室门内固定纸夹处夹稳末页，空白背面朝外",
+      "entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F007"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "以定格完成动作后的姿态表现，禁止手指滑动变形",
+      "keyframe_ids": [
+        "KF_S13_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S14",
+      "narration_segment_id": "N08",
+      "type": "i2v",
+      "timing_status": "planned",
+      "planned_start_s": 87,
+      "planned_end_s": 93,
+      "planned_duration_s": 6,
+      "planned_start_frame": 2175,
+      "planned_end_frame_exclusive": 2325,
+      "planned_in_timecode": "00:01:27:00",
+      "planned_out_timecode_exclusive": "00:01:33:00",
+      "visual_description": "同位置侧面镜头，周禾松手，纸留在固定夹中；不产生第二张纸",
+      "entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F007"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "仅松手和退出半步；纸边固定，无翻面",
+      "keyframe_ids": [
+        "KF_S14_A",
+        "KF_S14_B"
+      ],
+      "keyframe_plan": "首帧必须验收；若本地 I2V 明确支持首尾帧，再使用末帧条件；否则不伪造双端控制能力，改用首帧条件 + 已审核末端切出。",
+      "fallback": "降级为同一已审核首帧的确定性轻推/平移，保持本镜头语义；输出记录降级原因和实际类型。",
+      "provider_capability_required": [
+        "image_to_video"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S15",
+      "narration_segment_id": "N09",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 93,
+      "planned_end_s": 100,
+      "planned_duration_s": 7,
+      "planned_start_frame": 2325,
+      "planned_end_frame_exclusive": 2500,
+      "planned_in_timecode": "00:01:33:00",
+      "planned_out_timecode_exclusive": "00:01:40:00",
+      "visual_description": "21:12，林澄位于灯室门边读纸，随后视线朝恒亮光源；页面正面内容不在镜头内",
+      "entity_ids": [
+        "LIN",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F008"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "缓慢摇镜连接纸夹与光源",
+      "keyframe_ids": [
+        "KF_S15_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S16",
+      "narration_segment_id": "N09",
+      "type": "i2v",
+      "timing_status": "planned",
+      "planned_start_s": 100,
+      "planned_end_s": 107,
+      "planned_duration_s": 7,
+      "planned_start_frame": 2500,
+      "planned_end_frame_exclusive": 2675,
+      "planned_in_timecode": "00:01:40:00",
+      "planned_out_timecode_exclusive": "00:01:47:00",
+      "visual_description": "灯室整体明亮，林澄准备检查内部观察位置，灯具亮度保持稳定",
+      "entity_ids": [
+        "LIN",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F008",
+        "F010"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "镜头微移，不演示具体拆装步骤",
+      "keyframe_ids": [
+        "KF_S16_A",
+        "KF_S16_B"
+      ],
+      "keyframe_plan": "首帧必须验收；若本地 I2V 明确支持首尾帧，再使用末帧条件；否则不伪造双端控制能力，改用首帧条件 + 已审核末端切出。",
+      "fallback": "降级为同一已审核首帧的确定性轻推/平移，保持本镜头语义；输出记录降级原因和实际类型。",
+      "provider_capability_required": [
+        "image_to_video"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S17",
+      "narration_segment_id": "N10",
+      "type": "i2v",
+      "timing_status": "planned",
+      "planned_start_s": 107,
+      "planned_end_s": 113,
+      "planned_duration_s": 6,
+      "planned_start_frame": 2675,
+      "planned_end_frame_exclusive": 2825,
+      "planned_in_timecode": "00:01:47:00",
+      "planned_out_timecode_exclusive": "00:01:53:00",
+      "visual_description": "21:16，沈砚持铜铃完成三次分离的轻敲动作",
+      "entity_ids": [
+        "SHEN",
+        "PROP_BELL",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F009"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "三次动作需经时序验证，失真则固定画面配三次声音",
+      "keyframe_ids": [
+        "KF_S17_A",
+        "KF_S17_B"
+      ],
+      "keyframe_plan": "首帧必须验收；若本地 I2V 明确支持首尾帧，再使用末帧条件；否则不伪造双端控制能力，改用首帧条件 + 已审核末端切出。",
+      "fallback": "降级为同一已审核首帧的确定性轻推/平移，保持本镜头语义；输出记录降级原因和实际类型。",
+      "provider_capability_required": [
+        "image_to_video"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S18",
+      "narration_segment_id": "N10",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 113,
+      "planned_end_s": 119,
+      "planned_duration_s": 6,
+      "planned_start_frame": 2825,
+      "planned_end_frame_exclusive": 2975,
+      "planned_in_timecode": "00:01:53:00",
+      "planned_out_timecode_exclusive": "00:01:59:00",
+      "visual_description": "值班室周禾侧影及雨窗；此时观察窗仍然亮着",
+      "entity_ids": [
+        "ZHOU",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F004",
+        "F009"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "缓慢靠近雨窗；音频突出窗外雨，铃仅远处弱响",
+      "keyframe_ids": [
+        "KF_S18_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S19",
+      "narration_segment_id": "N11",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 119,
+      "planned_end_s": 126,
+      "planned_duration_s": 7,
+      "planned_start_frame": 2975,
+      "planned_end_frame_exclusive": 3150,
+      "planned_in_timecode": "00:01:59:00",
+      "planned_out_timecode_exclusive": "00:02:06:00",
+      "visual_description": "周禾凝视观察窗；铜色窗口亮斑即将消失，不增加惊恐或报警灯",
+      "entity_ids": [
+        "ZHOU",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F009",
+        "F010"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "固定画面轻推；不改变脸部身份",
+      "keyframe_ids": [
+        "KF_S19_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S20",
+      "narration_segment_id": "N11",
+      "type": "i2v",
+      "timing_status": "planned",
+      "planned_start_s": 126,
+      "planned_end_s": 133,
+      "planned_duration_s": 7,
+      "planned_start_frame": 3150,
+      "planned_end_frame_exclusive": 3325,
+      "planned_in_timecode": "00:02:06:00",
+      "planned_out_timecode_exclusive": "00:02:13:00",
+      "visual_description": "21:17，观察窗局部变暗，周禾低头记录；其余室内亮度基本保持",
+      "entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F010",
+        "F012"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "一次视线变化，窗口亮度由后期遮罩控制",
+      "keyframe_ids": [
+        "KF_S20_A",
+        "KF_S20_B"
+      ],
+      "keyframe_plan": "首帧必须验收；若本地 I2V 明确支持首尾帧，再使用末帧条件；否则不伪造双端控制能力，改用首帧条件 + 已审核末端切出。",
+      "fallback": "降级为同一已审核首帧的确定性轻推/平移，保持本镜头语义；输出记录降级原因和实际类型。",
+      "provider_capability_required": [
+        "image_to_video"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S21",
+      "narration_segment_id": "N12",
+      "type": "information_or_scene_detail",
+      "timing_status": "planned",
+      "planned_start_s": 133,
+      "planned_end_s": 139,
+      "planned_duration_s": 6,
+      "planned_start_frame": 3325,
+      "planned_end_frame_exclusive": 3475,
+      "planned_in_timecode": "00:02:13:00",
+      "planned_out_timecode_exclusive": "00:02:19:00",
+      "visual_description": "同一时刻对照卡：灯室“光源亮”，值班室“观察窗无光”；明确为示意图",
+      "entity_ids": [
+        "LOC_LANTERN",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F008",
+        "F010"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "精确二维示意，不绘制未经设定的真实机械构造",
+      "keyframe_ids": [
+        "KF_S21_A"
+      ],
+      "keyframe_plan": "文字、数值、箭头由排版/合成器绘制；背景插画只做底图。",
+      "fallback": null,
+      "provider_capability_required": [
+        "exact_text_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S22",
+      "narration_segment_id": "N12",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 139,
+      "planned_end_s": 145,
+      "planned_duration_s": 6,
+      "planned_start_frame": 3475,
+      "planned_end_frame_exclusive": 3625,
+      "planned_in_timecode": "00:02:19:00",
+      "planned_out_timecode_exclusive": "00:02:25:00",
+      "visual_description": "林澄在始终明亮的灯室执行观察位置检查；光源不变暗",
+      "entity_ids": [
+        "LIN",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F008",
+        "F010"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "缓慢平移；以遮挡构件局部外观表达检查",
+      "keyframe_ids": [
+        "KF_S22_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S23",
+      "narration_segment_id": "N13",
+      "type": "i2v",
+      "timing_status": "planned",
+      "planned_start_s": 145,
+      "planned_end_s": 151,
+      "planned_duration_s": 6,
+      "planned_start_frame": 3625,
+      "planned_end_frame_exclusive": 3775,
+      "planned_in_timecode": "00:02:25:00",
+      "planned_out_timecode_exclusive": "00:02:31:00",
+      "visual_description": "观察窗重新明亮，周禾继续观察；一切仍在值班室",
+      "entity_ids": [
+        "ZHOU",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F011",
+        "F012"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "窗口遮罩恢复亮度，人物动作最小化",
+      "keyframe_ids": [
+        "KF_S23_A",
+        "KF_S23_B"
+      ],
+      "keyframe_plan": "首帧必须验收；若本地 I2V 明确支持首尾帧，再使用末帧条件；否则不伪造双端控制能力，改用首帧条件 + 已审核末端切出。",
+      "fallback": "降级为同一已审核首帧的确定性轻推/平移，保持本镜头语义；输出记录降级原因和实际类型。",
+      "provider_capability_required": [
+        "image_to_video"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S24",
+      "narration_segment_id": "N13",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 151,
+      "planned_end_s": 158,
+      "planned_duration_s": 7,
+      "planned_start_frame": 3775,
+      "planned_end_frame_exclusive": 3950,
+      "planned_in_timecode": "00:02:31:00",
+      "planned_out_timecode_exclusive": "00:02:38:00",
+      "visual_description": "林澄在灯室门边补写末页结果，画面角标“检查完成后记录”",
+      "entity_ids": [
+        "LIN",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F011"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "固定书写姿态小幅推进；字符由排版层呈现",
+      "keyframe_ids": [
+        "KF_S24_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S25",
+      "narration_segment_id": "N14",
+      "type": "information_or_scene_detail",
+      "timing_status": "planned",
+      "planned_start_s": 158,
+      "planned_end_s": 164,
+      "planned_duration_s": 6,
+      "planned_start_frame": 3950,
+      "planned_end_frame_exclusive": 4100,
+      "planned_in_timecode": "00:02:38:00",
+      "planned_out_timecode_exclusive": "00:02:44:00",
+      "visual_description": "两份记录并列：“检查过程”与“窗口变化”；均标记“局部记录”",
+      "entity_ids": [
+        "PROP_LOG"
+      ],
+      "claim_ids": [
+        "F011",
+        "F012",
+        "F015"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "同尺度两栏，文字无随机生成",
+      "keyframe_ids": [
+        "KF_S25_A"
+      ],
+      "keyframe_plan": "文字、数值、箭头由排版/合成器绘制；背景插画只做底图。",
+      "fallback": null,
+      "provider_capability_required": [
+        "exact_text_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S26",
+      "narration_segment_id": "N14",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 164,
+      "planned_end_s": 170,
+      "planned_duration_s": 6,
+      "planned_start_frame": 4100,
+      "planned_end_frame_exclusive": 4250,
+      "planned_in_timecode": "00:02:44:00",
+      "planned_out_timecode_exclusive": "00:02:50:00",
+      "visual_description": "两张记录示意之间留空，表示尚未对照；不是实拍两本日志",
+      "entity_ids": [
+        "PROP_LOG"
+      ],
+      "claim_ids": [
+        "F015"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "标注“记录内容示意”，两栏慢靠近",
+      "keyframe_ids": [
+        "KF_S26_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S27",
+      "narration_segment_id": "N15",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 170,
+      "planned_end_s": 184,
+      "planned_duration_s": 14,
+      "planned_start_frame": 4250,
+      "planned_end_frame_exclusive": 4600,
+      "planned_in_timecode": "00:02:50:00",
+      "planned_out_timecode_exclusive": "00:03:04:00",
+      "visual_description": "回到 21:20，三人仍围着日志；空缺位置居中，不出现嫌疑人式红框",
+      "entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F013",
+        "F018"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "前后景缓慢视差；角标“回到 21:20”",
+      "keyframe_ids": [
+        "KF_S27_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S28",
+      "narration_segment_id": "N16",
+      "type": "i2v",
+      "timing_status": "planned",
+      "planned_start_s": 184,
+      "planned_end_s": 190,
+      "planned_duration_s": 6,
+      "planned_start_frame": 4600,
+      "planned_end_frame_exclusive": 4750,
+      "planned_in_timecode": "00:03:04:00",
+      "planned_out_timecode_exclusive": "00:03:10:00",
+      "visual_description": "21:24，林澄在灯室门边翻转夹中的那一页，沈砚与周禾在后景",
+      "entity_ids": [
+        "LIN",
+        "SHEN",
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F014"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "仅一次翻面；首尾帧同一纸夹、同一纸页和三人站位",
+      "keyframe_ids": [
+        "KF_S28_A",
+        "KF_S28_B"
+      ],
+      "keyframe_plan": "首帧必须验收；若本地 I2V 明确支持首尾帧，再使用末帧条件；否则不伪造双端控制能力，改用首帧条件 + 已审核末端切出。",
+      "fallback": "降级为同一已审核首帧的确定性轻推/平移，保持本镜头语义；输出记录降级原因和实际类型。",
+      "provider_capability_required": [
+        "image_to_video"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S29",
+      "narration_segment_id": "N16",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 190,
+      "planned_end_s": 196,
+      "planned_duration_s": 6,
+      "planned_start_frame": 4750,
+      "planned_end_frame_exclusive": 4900,
+      "planned_in_timecode": "00:03:10:00",
+      "planned_out_timecode_exclusive": "00:03:16:00",
+      "visual_description": "末页正面特写，清晰显示“交接检查”，背面不残留字迹",
+      "entity_ids": [
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F014"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "小幅推进；标题由后期文字层生成",
+      "keyframe_ids": [
+        "KF_S29_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S30",
+      "narration_segment_id": "N17",
+      "type": "information_or_scene_detail",
+      "timing_status": "planned",
+      "planned_start_s": 196,
+      "planned_end_s": 210,
+      "planned_duration_s": 14,
+      "planned_start_frame": 4900,
+      "planned_end_frame_exclusive": 5250,
+      "planned_in_timecode": "00:03:16:00",
+      "planned_out_timecode_exclusive": "00:03:30:00",
+      "visual_description": "精确记录卡：上半部“计划：21:17，三声铃后检查观察窗”；下半部“结果：检查后补记”",
+      "entity_ids": [
+        "PROP_LOG"
+      ],
+      "claim_ids": [
+        "F006",
+        "F011",
+        "F015"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "计划与结果分两次强调；禁止将47秒写进预先计划栏",
+      "keyframe_ids": [
+        "KF_S30_A"
+      ],
+      "keyframe_plan": "文字、数值、箭头由排版/合成器绘制；背景插画只做底图。",
+      "fallback": null,
+      "provider_capability_required": [
+        "exact_text_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S31",
+      "narration_segment_id": "N18",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 210,
+      "planned_end_s": 216,
+      "planned_duration_s": 6,
+      "planned_start_frame": 5250,
+      "planned_end_frame_exclusive": 5400,
+      "planned_in_timecode": "00:03:30:00",
+      "planned_out_timecode_exclusive": "00:03:36:00",
+      "visual_description": "日志末页结果区域特写，显示21:17:00与21:17:47",
+      "entity_ids": [
+        "PROP_LOG"
+      ],
+      "claim_ids": [
+        "F011",
+        "F015"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "横向短距离平移；字体由渲染器绘制",
+      "keyframe_ids": [
+        "KF_S31_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S32",
+      "narration_segment_id": "N18",
+      "type": "i2v",
+      "timing_status": "planned",
+      "planned_start_s": 216,
+      "planned_end_s": 222,
+      "planned_duration_s": 6,
+      "planned_start_frame": 5400,
+      "planned_end_frame_exclusive": 5550,
+      "planned_in_timecode": "00:03:36:00",
+      "planned_out_timecode_exclusive": "00:03:42:00",
+      "visual_description": "周禾与林澄在灯室门边交换确认目光；末页仍在纸夹附近",
+      "entity_ids": [
+        "ZHOU",
+        "LIN",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F014",
+        "F015"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "一次目光转换，不说话、不做口型同步",
+      "keyframe_ids": [
+        "KF_S32_A",
+        "KF_S32_B"
+      ],
+      "keyframe_plan": "首帧必须验收；若本地 I2V 明确支持首尾帧，再使用末帧条件；否则不伪造双端控制能力，改用首帧条件 + 已审核末端切出。",
+      "fallback": "降级为同一已审核首帧的确定性轻推/平移，保持本镜头语义；输出记录降级原因和实际类型。",
+      "provider_capability_required": [
+        "image_to_video"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S33",
+      "narration_segment_id": "N19",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 222,
+      "planned_end_s": 235,
+      "planned_duration_s": 13,
+      "planned_start_frame": 5550,
+      "planned_end_frame_exclusive": 5875,
+      "planned_in_timecode": "00:03:42:00",
+      "planned_out_timecode_exclusive": "00:03:55:00",
+      "visual_description": "周禾回想同一张纸的正反面；用两个定格视图说明位置变化，明确“回看”",
+      "entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F007",
+        "F014"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "纸张图层翻转由二维合成完成；不用生成模型制造文字翻面",
+      "keyframe_ids": [
+        "KF_S33_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S34",
+      "narration_segment_id": "N20",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 235,
+      "planned_end_s": 241,
+      "planned_duration_s": 6,
+      "planned_start_frame": 5875,
+      "planned_end_frame_exclusive": 6025,
+      "planned_in_timecode": "00:03:55:00",
+      "planned_out_timecode_exclusive": "00:04:01:00",
+      "visual_description": "值班室的观察窗与灯室光源做两幅并置定格，各自保持场景标识",
+      "entity_ids": [
+        "LOC_WATCH",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F008",
+        "F010"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "淡入场景名称；不是新的第三个空间",
+      "keyframe_ids": [
+        "KF_S34_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S35",
+      "narration_segment_id": "N20",
+      "type": "i2v",
+      "timing_status": "planned",
+      "planned_start_s": 241,
+      "planned_end_s": 247,
+      "planned_duration_s": 6,
+      "planned_start_frame": 6025,
+      "planned_end_frame_exclusive": 6175,
+      "planned_in_timecode": "00:04:01:00",
+      "planned_out_timecode_exclusive": "00:04:07:00",
+      "visual_description": "灯室暖光稳定，林澄完成复核；不再出现窗变暗动作",
+      "entity_ids": [
+        "LIN",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F008",
+        "F015"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "小幅拉远，光源亮度锁定",
+      "keyframe_ids": [
+        "KF_S35_A",
+        "KF_S35_B"
+      ],
+      "keyframe_plan": "首帧必须验收；若本地 I2V 明确支持首尾帧，再使用末帧条件；否则不伪造双端控制能力，改用首帧条件 + 已审核末端切出。",
+      "fallback": "降级为同一已审核首帧的确定性轻推/平移，保持本镜头语义；输出记录降级原因和实际类型。",
+      "provider_capability_required": [
+        "image_to_video"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S36",
+      "narration_segment_id": "N21",
+      "type": "information_or_scene_detail",
+      "timing_status": "planned",
+      "planned_start_s": 247,
+      "planned_end_s": 261,
+      "planned_duration_s": 14,
+      "planned_start_frame": 6175,
+      "planned_end_frame_exclusive": 6525,
+      "planned_in_timecode": "00:04:07:00",
+      "planned_out_timecode_exclusive": "00:04:21:00",
+      "visual_description": "三人职责与事件卡：“安排检查→执行并补记→记录窗口变化”，汇合到“比对记录”",
+      "entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "PROP_LOG"
+      ],
+      "claim_ids": [
+        "F006",
+        "F010",
+        "F011",
+        "F012",
+        "F015"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "三列逐项高亮；箭头由矢量排版层绘制",
+      "keyframe_ids": [
+        "KF_S36_A"
+      ],
+      "keyframe_plan": "文字、数值、箭头由排版/合成器绘制；背景插画只做底图。",
+      "fallback": null,
+      "provider_capability_required": [
+        "exact_text_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S37",
+      "narration_segment_id": "N22",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 261,
+      "planned_end_s": 267,
+      "planned_duration_s": 6,
+      "planned_start_frame": 6525,
+      "planned_end_frame_exclusive": 6675,
+      "planned_in_timecode": "00:04:21:00",
+      "planned_out_timecode_exclusive": "00:04:27:00",
+      "visual_description": "21:30，周禾补正日志，原有“原因待核”记录仍可见；明确没有擦除旧记录",
+      "entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F016"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "由文字叠加层追加补正说明",
+      "keyframe_ids": [
+        "KF_S37_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S38",
+      "narration_segment_id": "N22",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 267,
+      "planned_end_s": 273,
+      "planned_duration_s": 6,
+      "planned_start_frame": 6675,
+      "planned_end_frame_exclusive": 6825,
+      "planned_in_timecode": "00:04:27:00",
+      "planned_out_timecode_exclusive": "00:04:33:00",
+      "visual_description": "同一页出现三人姓名签署，末页放回日志；镜头聚焦成品状态",
+      "entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F016"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "签名次序由排版层逐个显现；不要求生成真实手写签名动作",
+      "keyframe_ids": [
+        "KF_S38_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S39",
+      "narration_segment_id": "N23",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 273,
+      "planned_end_s": 288,
+      "planned_duration_s": 15,
+      "planned_start_frame": 6825,
+      "planned_end_frame_exclusive": 7200,
+      "planned_in_timecode": "00:04:33:00",
+      "planned_out_timecode_exclusive": "00:04:48:00",
+      "visual_description": "21:32，三人回值班室；合上的日志与铜铃并置，观察窗稳定明亮",
+      "entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "PROP_LOG",
+        "PROP_BELL",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F017"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "前7秒全景、后8秒同一高分辨率母图局部慢推，保留连续性",
+      "keyframe_ids": [
+        "KF_S39_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    },
+    {
+      "id": "S40",
+      "narration_segment_id": "N24",
+      "type": "motion_still",
+      "timing_status": "planned",
+      "planned_start_s": 288,
+      "planned_end_s": 300,
+      "planned_duration_s": 12,
+      "planned_start_frame": 7200,
+      "planned_end_frame_exclusive": 7500,
+      "planned_in_timecode": "00:04:48:00",
+      "planned_out_timecode_exclusive": "00:05:00:00",
+      "visual_description": "日志与铜铃的安静收束画面；字幕提问“只见片段，会不会太快下结论？”；片尾重申原创虚构",
+      "entity_ids": [
+        "PROP_LOG",
+        "PROP_BELL",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F017",
+        "F018"
+      ],
+      "visual_truth_status": "artistic_reconstruction_of_original_fiction",
+      "motion_plan": "缓慢拉远，结尾2秒留文字阅读与音乐收尾",
+      "keyframe_ids": [
+        "KF_S40_A"
+      ],
+      "keyframe_plan": "同一母图 + 确定性构图运动；不生成多张相近脸。",
+      "fallback": null,
+      "provider_capability_required": [
+        "still_image_and_compositor"
+      ],
+      "actual_render_type": null,
+      "generation_status": "not_generated",
+      "media_asset_id": null,
+      "qc_status": "not_run",
+      "style_profile_id": "STYLE_GRAYBLUE_COPPER_V1",
+      "preserve_light_source_on": true,
+      "on_screen_disclosure": "原创虚构 · AI 画面演绎"
+    }
+  ],
+  "keyframes": [
+    {
+      "id": "KF_S01_A",
+      "shot_id": "S01",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 0,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "exact_layout_composition",
+      "reference_entity_ids": [
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F001",
+        "F018"
+      ],
+      "brief": "灰蓝灯塔剪影与标题卡；显著文字“虚构故事工程验收样片”，副标题“灯塔最后一页值班记录”；提出“灯真的灭过？”",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S02_A",
+      "shot_id": "S02",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 125,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F001",
+        "F003",
+        "F004"
+      ],
+      "brief": "从值班室室内望见窗上风雨；画面边缘留出稳定的室内灰蓝铜色关系",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S03_A",
+      "shot_id": "S03",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 275,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F010",
+        "F011"
+      ],
+      "brief": "值班室的内部观察窗由明转暗；不拍塔外航标熄灭",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S03_B",
+      "shot_id": "S03",
+      "role": "optional_end_target",
+      "planned_frame": 449,
+      "timing_status": "planned",
+      "required": false,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F010",
+        "F011"
+      ],
+      "brief": "值班室的内部观察窗由明转暗；不拍塔外航标熄灭",
+      "end_conditioning": "only_if_provider_declares_support",
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S04_A",
+      "shot_id": "S04",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 450,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F002",
+        "F003"
+      ],
+      "brief": "沈砚、林澄、周禾在值班室的三人定位镜头；左中右次序固定",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S05_A",
+      "shot_id": "S05",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 600,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "exact_layout_composition",
+      "reference_entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU"
+      ],
+      "claim_ids": [
+        "F002"
+      ],
+      "brief": "三张半身人物卡并排，姓名和职责由排版层绘制",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S06_A",
+      "shot_id": "S06",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 750,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F012",
+        "F013"
+      ],
+      "brief": "周禾在值班室打开日志，停在仍保留原始待核记录的一页",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S06_B",
+      "shot_id": "S06",
+      "role": "optional_end_target",
+      "planned_frame": 899,
+      "timing_status": "planned",
+      "required": false,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F012",
+        "F013"
+      ],
+      "brief": "周禾在值班室打开日志，停在仍保留原始待核记录的一页",
+      "end_conditioning": "only_if_provider_declares_support",
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S07_A",
+      "shot_id": "S07",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 900,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "exact_layout_composition",
+      "reference_entity_ids": [
+        "PROP_LOG"
+      ],
+      "claim_ids": [
+        "F012",
+        "F013"
+      ],
+      "brief": "日志结构示意：前一页有“原因待核”，末页位置空缺；不用撕裂痕迹暗示毁证",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S08_A",
+      "shot_id": "S08",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 1050,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "LIN",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F002",
+        "F013"
+      ],
+      "brief": "周禾看向空缺页位，林澄侧身靠近，两人保持思考而非惊恐",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S08_B",
+      "shot_id": "S08",
+      "role": "optional_end_target",
+      "planned_frame": 1224,
+      "timing_status": "planned",
+      "required": false,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "LIN",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F002",
+        "F013"
+      ],
+      "brief": "周禾看向空缺页位，林澄侧身靠近，两人保持思考而非惊恐",
+      "end_conditioning": "only_if_provider_declares_support",
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S09_A",
+      "shot_id": "S09",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 1225,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F013"
+      ],
+      "brief": "沈砚将手停在日志旁示意先核对，其他两人看向他",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S09_B",
+      "shot_id": "S09",
+      "role": "optional_end_target",
+      "planned_frame": 1399,
+      "timing_status": "planned",
+      "required": false,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F013"
+      ],
+      "brief": "沈砚将手停在日志旁示意先核对，其他两人看向他",
+      "end_conditioning": "only_if_provider_declares_support",
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S10_A",
+      "shot_id": "S10",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 1400,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "exact_layout_composition",
+      "reference_entity_ids": [
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F010",
+        "F013"
+      ],
+      "brief": "双问题信息卡：“观察窗为什么无光？”“末页去了哪里？”；问题标记为待查",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S11_A",
+      "shot_id": "S11",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 1550,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F013"
+      ],
+      "brief": "三人在值班室平静核对，日志位于画面中心",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S12_A",
+      "shot_id": "S12",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 1700,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "SHEN",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F006"
+      ],
+      "brief": "回溯 21:05，沈砚写安排；画面明确“计划”与空白“结果”栏，标题先以景深弱化",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S13_A",
+      "shot_id": "S13",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 2025,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F007"
+      ],
+      "brief": "21:10，周禾在灯室门内固定纸夹处夹稳末页，空白背面朝外",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S14_A",
+      "shot_id": "S14",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 2175,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F007"
+      ],
+      "brief": "同位置侧面镜头，周禾松手，纸留在固定夹中；不产生第二张纸",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S14_B",
+      "shot_id": "S14",
+      "role": "optional_end_target",
+      "planned_frame": 2324,
+      "timing_status": "planned",
+      "required": false,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F007"
+      ],
+      "brief": "同位置侧面镜头，周禾松手，纸留在固定夹中；不产生第二张纸",
+      "end_conditioning": "only_if_provider_declares_support",
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S15_A",
+      "shot_id": "S15",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 2325,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "LIN",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F008"
+      ],
+      "brief": "21:12，林澄位于灯室门边读纸，随后视线朝恒亮光源；页面正面内容不在镜头内",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S16_A",
+      "shot_id": "S16",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 2500,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "LIN",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F008",
+        "F010"
+      ],
+      "brief": "灯室整体明亮，林澄准备检查内部观察位置，灯具亮度保持稳定",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S16_B",
+      "shot_id": "S16",
+      "role": "optional_end_target",
+      "planned_frame": 2674,
+      "timing_status": "planned",
+      "required": false,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "LIN",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F008",
+        "F010"
+      ],
+      "brief": "灯室整体明亮，林澄准备检查内部观察位置，灯具亮度保持稳定",
+      "end_conditioning": "only_if_provider_declares_support",
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S17_A",
+      "shot_id": "S17",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 2675,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "SHEN",
+        "PROP_BELL",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F009"
+      ],
+      "brief": "21:16，沈砚持铜铃完成三次分离的轻敲动作",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S17_B",
+      "shot_id": "S17",
+      "role": "optional_end_target",
+      "planned_frame": 2824,
+      "timing_status": "planned",
+      "required": false,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "SHEN",
+        "PROP_BELL",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F009"
+      ],
+      "brief": "21:16，沈砚持铜铃完成三次分离的轻敲动作",
+      "end_conditioning": "only_if_provider_declares_support",
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S18_A",
+      "shot_id": "S18",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 2825,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F004",
+        "F009"
+      ],
+      "brief": "值班室周禾侧影及雨窗；此时观察窗仍然亮着",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S19_A",
+      "shot_id": "S19",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 2975,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F009",
+        "F010"
+      ],
+      "brief": "周禾凝视观察窗；铜色窗口亮斑即将消失，不增加惊恐或报警灯",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S20_A",
+      "shot_id": "S20",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 3150,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F010",
+        "F012"
+      ],
+      "brief": "21:17，观察窗局部变暗，周禾低头记录；其余室内亮度基本保持",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S20_B",
+      "shot_id": "S20",
+      "role": "optional_end_target",
+      "planned_frame": 3324,
+      "timing_status": "planned",
+      "required": false,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F010",
+        "F012"
+      ],
+      "brief": "21:17，观察窗局部变暗，周禾低头记录；其余室内亮度基本保持",
+      "end_conditioning": "only_if_provider_declares_support",
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S21_A",
+      "shot_id": "S21",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 3325,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "exact_layout_composition",
+      "reference_entity_ids": [
+        "LOC_LANTERN",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F008",
+        "F010"
+      ],
+      "brief": "同一时刻对照卡：灯室“光源亮”，值班室“观察窗无光”；明确为示意图",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S22_A",
+      "shot_id": "S22",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 3475,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "LIN",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F008",
+        "F010"
+      ],
+      "brief": "林澄在始终明亮的灯室执行观察位置检查；光源不变暗",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S23_A",
+      "shot_id": "S23",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 3625,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F011",
+        "F012"
+      ],
+      "brief": "观察窗重新明亮，周禾继续观察；一切仍在值班室",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S23_B",
+      "shot_id": "S23",
+      "role": "optional_end_target",
+      "planned_frame": 3774,
+      "timing_status": "planned",
+      "required": false,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F011",
+        "F012"
+      ],
+      "brief": "观察窗重新明亮，周禾继续观察；一切仍在值班室",
+      "end_conditioning": "only_if_provider_declares_support",
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S24_A",
+      "shot_id": "S24",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 3775,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "LIN",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F011"
+      ],
+      "brief": "林澄在灯室门边补写末页结果，画面角标“检查完成后记录”",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S25_A",
+      "shot_id": "S25",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 3950,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "exact_layout_composition",
+      "reference_entity_ids": [
+        "PROP_LOG"
+      ],
+      "claim_ids": [
+        "F011",
+        "F012",
+        "F015"
+      ],
+      "brief": "两份记录并列：“检查过程”与“窗口变化”；均标记“局部记录”",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S26_A",
+      "shot_id": "S26",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 4100,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "PROP_LOG"
+      ],
+      "claim_ids": [
+        "F015"
+      ],
+      "brief": "两张记录示意之间留空，表示尚未对照；不是实拍两本日志",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S27_A",
+      "shot_id": "S27",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 4250,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F013",
+        "F018"
+      ],
+      "brief": "回到 21:20，三人仍围着日志；空缺位置居中，不出现嫌疑人式红框",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S28_A",
+      "shot_id": "S28",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 4600,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "LIN",
+        "SHEN",
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F014"
+      ],
+      "brief": "21:24，林澄在灯室门边翻转夹中的那一页，沈砚与周禾在后景",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S28_B",
+      "shot_id": "S28",
+      "role": "optional_end_target",
+      "planned_frame": 4749,
+      "timing_status": "planned",
+      "required": false,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "LIN",
+        "SHEN",
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F014"
+      ],
+      "brief": "21:24，林澄在灯室门边翻转夹中的那一页，沈砚与周禾在后景",
+      "end_conditioning": "only_if_provider_declares_support",
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S29_A",
+      "shot_id": "S29",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 4750,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F014"
+      ],
+      "brief": "末页正面特写，清晰显示“交接检查”，背面不残留字迹",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S30_A",
+      "shot_id": "S30",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 4900,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "exact_layout_composition",
+      "reference_entity_ids": [
+        "PROP_LOG"
+      ],
+      "claim_ids": [
+        "F006",
+        "F011",
+        "F015"
+      ],
+      "brief": "精确记录卡：上半部“计划：21:17，三声铃后检查观察窗”；下半部“结果：检查后补记”",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S31_A",
+      "shot_id": "S31",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 5250,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "PROP_LOG"
+      ],
+      "claim_ids": [
+        "F011",
+        "F015"
+      ],
+      "brief": "日志末页结果区域特写，显示21:17:00与21:17:47",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S32_A",
+      "shot_id": "S32",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 5400,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "LIN",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F014",
+        "F015"
+      ],
+      "brief": "周禾与林澄在灯室门边交换确认目光；末页仍在纸夹附近",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S32_B",
+      "shot_id": "S32",
+      "role": "optional_end_target",
+      "planned_frame": 5549,
+      "timing_status": "planned",
+      "required": false,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "LIN",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F014",
+        "F015"
+      ],
+      "brief": "周禾与林澄在灯室门边交换确认目光；末页仍在纸夹附近",
+      "end_conditioning": "only_if_provider_declares_support",
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S33_A",
+      "shot_id": "S33",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 5550,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F007",
+        "F014"
+      ],
+      "brief": "周禾回想同一张纸的正反面；用两个定格视图说明位置变化，明确“回看”",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S34_A",
+      "shot_id": "S34",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 5875,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "LOC_WATCH",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F008",
+        "F010"
+      ],
+      "brief": "值班室的观察窗与灯室光源做两幅并置定格，各自保持场景标识",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S35_A",
+      "shot_id": "S35",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 6025,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "LIN",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F008",
+        "F015"
+      ],
+      "brief": "灯室暖光稳定，林澄完成复核；不再出现窗变暗动作",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S35_B",
+      "shot_id": "S35",
+      "role": "optional_end_target",
+      "planned_frame": 6174,
+      "timing_status": "planned",
+      "required": false,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "LIN",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F008",
+        "F015"
+      ],
+      "brief": "灯室暖光稳定，林澄完成复核；不再出现窗变暗动作",
+      "end_conditioning": "only_if_provider_declares_support",
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S36_A",
+      "shot_id": "S36",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 6175,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "exact_layout_composition",
+      "reference_entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "PROP_LOG"
+      ],
+      "claim_ids": [
+        "F006",
+        "F010",
+        "F011",
+        "F012",
+        "F015"
+      ],
+      "brief": "三人职责与事件卡：“安排检查→执行并补记→记录窗口变化”，汇合到“比对记录”",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S37_A",
+      "shot_id": "S37",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 6525,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F016"
+      ],
+      "brief": "21:30，周禾补正日志，原有“原因待核”记录仍可见；明确没有擦除旧记录",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S38_A",
+      "shot_id": "S38",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 6675,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "PROP_LOG",
+        "LOC_LANTERN"
+      ],
+      "claim_ids": [
+        "F016"
+      ],
+      "brief": "同一页出现三人姓名签署，末页放回日志；镜头聚焦成品状态",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S39_A",
+      "shot_id": "S39",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 6825,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "SHEN",
+        "LIN",
+        "ZHOU",
+        "PROP_LOG",
+        "PROP_BELL",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F017"
+      ],
+      "brief": "21:32，三人回值班室；合上的日志与铜铃并置，观察窗稳定明亮",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    },
+    {
+      "id": "KF_S40_A",
+      "shot_id": "S40",
+      "role": "start_or_composition_anchor",
+      "planned_frame": 7200,
+      "timing_status": "planned",
+      "required": true,
+      "generation_method": "image_generation_from_locked_references",
+      "reference_entity_ids": [
+        "PROP_LOG",
+        "PROP_BELL",
+        "LOC_WATCH"
+      ],
+      "claim_ids": [
+        "F017",
+        "F018"
+      ],
+      "brief": "日志与铜铃的安静收束画面；字幕提问“只见片段，会不会太快下结论？”；片尾重申原创虚构",
+      "end_conditioning": null,
+      "media_asset_id": null,
+      "generation_status": "not_generated",
+      "qc_status": "not_run"
+    }
+  ],
+  "shot_mix_planned": {
+    "motion_still": 20,
+    "i2v": 12,
+    "information_or_scene_detail": 8
+  },
+  "render_timeline_policy": {
+    "frame_rate_mode": "constant",
+    "master_target_frames": 7500,
+    "master_target_audio_samples_at_48khz": 14400000,
+    "actual_asset_durations": "measured_after_generation",
+    "transitions": "Transitions consume handles within the planned or retimed 300-second timeline; they must not add extra time to the target master.",
+    "portrait_export": "Recompose per shot and relayout cards/captions at 1080x1920; do not blindly center-crop the 16:9 master.",
+    "clean_master_definition": "No burned narrative subtitles; fiction/AI visualization disclosure remains visible.",
+    "master_target_locale": "zh-CN",
+    "english_master_target_frames": null,
+    "english_timing_policy": "derive independently from real English TTS and natural retiming; no forced 7500-frame target"
+  },
+  "keyframe_policy": {
+    "all_shots_need_two_frames": false,
+    "i2v_end_frame_conditioning": "optional_and_only_if_provider_declares_support",
+    "i2v_generation_duration": "Quantize each requested clip to provider-supported lengths; generate sufficient duration and use an approved in/out range. No unbounded retries or fabricated exact-duration capability.",
+    "longer_than_provider_limit": "split only at a semantic motion boundary or fall back to approved still motion; record actual render type",
+    "reference_images": "identity packs and scene layouts are locked before shot rendering; seed alone is not an identity guarantee"
+  },
+  "narration_plan": {
+    "speaker_count": 1,
+    "speaker_id": "NARRATOR_01",
+    "voice_style": "成年中性叙述声；清晰、平稳、克制悬疑；角色无独立口型对白",
+    "local_tts_required": true,
+    "target_duration_is_planned": true,
+    "tts_voice_reference_requires_rights": true,
+    "timing_resolution": "TTS -> forced alignment -> silence and semantic retiming -> timeline -> captions -> render",
+    "retiming_priority": [
+      "先保证语义、读音和自然语速",
+      "用实际语音与停顿重排镜头；中文目标300秒，英语独立自然时长",
+      "人工锁定文字不可自动改写；仅未锁定且政策授权的文字可新建修订并重新核对译稿",
+      "轻微语速调整需听审，不跨越设定范围",
+      "中文最后用片头片尾及已计划的非语音留白补齐至目标帧数；无法自然容纳则报告时间预算问题"
+    ],
+    "proposed_time_stretch_range": [
+      0.97,
+      1.03
+    ],
+    "nominal_master_frames": 7500,
+    "fail_if": "无法自然容纳时不得硬截语音、无声删句或强行压缩至300秒，必须标记时间预算未达标并重排/改写。",
+    "script_locked_for_fixture": true,
+    "english_duration_policy": "NATURAL_NARRATION"
+  },
+  "subtitles": {
+    "generate_from": "approved narration text plus actual forced alignment",
+    "planned_segment_times_are_not_final_srt": true,
+    "zh_max_lines": 2,
+    "zh_target_max_han_per_line": 18,
+    "en_max_lines": 2,
+    "en_target_max_characters_per_line": 42,
+    "target_cue_seconds": [
+      1.2,
+      6.0
+    ],
+    "bilingual_mode": "中上英下；中文1行+英文最多2行，超长先语义切分，禁止四行遮挡画面；横竖版分别排版",
+    "date_and_number_policy": "旁白口语数字与屏幕时间码可不同写法，但须做规范化等值检查；47秒、21:17:00、21:17:47不得互换或误写。",
+    "proper_names_exact_match": [
+      "沈砚",
+      "林澄",
+      "周禾",
+      "岚湾灯塔",
+      "Shen Yan",
+      "Lin Cheng",
+      "Zhou He",
+      "Lanwan Lighthouse"
+    ],
+    "caption_alignment_tolerance_ms": 200,
+    "caption_cross_cut": "按语义与实际语音断句；可跨普通镜头切点，但不得跨回溯标签造成时间混淆",
+    "caption_alignment_p95_target_ms": 150,
+    "alignment_threshold_note": "P95 target is 150ms across manually labelled validation set; each key caption boundary has a 200ms maximum. Both are proposed acceptance targets, not measured results."
+  },
+  "music_and_audio": {
+    "source": "原创或已获明确授权的本地音乐文件；本 fixture 不附带音频",
+    "planned_cues": [
+      {
+        "from_s": 0,
+        "to_s": 42,
+        "description": "低密度悬疑音色，开头不给惊吓音效"
+      },
+      {
+        "from_s": 42,
+        "to_s": 170,
+        "description": "轻脉冲递进；叙述始终在前景"
+      },
+      {
+        "from_s": 170,
+        "to_s": 261,
+        "description": "线索对齐后逐步变暖；计划/结果信息卡降低音乐存在感"
+      },
+      {
+        "from_s": 261,
+        "to_s": 300,
+        "description": "和声缓解，最后2秒自然收尾"
+      }
+    ],
+    "cue_timing_status": "planned_must_follow_actual_edit",
+    "sfx_rules": [
+      "三下铃只作为21:16事件声音设计，不能在其他时间伪造额外准备信号",
+      "回溯重复同一三下铃时必须有时间回溯提示，不认作又敲三下",
+      "雨声限定室外声场，不盖过姓名与47秒",
+      "不用惊吓、心跳或阴谋音效暗示不存在的反派"
+    ],
+    "proposed_mix_acceptance": {
+      "integrated_lufs_target": -16,
+      "integrated_lufs_tolerance": 1,
+      "true_peak_db_max": -1,
+      "note": "此处是工程验收预设，不宣称平台强制规范；按目标平台与实听可配置。"
+    },
+    "speech_ducking_db_below_voice": [
+      14,
+      20
+    ],
+    "listen_full_episode_required": true
+  },
+  "acceptance_rules": [
+    {
+      "id": "A01",
+      "level": "block",
+      "rule": "JSON中24段、40镜头、300 planned秒、7500 planned帧；镜头与段落连续且无重叠。"
+    },
+    {
+      "id": "A02",
+      "level": "block",
+      "rule": "所有 narration_segment_id、entity_ids、claim_ids 和 keyframe_ids 可解析，且每镜头都有原创事实依据。"
+    },
+    {
+      "id": "A03",
+      "level": "block",
+      "rule": "片头与首个字幕清楚披露虚构，原始事实包不被标成史实已核验。"
+    },
+    {
+      "id": "A04",
+      "level": "block",
+      "rule": "所有画面只出现设定三人；人物、日志、铜铃不能无依据增殖；主要身份、服装和场景布局一致。"
+    },
+    {
+      "id": "A05",
+      "level": "block",
+      "rule": "灯室光源始终亮着；暗的是内部观察窗；窗的遮挡范围不能变成整个塔外航标熄灭。"
+    },
+    {
+      "id": "A06",
+      "level": "block",
+      "rule": "21:05 的结果栏为空；47秒仅在检查结束后的结果栏出现；末页背面朝外及其位置前后对应。"
+    },
+    {
+      "id": "A07",
+      "level": "block",
+      "rule": "中文姓名、英文姓名、时间与47秒逐项核对；实际TTS无漏字、错读、吞句、重复段或截断。"
+    },
+    {
+      "id": "A08",
+      "level": "block",
+      "rule": "中英翻译保持事实、否定词、问题语气和唯一结局；英语版本单独TTS及强制对齐。"
+    },
+    {
+      "id": "A09",
+      "level": "block",
+      "rule": "无黑帧、冻结损坏、缺帧、意外闪烁、声道缺失；字幕由实际音频对齐，重要字幕起止误差不超过200ms。"
+    },
+    {
+      "id": "A10",
+      "level": "block",
+      "rule": "三下铃在音效轨为三次清晰事件；I2V手部无法精确实现时，降级静帧配准确声音，不增加抽卡直到成功的无限循环。"
+    },
+    {
+      "id": "A11",
+      "level": "block",
+      "rule": "没有“第四人”“主灯熄灭”“有人销毁日志”等与唯一结局矛盾的解说或暗示性画面。"
+    },
+    {
+      "id": "A12",
+      "level": "review",
+      "rule": "完整人工听审与一次连续看片由验收人员完成；自动逐帧QC不能作为完成人工逐帧内容审查的声明。"
+    },
+    {
+      "id": "A13",
+      "level": "block",
+      "rule": "实际交付片须输出真实生成日志、版本、耗时、检查结果与SHA-256；本规格不填写假路径或假hash。"
+    },
+    {
+      "id": "A14",
+      "level": "block",
+      "rule": "计划12个I2V允许能力受限降级但须披露；若声称混合生成全能力通过，则须12个I2V确实生成并通过内容审查。"
+    },
+    {
+      "id": "A15",
+      "level": "block",
+      "rule": "全英文音轨、英文字幕以及中英双语字幕分别可播放；不同配音版不能复用未经对齐的中文时码。"
+    },
+    {
+      "id": "A16",
+      "level": "block",
+      "rule": "最终300秒目标需生成真实7500帧时轴；字幕、转场、配乐、首尾停顿必须包含在总长内，不是片外叠加。"
+    }
+  ],
+  "test_cases": [
+    {
+      "id": "TC01",
+      "name": "结构校验",
+      "input": "本JSON",
+      "expected": "24段40镜头；时长/帧数、引用、段镜映射和类别计数均通过",
+      "execution_status": "fixture_static_validation_only"
+    },
+    {
+      "id": "TC02",
+      "name": "错误结局注入",
+      "mutation": "把一个镜头改成灯塔主灯熄灭，或加入第四人剪影",
+      "expected": "事实/视觉审查拦截并指出F008或F018冲突",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "TC03",
+      "name": "时间先后注入",
+      "mutation": "21:05计划页预先填47秒或把完成时刻改成21:18:47",
+      "expected": "时间线审查阻断，要求计划与结果分栏修复",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "TC04",
+      "name": "字幕数字注入",
+      "mutation": "将47秒写成74秒，将林澄误写林城",
+      "expected": "规范化数字/实体校验拦截，不仅看ASR相似度",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "TC05",
+      "name": "英文否定词注入",
+      "mutation": "将light did not go out翻为light went out",
+      "expected": "双语含义审查拦截，不能只核对词数",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "TC06",
+      "name": "TTS超出计划",
+      "mutation": "某段实际TTS比planned长40%，或英文版总长350秒",
+      "expected": "触发真实音频重排；仅在文字未人工锁定且已授权时可新建修订精简；不得截句、静默复用planned SRT或越界快放",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "TC07",
+      "name": "I2V仅支持5秒",
+      "mutation": "provider仅提供5秒首帧生成",
+      "expected": "按能力图拆分或降级并记录，不发送不支持的首尾帧/7秒参数",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "TC08",
+      "name": "断点续跑",
+      "mutation": "第19镜头生成后进程退出",
+      "expected": "已通过资产及音频复用，只重跑缺失/无效依赖，最终时轴无重复镜头",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "TC09",
+      "name": "本地网络边界",
+      "mutation": "关闭外网后运行此原创fixture",
+      "expected": "已安装本地模型、本地BGM和字体等就绪时可离线成片；不得静默切换云端",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "TC10",
+      "name": "字卡和手部降级",
+      "mutation": "I2V翻纸文字漂移或铃动作不是3次",
+      "expected": "用确定性纸张/文字合成和声音替代，保持时长、事实与身份不变，报告降级",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "TC11",
+      "name": "导出重构图",
+      "mutation": "导出9:16并开启双语字幕",
+      "expected": "独立重构图且姓名/数字/人物关键部位不被裁，信息卡重新排版，不直接中心裁切",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "TC12",
+      "name": "成片逐帧音频复核",
+      "input": "真正生成的交付包",
+      "expected": "全部帧技术扫描、每镜头首中尾接缝内容检查、异常连续帧展开、完整听审与字幕审查均有记录",
+      "execution_status": "not_run"
+    }
+  ],
+  "expected_delivery_package": [
+    {
+      "artifact_role": "source_fact_pack",
+      "suggested_filename": "fact_pack.original_fiction.json",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "approved_script",
+      "suggested_filename": "script.zh-CN.en-US.json",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "entity_and_style_bible",
+      "suggested_filename": "entity_style_bible.json",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "actual_edit_decision_list",
+      "suggested_filename": "timeline.actual.json",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "clean_master",
+      "suggested_filename": "master.clean.zh-CN.1080p.mp4",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "english_master",
+      "suggested_filename": "master.clean.en-US.1080p.mp4",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "bilingual_burned_caption_master",
+      "suggested_filename": "master.zh-voice.zh-en-captions.1080p.mp4",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "portrait_export",
+      "suggested_filename": "portrait.reframed.zh-CN.1080x1920.mp4",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "audio_stems",
+      "suggested_filename": "audio/README.stem_manifest.json",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "subtitle_chinese",
+      "suggested_filename": "subtitles.zh-CN.srt",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "subtitle_english_for_chinese_voice",
+      "suggested_filename": "subtitles.en-US.on-zh-voice.srt",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "subtitle_english_for_english_voice",
+      "suggested_filename": "subtitles.en-US.on-en-voice.srt",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "subtitle_bilingual",
+      "suggested_filename": "subtitles.zh-en.on-zh-voice.ass",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "frame_review_contact_sheets",
+      "suggested_filename": "review/contact_sheet_manifest.json",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "qc_report",
+      "suggested_filename": "review/qc_report.json",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "generation_audit",
+      "suggested_filename": "audit/run_manifest.json",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "integrity_hashes",
+      "suggested_filename": "audit/SHA256SUMS",
+      "status": "specified_not_generated"
+    },
+    {
+      "artifact_role": "release_notes",
+      "suggested_filename": "README_delivery.md",
+      "status": "specified_not_generated"
+    }
+  ],
+  "media_artifacts": [],
+  "model_runtime_measurements": null,
+  "fixture_validation": {
+    "status": "passed_static_structure_checks",
+    "note": "Only the authored fixture structure is validated; no model inference, audio, frame or render quality test has been run."
+  }
+}

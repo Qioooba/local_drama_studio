@@ -18,6 +18,17 @@ from local_drama.application.configuration import ConfigurationService
 from local_drama.application.dialogue import DialogueService
 from local_drama.application.episode_front_half_actions import EpisodeFrontHalfActionService
 from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
+from local_drama.application.explainers.runtime_adapters import (
+    ExplainerRepositoryTransaction,
+    LocalAiNarrationTtsRuntime,
+    LocalAsrAdapter,
+    LocalForcedAlignerAdapter,
+    MediaServiceNarrationPort,
+    QualityPolicyEvaluator,
+    build_media_qc_handlers,
+    build_planner_factory,
+)
+from local_drama.application.explainers.visual_qc import build_visual_qc_provider
 from local_drama.application.generation import GenerationService
 from local_drama.application.job_resources import GpuRuntime, gpu_runtime_for_job
 from local_drama.application.jobs import JobService
@@ -35,9 +46,15 @@ from local_drama.application.worker_handlers.automation_task import advance_auto
 from local_drama.application.worker_handlers.delivery_build import run_delivery_build_job
 from local_drama.application.worker_handlers.episode_compose import run_episode_compose_job
 from local_drama.application.worker_handlers.experiment_cell import run_experiment_cell
+from local_drama.application.worker_handlers.explainer_task import (
+    RepositoryExplainerStepStore,
+    run_explainer_task,
+)
 from local_drama.application.worker_handlers.lipsync_job import run_lipsync_job
 from local_drama.application.worker_handlers.local_llm_probe import run_local_llm_probe_job
 from local_drama.application.worker_handlers.media_derivative import run_media_job
+from local_drama.application.worker_handlers.narration_align import run_narration_align_job
+from local_drama.application.worker_handlers.narration_tts import run_narration_tts_job
 from local_drama.application.worker_handlers.script_breakdown import run_script_breakdown_job
 from local_drama.application.worker_handlers.segmented_compose import run_segmented_compose_job
 from local_drama.application.worker_handlers.story_pipeline_apply import run_story_pipeline_apply_job
@@ -217,6 +234,95 @@ def _make_media_job_handler(
     return handler
 
 
+def _make_explainer_task_provider(
+    worker: LocalMediaWorker,
+) -> Callable[[dict[str, Any], Path], tuple[str, str, dict[str, Any], int]]:
+    """Bind the explainer stage family to the runner-owned ports.
+
+    The explainer graph is one automation workflow run plus one ``EXPLAINER_TASK``
+    job per stage.  The step projection is written through short transactions so a
+    GPU wait never holds a SQLite lock, the machine policy decision has exactly
+    one writer (the dedicated policy evaluator), and the owning workflow run is
+    advanced by the dispatcher only for a report-carrying family, i.e. after the
+    report artifact and the projection are both durable.
+    """
+
+    def handler(job: dict[str, Any], output_root: Path) -> tuple[str, str, dict[str, Any], int]:
+        return run_explainer_task(
+            job,
+            output_root,
+            work_root=worker.settings.work_root,
+            atomic_writer=worker._atomic_file,
+            handlers=build_media_qc_handlers(
+                planner_factory=build_planner_factory(worker.database, worker.settings),
+                repo_factory=lambda: ExplainerRepositoryTransaction(worker.database),
+                settings=worker.settings,
+                visual_provider=build_visual_qc_provider(
+                    worker.database,
+                    worker.settings,
+                    frame_root=worker.settings.explainer_frames_root,
+                ),
+                media_content_path=lambda media_version_id: worker.media.content_path(media_version_id)[1],
+            ),
+            step_store=RepositoryExplainerStepStore(
+                repo_factory=lambda: ExplainerRepositoryTransaction(worker.database),
+            ),
+            cancel_check=worker._cancel_requested,
+            policy_evaluator=QualityPolicyEvaluator(worker.database),
+        )
+    return handler
+
+
+def _make_narration_tts_handler(
+    worker: LocalMediaWorker,
+) -> Callable[[dict[str, Any], Path], tuple[str, str]]:
+    """Bind the explainer NARRATION_TTS flow to the offline speech runtime.
+
+    The explainer narration flow is deliberately separate from the legacy
+    ``TTS_GENERATION`` dialogue flow: it reads narration revisions instead of
+    dialogue text revisions and never relies on the legacy ``LOCAL_TEST_ONLY``
+    snapshot gate.  Both share the same runtime and media ports.
+    """
+
+    def handler(job: dict[str, Any], output_root: Path) -> tuple[str, str]:
+        if worker.voxcpm_runtime is None:
+            raise DomainRuleError(
+                "NARRATION_RUNTIME_UNAVAILABLE",
+                "本机未配置离线 VoxCPM2 子进程运行时，无法生成解说旁白",
+            )
+        return run_narration_tts_job(
+            job,
+            output_root,
+            work_root=worker.settings.work_root,
+            database=worker.database,
+            narration_runtime=LocalAiNarrationTtsRuntime(worker.voxcpm_runtime, media=worker.media),
+            media_ops=MediaServiceNarrationPort(worker.media),
+            atomic_writer=worker._atomic_file,
+        )
+
+    return handler
+
+
+def _make_narration_align_handler(
+    worker: LocalMediaWorker,
+) -> Callable[[dict[str, Any], Path], tuple[str, str]]:
+    """Bind the explainer NARRATION_ALIGN flow to the offline aligner/ASR runtimes."""
+
+    def handler(job: dict[str, Any], output_root: Path) -> tuple[str, str]:
+        return run_narration_align_job(
+            job,
+            output_root,
+            work_root=worker.settings.work_root,
+            database=worker.database,
+            aligner=LocalForcedAlignerAdapter(worker.voxcpm_runtime),
+            media_ops=MediaServiceNarrationPort(worker.media),
+            atomic_writer=worker._atomic_file,
+            asr=LocalAsrAdapter(worker.voxcpm_runtime),
+        )
+
+    return handler
+
+
 def _make_tts_job_handler(
     worker: LocalMediaWorker,
 ) -> Callable[[dict[str, Any], Path], tuple[str, str]]:
@@ -315,7 +421,14 @@ def _make_story_pipeline_apply_handler(
 # Every queue-dispatched job family's business flow lives under
 # application/worker_handlers; the runner binds each flow to its ports through
 # _EXTRACTED_HANDLER_PROVIDERS at dispatch time (design §13.2).
-_EXTRACTED_HANDLER_PROVIDERS: dict[str, Callable[[LocalMediaWorker], Callable[[dict[str, Any], Path], tuple[str, str]]]] = {
+#
+# Most families return ``(kind, relative_path)``.  A report-carrying family
+# returns ``(kind, relative_path, report, produced_bytes)`` so the dispatcher can
+# advance its owning automation workflow run (see ``_dispatcher``).
+_EXTRACTED_HANDLER_RESULT = tuple[str, str] | tuple[str, str, dict[str, Any], int]
+_EXTRACTED_HANDLER_PROVIDERS: dict[
+    str, Callable[[LocalMediaWorker], Callable[..., _EXTRACTED_HANDLER_RESULT]]
+] = {
     "VIDEO_UPSCALE_PREFLIGHT": _make_video_upscale_preflight_handler,
     "DELIVERY_BUILD": _make_delivery_build_handler,
     "EPISODE_COMPOSE": lambda worker: _make_timeline_job_handler(worker, run_episode_compose_job),
@@ -327,6 +440,29 @@ _EXTRACTED_HANDLER_PROVIDERS: dict[str, Callable[[LocalMediaWorker], Callable[[d
     "MEDIA_THUMBNAIL": _make_media_job_handler,
     "MEDIA_PROXY": _make_media_job_handler,
     "TTS_GENERATION": _make_tts_job_handler,
+    "NARRATION_TTS": _make_narration_tts_handler,
+    "NARRATION_ALIGN": _make_narration_align_handler,
+    # The explainer graph runs several business stages through one job family.
+    # This provider returns the 4-tuple (report-carrying) handler shape; the
+    # dispatcher adapts it exactly like the other extracted families.
+    "EXPLAINER_TASK": _make_explainer_task_provider,
+    # A stage job created from an explainer step carries the stage code as its job
+    # type, so every text/QC stage code is registered explicitly here.  Aliasing
+    # them onto the same provider keeps one dispatcher and one report shape while
+    # guaranteeing the job is actually claimed by a worker instead of sitting in
+    # the queue with no registered handler.
+    **{
+        stage_code: _make_explainer_task_provider
+        for stage_code in (
+            "RESEARCH_ACQUIRE",
+            "FACT_EXTRACT",
+            "NARRATION_WRITE",
+            "EXPLAINER_STORYBOARD",
+            "EXPLAINER_VISUAL_QC",
+            "COMPOSITION_QC",
+            "EXPLAINER_POLICY_EVALUATE",
+        )
+    },
     "LIPSYNC_GENERATION": _make_lipsync_job_handler,
     "EXPERIMENT_CELL": _make_experiment_cell_handler,
     "STORY_PIPELINE_DRAFT": _make_story_pipeline_draft_handler,
@@ -713,9 +849,23 @@ class LocalMediaWorker:
             job_type: provider(self)
             for job_type, provider in _EXTRACTED_HANDLER_PROVIDERS.items()
         }
-        def adapt(handler: Callable[[dict[str, Any], Path], tuple[str, str]]) -> WorkerHandler:
+
+        def adapt(handler: Callable[..., _EXTRACTED_HANDLER_RESULT]) -> WorkerHandler:
             def execute(job: dict[str, Any], root: Path) -> WorkerExecution:
-                return self._execution(handler(job, root))
+                result = handler(job, root)
+                if len(result) == 2:
+                    return self._execution(result)
+                # Report-carrying family: the owning workflow run advances only
+                # after the handler registered its artifact and report.
+                kind, relative, report, produced_bytes = result  # type: ignore[misc]
+                return self._execution_with_report(
+                    job,
+                    kind,
+                    relative,
+                    report,
+                    produced_bytes,
+                    worker_id=worker_id,
+                )
 
             return execute
 
@@ -748,6 +898,38 @@ class LocalMediaWorker:
 
         handlers["AUTOMATION_WORKFLOW_TASK"] = automation
         return WorkerJobDispatcher(handlers)
+
+    def _execution_with_report(
+        self,
+        job: dict[str, Any],
+        kind: str,
+        relative: str,
+        report: dict[str, Any],
+        produced_bytes: int,
+        *,
+        worker_id: str,
+    ) -> WorkerExecution:
+        """Wrap a report-carrying explainer handler result and advance its run.
+
+        Only the explainer graph goes through here.  The drama automation family
+        advances its own run inside ``run_automation_task`` (it has to, because
+        the next task must wait on the real child Jobs), so calling this for it
+        would step the same run twice.
+        """
+
+        del worker_id
+        advance_error = advance_automation_run(
+            job,
+            report,
+            produced_bytes,
+            workflow_steps=AutomationWorkflowService(self.database),
+        )
+        if advance_error:
+            report = {**report, "workflow_advance_error": advance_error}
+        return WorkerExecution(kind, relative, report, produced_bytes)
+
+    def _execution(self, result: Any) -> WorkerExecution:
+        return WorkerExecution(result[0], result[1])
 
     def _gpu_activation_context(
         self,

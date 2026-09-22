@@ -1,0 +1,75 @@
+{
+  "checks": [
+    {
+      "tab": "overview",
+      "visible": true,
+      "selected": "true"
+    },
+    {
+      "tab": "script",
+      "visible": true,
+      "selected": "true"
+    },
+    {
+      "tab": "assets",
+      "visible": true,
+      "selected": "true"
+    },
+    {
+      "tab": "storyboard",
+      "visible": true,
+      "selected": "true"
+    },
+    {
+      "tab": "audio",
+      "visible": true,
+      "selected": "true"
+    },
+    {
+      "tab": "review",
+      "visible": true,
+      "selected": "true"
+    },
+    {
+      "dialogOpen": true
+    },
+    {
+      "locatedText": "示例定位：双语字幕安全区 · 当前成片版本"
+    },
+    {
+      "generate": "示例 · 生产中",
+      "defaultPolicy": "auto"
+    },
+    {
+      "policy": "讲解稿和主要资产完成后集中确认一次，再进入视频渲染；其他步骤自动继续。"
+    },
+    {
+      "enText": "A train was ready to leave. Then the people at the station decided to wait. What would you want to know first?"
+    },
+    {
+      "mobileTab": "overview",
+      "overflow": 0
+    },
+    {
+      "mobileTab": "script",
+      "overflow": 0
+    },
+    {
+      "mobileTab": "assets",
+      "overflow": 0
+    },
+    {
+      "mobileTab": "storyboard",
+      "overflow": 0
+    },
+    {
+      "mobileTab": "audio",
+      "overflow": 0
+    },
+    {
+      "mobileTab": "review",
+      "overflow": 0
+    }
+  ],
+  "errors": []
+}

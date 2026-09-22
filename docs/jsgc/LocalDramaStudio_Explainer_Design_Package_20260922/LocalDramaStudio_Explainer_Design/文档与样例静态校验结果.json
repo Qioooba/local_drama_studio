@@ -1,0 +1,228 @@
+{
+  "document_kind": "DESIGN_PACKAGE_STATIC_VALIDATION",
+  "executed_at_utc": "2026-09-21T18:25:25.146675+00:00",
+  "scope": "Documentation, JSON contract, fixture references and static prototype checks only.",
+  "repository_baseline": "8a63c604a1a13556dbe277d312ecf73bebb52883",
+  "application_tests_status": "NOT_RUN",
+  "gpu_inference_status": "NOT_RUN",
+  "actual_video_generated": false,
+  "checks": [
+    {
+      "name": "json_schema_and_example",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "Draft 2020-12 meta-schema and positive design fixture validated; real references still require server preflight."
+    },
+    {
+      "name": "unknown_top_level_field",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "Invalid fixture correctly rejected by design schema; no API call or application policy test performed."
+    },
+    {
+      "name": "cloud_fallback_forbidden",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "Invalid fixture correctly rejected by design schema; no API call or application policy test performed."
+    },
+    {
+      "name": "local_only_cloud_provider",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "Invalid fixture correctly rejected by design schema; no API call or application policy test performed."
+    },
+    {
+      "name": "offline_external_requests",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "Invalid fixture correctly rejected by design schema; no API call or application policy test performed."
+    },
+    {
+      "name": "empty_import",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "Invalid fixture correctly rejected by design schema; no API call or application policy test performed."
+    },
+    {
+      "name": "none_caption_with_language",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "Invalid fixture correctly rejected by design schema; no API call or application policy test performed."
+    },
+    {
+      "name": "fixed_duration_tolerance",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "Invalid fixture correctly rejected by design schema; no API call or application policy test performed."
+    },
+    {
+      "name": "automatic_lock_override",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "Invalid fixture correctly rejected by design schema; no API call or application policy test performed."
+    },
+    {
+      "name": "no_generated_media_claim",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "All media remain ungenerated, measurements unavailable, timing planned."
+    },
+    {
+      "name": "counts_and_unique_ids",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "24 segments, 40 shots, 3 characters + 2 locations + 2 props, 18 fiction facts, 52 keyframe slots."
+    },
+    {
+      "name": "narration_segments_timeline",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "Contiguous half-open Chinese planned ranges [0,7500) at 25fps; not actual TTS alignment."
+    },
+    {
+      "name": "shots_timeline",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "Contiguous half-open Chinese planned ranges [0,7500) at 25fps; not actual TTS alignment."
+    },
+    {
+      "name": "cross_references",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "Segment, shot, entity, fact and keyframe references resolve; segment-shot ranges agree."
+    },
+    {
+      "name": "shot_mix",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": {
+        "information_or_scene_detail": 8,
+        "motion_still": 20,
+        "i2v": 12
+      }
+    },
+    {
+      "name": "text_statistics",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": {
+        "zh_han_characters": 1117,
+        "zh_characters_with_punctuation": 1252,
+        "en_whitespace_tokens": 696
+      }
+    },
+    {
+      "name": "english_independent_clock",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "English timing must be measured independently; Chinese 7500 frames are not copied as actual English timing."
+    },
+    {
+      "name": "test_matrix",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "90 consecutive unique product tests remain NOT_RUN; 24 unique requirements."
+    },
+    {
+      "name": "prototype_network_free",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "No network API or external src/href found; static scan is scoped to supplied prototype."
+    },
+    {
+      "name": "prototype_declares_fixture",
+      "status": "PASS",
+      "scope": "DESIGN_ARTIFACT_ONLY",
+      "details": "Prototype includes visible mock-data disclosure."
+    }
+  ],
+  "prototype_browser_qa": {
+    "checks": [
+      {
+        "tab": "overview",
+        "visible": true,
+        "selected": "true"
+      },
+      {
+        "tab": "script",
+        "visible": true,
+        "selected": "true"
+      },
+      {
+        "tab": "assets",
+        "visible": true,
+        "selected": "true"
+      },
+      {
+        "tab": "storyboard",
+        "visible": true,
+        "selected": "true"
+      },
+      {
+        "tab": "audio",
+        "visible": true,
+        "selected": "true"
+      },
+      {
+        "tab": "review",
+        "visible": true,
+        "selected": "true"
+      },
+      {
+        "dialogOpen": true
+      },
+      {
+        "locatedText": "示例定位：双语字幕安全区 · 当前成片版本"
+      },
+      {
+        "generate": "示例 · 生产中",
+        "defaultPolicy": "auto"
+      },
+      {
+        "policy": "讲解稿和主要资产完成后集中确认一次，再进入视频渲染；其他步骤自动继续。"
+      },
+      {
+        "enText": "A train was ready to leave. Then the people at the station decided to wait. What would you want to know first?"
+      },
+      {
+        "mobileTab": "overview",
+        "overflow": 0
+      },
+      {
+        "mobileTab": "script",
+        "overflow": 0
+      },
+      {
+        "mobileTab": "assets",
+        "overflow": 0
+      },
+      {
+        "mobileTab": "storyboard",
+        "overflow": 0
+      },
+      {
+        "mobileTab": "audio",
+        "overflow": 0
+      },
+      {
+        "mobileTab": "review",
+        "overflow": 0
+      }
+    ],
+    "errors": []
+  },
+  "prototype_visual_qa_limit": "Browser interaction and layout checked. Screenshot environment lacked CJK glyphs; screenshots are not delivered and do not prove final Chinese typography on every OS.",
+  "inputs_sha256": {
+    "contracts/explainer-run-intent.example.json": "b7b83472bcbaa1ab174fab8fa2ebd2d835ab2f777de7a02c52fd18b8e38aadd3",
+    "contracts/explainer-run-intent.schema.json": "bdb3b5f81287ccd8241ccadb8e74713dfa0442d036c9016a3098e56e13e3d839",
+    "sample_episode.json": "a155279fff5d4affe6076ad073da58f76707964831b76f63b2439f4e31ff3d13",
+    "validate_design_package.py": "9f2a6b923782483df88ff6e3f988dc9c88e507d742c85497ea42ff300c1d562b",
+    "五分钟样片讲稿与镜头规范.md": "d898546283c693c65b68f354641531d922c5312a173f2909568c7fe7974098e2",
+    "交付说明与AI实施入口.md": "acb05efde4820c6924a96958eadaaecac1ce5655a363e2e46998ed10f57f7288",
+    "原型浏览器校验结果.json": "1efc27a1ae859dbb6a09c327364f15118d6387cc6b225ae7e886fde0731132a5",
+    "测试与验收矩阵.md": "8fa432e570f9dde2f510a9bc627c4e385700802197f6008462dd5d13b61c2957",
+    "源码接入与开发任务清单.md": "fe1afe492bbdec46af17b71b13c2c654b5b58412d98e13256c3690f56a89b72a",
+    "解说工厂交互线框稿.html": "29c8ec152e5d33163a75c9b1a580ebfe9e5bfcd9c89b18c219cb1ee8e93aa71f",
+    "解说工厂完整设计与开发规范.md": "37e01b2852ac292ba4d58ae1342b6bb317d602b3f555d1f5a8a3f845e08f1c35"
+  }
+}

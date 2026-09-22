@@ -36,6 +36,7 @@ from .api.routes.edit_v2 import router as edit_v2_router
 from .api.routes.effective_configuration import router as effective_configuration_router
 from .api.routes.episode_production_v2 import router as episode_production_v2_router
 from .api.routes.experiments import router as experiments_router
+from .api.routes.explainers import router as explainers_router
 from .api.routes.gates import router as gates_router
 from .api.routes.generation_estimates import router as generation_estimates_router
 from .api.routes.generation_preferences import router as generation_preferences_router
@@ -79,6 +80,12 @@ from .application.worker_sessions import WorkerSupervisor
 from .config import Settings
 from .domain.errors import DomainRuleError
 from .errors import ApiError, api_error_handler, validation_error_handler
+from .infrastructure.database.readiness import (
+    InitializationReport,
+    InitializationStep,
+    SchemaReadiness,
+    inspect_schema_readiness,
+)
 from .infrastructure.database.sqlite import Database
 from .infrastructure.manifest import ManifestValidationError
 from .logging_setup import configure_logging, get_logger
@@ -86,6 +93,13 @@ from .middleware import ApiContractMiddleware, LocalOriginMiddleware, RequestCon
 from .platform import create_platform_services
 
 _LOGGER = get_logger("main")
+
+#: Names of the application initialization steps.  Readiness reports name the
+#: affected capability individually instead of hiding every later step behind
+#: one broad ``try`` block.
+INIT_STEP_DATABASE_SCHEMA = "database_schema"
+INIT_STEP_REVIEW_TEMPLATES = "review_templates"
+INIT_STEP_MODEL_MANIFEST = "model_manifest"
 
 
 def _start_embedded_worker(app: FastAPI, settings: Settings) -> tuple[threading.Event, threading.Thread] | None:
@@ -118,30 +132,198 @@ def _start_embedded_worker(app: FastAPI, settings: Settings) -> tuple[threading.
     return stop_requested, thread
 
 
+def _initialize_database_schema(database: Database) -> tuple[InitializationStep, SchemaReadiness]:
+    """Required step: the database must be able to serve business requests.
+
+    Schema inspection is always recorded, even when the database file does not
+    exist yet, so a readiness report can name the affected capability instead
+    of hiding it in an empty review list.
+    """
+    if not database.exists:
+        schema = inspect_schema_readiness(database.path)
+        return (
+            InitializationStep(
+                name=INIT_STEP_DATABASE_SCHEMA,
+                required=True,
+                status="skipped",
+                detail="database_not_created_yet",
+            ),
+            schema,
+        )
+    try:
+        schema = inspect_schema_readiness(database.path)
+    except Exception as error:
+        _LOGGER.error(
+            "api.startup_step_failed step=%s required=true error_type=%s error=%s",
+            INIT_STEP_DATABASE_SCHEMA,
+            type(error).__name__,
+            str(error)[:300],
+        )
+        return (
+            InitializationStep(
+                name=INIT_STEP_DATABASE_SCHEMA,
+                required=True,
+                status="failed",
+                detail=str(error)[:300],
+                error_type=type(error).__name__,
+            ),
+            SchemaReadiness(
+                state="unreadable",
+                database_path=database.path,
+                database_exists=True,
+                current_revisions=(),
+                expected_heads=(),
+                missing_tables=(),
+                missing_columns=(),
+                detail=type(error).__name__,
+            ),
+        )
+    if schema.ready:
+        _LOGGER.info(
+            "api.startup_step_ready step=%s required=true expected_heads=%s",
+            INIT_STEP_DATABASE_SCHEMA,
+            ",".join(schema.expected_heads) or "<in_memory>",
+        )
+        return (
+            InitializationStep(
+                name=INIT_STEP_DATABASE_SCHEMA,
+                required=True,
+                status="completed",
+                detail="schema_capability_verified",
+            ),
+            schema,
+        )
+    _LOGGER.error(
+        "api.startup_step_blocked step=%s required=true reason=%s detail=%s",
+        INIT_STEP_DATABASE_SCHEMA,
+        schema.reason,
+        schema.detail[:300],
+    )
+    return (
+        InitializationStep(
+            name=INIT_STEP_DATABASE_SCHEMA,
+            required=True,
+            status="failed",
+            detail=f"{schema.reason}:{schema.detail}"[:300],
+            error_type="SchemaReadinessError",
+            error_code=schema.reason,
+        ),
+        schema,
+    )
+
+
+def _seed_builtin_review_templates(database: Database, settings: Settings, schema: SchemaReadiness) -> InitializationStep:
+    """Required step: built-in review templates must exist without any model.
+
+    This is deliberately independent from the optional model-manifest sync.
+    Review templates are a built-in product capability, so a missing or corrupt
+    model manifest must never leave imported media unreviewable.
+    """
+    if not schema.ready:
+        _LOGGER.warning(
+            "api.startup_step_skipped step=%s required=true reason=database_schema_not_ready schema_state=%s",
+            INIT_STEP_REVIEW_TEMPLATES,
+            schema.state,
+        )
+        return InitializationStep(
+            name=INIT_STEP_REVIEW_TEMPLATES,
+            required=True,
+            status="skipped",
+            detail=f"database_schema_not_ready:{schema.state}",
+        )
+    try:
+        seeded = ReviewService(database, settings).ensure_templates(actor="startup")
+    except (sqlite3.Error, DomainRuleError) as error:
+        _LOGGER.error(
+            "api.startup_step_failed step=%s required=true error_type=%s error_code=%s error=%s",
+            INIT_STEP_REVIEW_TEMPLATES,
+            type(error).__name__,
+            getattr(error, "code", ""),
+            str(error)[:300],
+        )
+        return InitializationStep(
+            name=INIT_STEP_REVIEW_TEMPLATES,
+            required=True,
+            status="failed",
+            detail=str(error)[:300],
+            error_type=type(error).__name__,
+            error_code=str(getattr(error, "code", "")),
+        )
+    _LOGGER.info("api.startup_step_ready step=%s required=true seeded=%s", INIT_STEP_REVIEW_TEMPLATES, seeded)
+    return InitializationStep(
+        name=INIT_STEP_REVIEW_TEMPLATES,
+        required=True,
+        status="completed",
+        detail=f"seeded={seeded}",
+    )
+
+
+def _register_model_manifest(app: FastAPI, database: Database, settings: Settings, schema: SchemaReadiness) -> InitializationStep:
+    """Optional step: sync the local model manifest.
+
+    A model that is not configured may only make model capabilities
+    ``NOT_CONFIGURED``; it must never disable local import, review, or the
+    supported CPU post-production chain.  Failures are recorded on this step
+    alone and never abort the following initialization.
+    """
+    if not schema.ready:
+        app.state.manifest_sync = None
+        app.state.llm_sync = None
+        return InitializationStep(
+            name=INIT_STEP_MODEL_MANIFEST,
+            required=False,
+            status="skipped",
+            detail=f"database_schema_not_ready:{schema.state}",
+        )
+    try:
+        app.state.manifest_sync = ProfileService(database, settings.manifest_path).sync_manifest(actor="startup")
+        app.state.llm_sync = None
+    except (sqlite3.Error, ManifestValidationError, DomainRuleError) as error:
+        app.state.manifest_sync = None
+        app.state.llm_sync = None
+        _LOGGER.warning(
+            "api.startup_step_degraded step=%s required=false error_type=%s error_code=%s error=%s",
+            INIT_STEP_MODEL_MANIFEST,
+            type(error).__name__,
+            getattr(error, "code", ""),
+            str(error)[:300],
+        )
+        return InitializationStep(
+            name=INIT_STEP_MODEL_MANIFEST,
+            required=False,
+            status="failed",
+            detail=str(error)[:300],
+            error_type=type(error).__name__,
+            error_code=str(getattr(error, "code", "")),
+        )
+    _LOGGER.info("api.startup_step_ready step=%s required=false", INIT_STEP_MODEL_MANIFEST)
+    return InitializationStep(
+        name=INIT_STEP_MODEL_MANIFEST,
+        required=False,
+        status="completed",
+        detail="manifest_synced",
+    )
+
+
+def _initialize_application(app: FastAPI, database: Database, settings: Settings) -> InitializationReport:
+    """Run required built-in initialization first, then optional model config.
+
+    Every step is recorded on its own so ``/health/ready`` can report which
+    capability is affected.  A failure in the optional model manifest sync no
+    longer suppresses the required review-template seeding (BKT-08).
+    """
+    schema_step, schema = _initialize_database_schema(database)
+    template_step = _seed_builtin_review_templates(database, settings, schema)
+    manifest_step = _register_model_manifest(app, database, settings, schema)
+    return InitializationReport(steps=(schema_step, template_step, manifest_step), schema=schema)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     settings.ensure_roots()
     app.state.database = Database(settings.database_path)
-    try:
-        if app.state.database.exists:
-            with app.state.database.connect() as connection:
-                connection.execute("SELECT 1 FROM local_runtimes LIMIT 1")
-            app.state.manifest_sync = ProfileService(app.state.database, settings.manifest_path).sync_manifest(actor="startup")
-            app.state.llm_sync = None
-            app.state.review_templates = ReviewService(app.state.database, settings).ensure_templates(actor="startup")
-        else:
-            app.state.manifest_sync = None
-            app.state.llm_sync = None
-    except (sqlite3.Error, ManifestValidationError, DomainRuleError) as error:
-        _LOGGER.error(
-            "api.startup_sync_failed error_type=%s error_code=%s error=%s",
-            type(error).__name__,
-            getattr(error, "code", ""),
-            str(error)[:300],
-        )
-        app.state.manifest_sync = None
-        app.state.llm_sync = None
+    app.state.readiness = _initialize_application(app, app.state.database, settings)
     worker = _start_embedded_worker(app, settings)
     app.state.embedded_worker = worker
     try:
@@ -184,6 +366,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         LocalOriginMiddleware,
         allowed_origins=resolved.allowed_origins,
         allow_same_origin_writes=resolved.is_lan_service,
+        trusted_hosts=resolved.trusted_hosts,
     )
     app.add_middleware(ApiContractMiddleware)
     app.add_exception_handler(ApiError, api_error_handler)
@@ -247,6 +430,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(adaptation_plans_router, prefix="/api/v2")
     app.include_router(shot_studio_v2_router, prefix="/api/v2")
     app.include_router(episode_production_v2_router, prefix="/api/v2")
+    app.include_router(explainers_router, prefix="/api/v2")
     _mount_frontend(app, resolved)
     return app
 
