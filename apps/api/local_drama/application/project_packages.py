@@ -4,6 +4,7 @@ import hashlib
 import json
 import shutil
 import stat
+import time
 import uuid
 import zipfile
 from datetime import UTC, datetime, timedelta
@@ -14,6 +15,7 @@ from urllib.parse import quote
 from local_drama.application.commands.director_recipes import canonical_recipe, recipe_hash, validate_recipe
 from local_drama.application.local_artifacts import local_artifact_reference
 from local_drama.application.media import MediaService
+from local_drama.application.projects import TemplateCopyableConfiguration
 from local_drama.config import Settings
 from local_drama.domain.capabilities import normalize_capability
 from local_drama.domain.errors import DomainRuleError
@@ -24,10 +26,53 @@ from local_drama.infrastructure.filesystem.path_policy import canonical_relative
 from local_drama.infrastructure.filesystem.template import TEMPLATE_DIRECTORIES, TEMPLATE_VERSION
 
 PACKAGE_SCHEMA = "localdrama.project-package.v2"
-STATE_SCHEMA = "localdrama.project-state.v2"
+STATE_SCHEMA_V2 = "localdrama.project-state.v2"
+#: Current state schema.  v2 packages stay importable; fields that only exist
+#: from v3 on are reported as ``missing_fields`` instead of being silently
+#: defaulted.
+STATE_SCHEMA = "localdrama.project-state.v3"
+SUPPORTED_STATE_SCHEMAS = (STATE_SCHEMA_V2, STATE_SCHEMA)
 MAX_ENTRIES = 100_000
 MAX_EXPANDED_BYTES = 2 * 1024**4
 MAX_COMPRESSION_RATIO = 250
+#: A metadata JSON member is read into memory before it is validated, so it
+#: needs its own small bound instead of relying on the archive-wide expansion
+#: limit alone.
+MAX_METADATA_JSON_BYTES = 16 * 1024 * 1024
+MAX_JSON_DEPTH = 64
+MAX_STATE_RECORDS = 200_000
+#: Manuscript domains added to the versioned package protocol.  ``project``
+#: carries ``target_duration_ms`` from v3 on.
+MANUSCRIPT_STATE_KEYS = ("source_documents", "source_document_versions", "import_sessions", "import_session_items")
+#: Import sessions that are historical business facts.  A pending
+#: ``PREVIEW_READY`` session is UI-scoped working state whose next click would
+#: commit the same manuscript again, so it is never replayed as executable
+#: state in a copy; it is listed in ``excluded_state`` instead of being dropped
+#: silently.
+TERMINAL_IMPORT_SESSION_STATUSES = frozenset({"COMMITTED", "FAILED", "CANCELLED", "EXPIRED"})
+#: Lists that a package must always carry.
+REQUIRED_STATE_LIST_KEYS = ("seasons", "episodes", "scenes", "shots", "profile_bindings", "delivery_targets")
+#: Lists that later package versions added; older packages legitimately omit
+#: them and the omission is reported instead of being hidden.
+OPTIONAL_STATE_LIST_KEYS = (
+    "shot_groups",
+    "shot_group_members",
+    "story_assets",
+    "story_asset_proposals",
+    "story_asset_states",
+    "story_asset_references",
+    "episode_asset_state_bindings",
+    "shot_asset_bindings",
+    "generation_preference_sets",
+    "generation_preference_versions",
+    "generation_qc_policy_sets",
+    "generation_qc_policy_versions",
+    "director_recipes",
+    "director_recipe_versions",
+)
+OPTIONAL_STATE_MEDIA_KEYS = ("media_assets", "media_versions")
+STATE_LIST_KEYS = (*REQUIRED_STATE_LIST_KEYS, *OPTIONAL_STATE_LIST_KEYS, *OPTIONAL_STATE_MEDIA_KEYS, *MANUSCRIPT_STATE_KEYS)
+STATE_MAY_BE_ABSENT_KEYS = frozenset({*OPTIONAL_STATE_LIST_KEYS, *OPTIONAL_STATE_MEDIA_KEYS, *MANUSCRIPT_STATE_KEYS})
 
 
 def _json_bytes(value: object) -> bytes:
@@ -56,6 +101,20 @@ def _writestr(archive: zipfile.ZipFile, name: str, content: bytes) -> None:
     archive.writestr(info, content)
 
 
+def _write_path(archive: zipfile.ZipFile, name: str, source: Path) -> None:
+    """Stream one file into the archive with a fixed timestamp.
+
+    Using ``ZipFile.write`` would copy the source file's mtime into the archive
+    header, so two exports of byte-identical content would produce different
+    archives and the content-addressed package identity would look changed.
+    """
+    info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o100644 << 16
+    with source.open("rb") as stream, archive.open(info, "w") as target:
+        shutil.copyfileobj(stream, target, length=1024 * 1024)
+
+
 def _zip_digest(archive: zipfile.ZipFile, name: str) -> tuple[int, str]:
     digest = hashlib.sha256()
     size = 0
@@ -73,6 +132,30 @@ def _is_reparse(path: Path) -> bool:
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _require_sha256(value: object, label: str) -> str:
+    if not isinstance(value, str) or len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+        raise DomainRuleError("PROJECT_PACKAGE_INVALID", f"{label} 必须是小写 SHA-256", {"value": repr(value)[:64]})
+    return value
+
+
+def _require_non_negative_int(value: object, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise DomainRuleError("PROJECT_PACKAGE_INVALID", f"{label} 必须是非负整数", {"value": repr(value)[:64]})
+    return value
+
+
+def _require_json_depth(payload: object, label: str) -> None:
+    stack: list[tuple[object, int]] = [(payload, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if depth > MAX_JSON_DEPTH:
+            raise DomainRuleError("PROJECT_PACKAGE_METADATA_TOO_DEEP", f"{label} 嵌套层级超过上限", {"limit": MAX_JSON_DEPTH})
+        if isinstance(node, dict):
+            stack.extend((value, depth + 1) for value in node.values())
+        elif isinstance(node, list):
+            stack.extend((value, depth + 1) for value in node)
 
 
 class ProjectPackageService:
@@ -194,7 +277,7 @@ class ProjectPackageService:
     def _state(self, project_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             project = connection.execute("""SELECT id,code,title,template_version,aspect_ratio,fps_num,fps_den,timezone,
-                width,height,primary_language,subtitle_mode,subtitle_language FROM projects WHERE id=?""", (project_id,)).fetchone()
+                width,height,primary_language,subtitle_mode,subtitle_language,target_duration_ms FROM projects WHERE id=?""", (project_id,)).fetchone()
             if project is None:
                 raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
             seasons = [dict(row) for row in connection.execute("SELECT id,number,display_order,code,title FROM seasons WHERE project_id=? ORDER BY display_order", (project_id,))]
@@ -265,6 +348,39 @@ class ProjectPackageService:
                 WHERE r.project_id=? ORDER BY v.recipe_id,v.version_no,v.id""", (project_id,))]
             director_recipe_binding_row = connection.execute("""SELECT recipe_version_id,reason,created_at,updated_at,created_by,
                 revision,schema_version FROM project_director_recipe_bindings WHERE project_id=?""", (project_id,)).fetchone()
+            # Manuscript business records: the source document lineage and the
+            # authorised text ranges the user already committed.  Without these
+            # a copy loses "最近原稿" and the adaptation/regeneration binding
+            # even though the raw file is still inside the package payload.
+            source_documents = [dict(row) for row in connection.execute(
+                """SELECT id,project_id,code,title,source_kind,created_at,updated_at,created_by,revision,schema_version
+                FROM source_documents WHERE project_id=? ORDER BY code,id""", (project_id,))]
+            source_document_versions: list[dict[str, Any]] = []
+            for row in connection.execute(
+                """SELECT v.id,v.source_document_id,v.version_no,v.rel_path,v.source_name,v.mime_type,v.byte_size,v.sha256,
+                v.text_sha256,v.extracted_text_rel,v.parse_status,v.parser_version,v.structure_version,v.metadata_json,
+                v.created_at,v.updated_at,v.created_by,v.revision,v.schema_version FROM source_document_versions v
+                JOIN source_documents d ON d.id=v.source_document_id WHERE d.project_id=?
+                ORDER BY v.source_document_id,v.version_no,v.id""",
+                (project_id,),
+            ):
+                item = dict(row)
+                item["metadata"] = json.loads(str(item.pop("metadata_json") or "{}"))
+                source_document_versions.append(item)
+            import_sessions: list[dict[str, Any]] = []
+            for row in connection.execute(
+                """SELECT id,project_id,source_document_version_id,session_kind,status,preview_json,error_summary,
+                committed_scope_json,committed_scope_hash,created_at,updated_at,created_by,revision,schema_version
+                FROM import_sessions WHERE project_id=? ORDER BY created_at,id""", (project_id,),
+            ):
+                item = dict(row)
+                item["committed_scope"] = json.loads(str(item.pop("committed_scope_json") or "null"))
+                import_sessions.append(item)
+            import_session_items = [dict(row) for row in connection.execute(
+                """SELECT i.id,i.session_id,i.item_type,i.source_start,i.source_end,i.payload_json,i.validation_status,
+                i.created_at,i.updated_at,i.created_by,i.revision,i.schema_version FROM import_session_items i
+                JOIN import_sessions s ON s.id=i.session_id WHERE s.project_id=?
+                ORDER BY i.session_id,i.item_type,i.id""", (project_id,))]
         for shot in shots:
             shot["fields"] = json.loads(str(shot.pop("fields_json") or "{}"))
         for asset in media_assets:
@@ -300,7 +416,17 @@ class ProjectPackageService:
                 "generation_qc_policy_sets": qc_policy_sets, "generation_qc_policy_versions": qc_policy_versions,
                 "director_recipes": director_recipes, "director_recipe_versions": director_recipe_versions,
                 "project_director_recipe_binding": dict(director_recipe_binding_row) if director_recipe_binding_row else None,
-                "excluded_domains": ["jobs", "attempts", "reviews", "selections", "variant_qc_links", "audit_events", "outbox", "cache", "work"]}
+                "source_documents": source_documents, "source_document_versions": source_document_versions,
+                "import_sessions": import_sessions, "import_session_items": import_session_items,
+                "excluded_domains": ["jobs", "attempts", "reviews", "selections", "variant_qc_links", "audit_events", "outbox", "cache", "work"],
+                "excluded_state": [
+                    {
+                        "domain": "import_sessions",
+                        "rule": "PENDING_IMPORT_SESSION_NOT_REPLAYED",
+                        "statuses": sorted(TERMINAL_IMPORT_SESSION_STATUSES),
+                        "note": "未提交的 PREVIEW_READY 导入会话属于 UI 工作状态，不复制为副本中可直接执行的下一步；原稿与已提交正文范围仍会携带。",
+                    }
+                ]}
 
     def _source_files(self, root: Path) -> list[Path]:
         files: list[Path] = []
@@ -317,40 +443,99 @@ class ProjectPackageService:
                 files.append(path)
         return sorted(files, key=lambda item: item.relative_to(root).as_posix())
 
+    def _payload_manifest(self, root: Path) -> list[dict[str, Any]]:
+        """Freeze the normalised payload manifest (relative path + content hash)."""
+        manifest: list[dict[str, Any]] = []
+        for source in self._source_files(root):
+            manifest.append(
+                {
+                    "path": source.relative_to(root).as_posix(),
+                    "byte_size": source.stat().st_size,
+                    "sha256": _sha256(source),
+                }
+            )
+        return manifest
+
+    @staticmethod
+    def _package_identity(state_sha256: str, payload_manifest: list[dict[str, Any]]) -> str:
+        """Content identity of a package: frozen business state *and* payload bytes.
+
+        Only content participates, so touching a file's mtime, or re-exporting
+        byte-identical content, reuses the existing package; adding a licence,
+        LUT, manuscript or any other project file produces a new identity and a
+        new package name instead of colliding with the old one.
+        """
+        canonical = _json_bytes(
+            {
+                "schema_version": PACKAGE_SCHEMA,
+                "state_sha256": state_sha256,
+                "payload": [
+                    {"path": item["path"], "byte_size": item["byte_size"], "sha256": item["sha256"]}
+                    for item in payload_manifest
+                ],
+            }
+        )
+        return hashlib.sha256(canonical).hexdigest()
+
+    def _publish_package(self, partial: Path, final: Path) -> bool:
+        """Publish a finished archive, tolerating a concurrent identical export.
+
+        Two exports of byte-identical content compute the same identity and race
+        for the same name.  The loser must report ``reused`` rather than fail on
+        a rename that collides with the winner's file (Windows also refuses a
+        rename while the other thread holds the target open for hashing).
+        """
+        partial_sha = _sha256(partial)
+        last_error: OSError | None = None
+        for _ in range(20):
+            if final.is_file():
+                try:
+                    final_sha: str | None = _sha256(final)
+                except OSError:
+                    final_sha = None
+                if final_sha == partial_sha:
+                    partial.unlink(missing_ok=True)
+                    return True
+                if final_sha is not None:
+                    raise DomainRuleError("PROJECT_PACKAGE_OUTPUT_CONFLICT", "同名项目包内容不一致")
+            try:
+                replace_path(partial, final)
+                return False
+            except OSError as error:
+                last_error = error
+                time.sleep(0.1)
+        if last_error is not None:
+            raise last_error
+        raise DomainRuleError("PROJECT_PACKAGE_OUTPUT_CONFLICT", "同名项目包内容不一致")
+
     def export(self, project_id: str) -> dict[str, Any]:
         project = self._project(project_id)
         root = self._root(project)
         state_bytes = _json_bytes(self._state(project_id))
         state_sha = hashlib.sha256(state_bytes).hexdigest()
+        payload_manifest = self._payload_manifest(root)
+        identity = self._package_identity(state_sha, payload_manifest)
         output_dir = root / "exports" / "project-packages"
         output_dir.mkdir(parents=True, exist_ok=True)
-        final = output_dir / f"{project['code']}-{state_sha[:12]}.ldspkg"
+        final = output_dir / f"{project['code']}-{identity[:32]}.ldspkg"
         partial = output_dir / f".partial-{uuid.uuid4().hex}.ldspkg"
         entries: list[dict[str, Any]] = [{"path": "project-state.json", "byte_size": len(state_bytes), "sha256": state_sha}]
+        entries.extend({"path": f"payload/{item['path']}", "byte_size": item["byte_size"], "sha256": item["sha256"]} for item in payload_manifest)
         try:
             with zipfile.ZipFile(partial, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6, allowZip64=True) as archive:
                 _writestr(archive, "project-state.json", state_bytes)
-                for source in self._source_files(root):
-                    relative = source.relative_to(root).as_posix()
-                    before_size, before_sha = source.stat().st_size, _sha256(source)
-                    archive.write(source, f"payload/{relative}")
-                    if source.stat().st_size != before_size or _sha256(source) != before_sha:
-                        raise DomainRuleError("PROJECT_PACKAGE_SOURCE_CHANGED", "导出期间源文件发生变化", {"path": relative})
-                    entries.append({"path": f"payload/{relative}", "byte_size": before_size, "sha256": before_sha})
+                for item in payload_manifest:
+                    source = root / Path(*PurePosixPath(str(item["path"])).parts)
+                    _write_path(archive, f"payload/{item['path']}", source)
+                    if source.stat().st_size != item["byte_size"] or _sha256(source) != item["sha256"]:
+                        raise DomainRuleError("PROJECT_PACKAGE_SOURCE_CHANGED", "导出期间源文件发生变化", {"path": item["path"]})
                 manifest = {"schema_version": PACKAGE_SCHEMA, "project_id": project_id, "project_code": project["code"], "state_sha256": state_sha,
                             "entry_count": len(entries), "expanded_bytes": sum(int(item["byte_size"]) for item in entries), "entries": entries}
                 _writestr(archive, "package-manifest.json", _json_bytes(manifest))
             verified = self.inspect_path(partial)
             if verified["status"] not in {"READY_REBIND_EXISTING", "IDENTITY_CONFLICT"}:
                 raise DomainRuleError("PROJECT_PACKAGE_VERIFY_FAILED", "项目包导出后校验失败")
-            if final.exists():
-                if _sha256(final) != _sha256(partial):
-                    raise DomainRuleError("PROJECT_PACKAGE_OUTPUT_CONFLICT", "同名项目包内容不一致")
-                partial.unlink()
-                reused = True
-            else:
-                replace_path(partial, final)
-                reused = False
+            reused = self._publish_package(partial, final)
         except Exception:
             partial.unlink(missing_ok=True)
             raise
@@ -366,8 +551,108 @@ class ProjectPackageService:
             error_code="PROJECT_PACKAGE_OUTPUT_INVALID",
         )
         return {"status": "EXPORTED", "project_id": project_id, "artifact": artifact, "rel_path": rel_path, "byte_size": final.stat().st_size,
-                "sha256": _sha256(final), "entry_count": len(entries), "expanded_bytes": sum(int(item["byte_size"]) for item in entries), "reused": reused,
+                "sha256": _sha256(final),
+                "entry_count": len(entries), "expanded_bytes": sum(int(item["byte_size"]) for item in entries), "reused": reused,
                 "database_mutated": False, "runtime_contacted": False, "network_contacted": False}
+
+    def _load_metadata_json(self, archive: zipfile.ZipFile, name: str, declared_size: int) -> object:
+        """Read one bounded metadata member; structural limits before parsing."""
+        if declared_size < 0 or declared_size > MAX_METADATA_JSON_BYTES:
+            raise DomainRuleError(
+                "PROJECT_PACKAGE_METADATA_TOO_LARGE",
+                "项目包元数据超过单文件大小上限",
+                {"name": name, "byte_size": declared_size, "limit": MAX_METADATA_JSON_BYTES},
+            )
+        try:
+            raw = archive.read(name)
+        except (KeyError, OSError, zipfile.BadZipFile) as error:
+            raise DomainRuleError("PROJECT_PACKAGE_INVALID", "项目包元数据无法读取", {"name": name}) from error
+        if len(raw) > MAX_METADATA_JSON_BYTES:
+            raise DomainRuleError(
+                "PROJECT_PACKAGE_METADATA_TOO_LARGE",
+                "项目包元数据超过单文件大小上限",
+                {"name": name, "byte_size": len(raw), "limit": MAX_METADATA_JSON_BYTES},
+            )
+        try:
+            payload = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            raise DomainRuleError("PROJECT_PACKAGE_INVALID", "项目包元数据不是合法 JSON", {"name": name}) from error
+        _require_json_depth(payload, name)
+        return payload
+
+    @staticmethod
+    def _require_json_object(payload: object, label: str) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise DomainRuleError(
+                "PROJECT_PACKAGE_INVALID",
+                f"{label} 顶层必须是 JSON 对象",
+                {"received": type(payload).__name__},
+            )
+        return payload
+
+    def _validate_manifest_entries(self, manifest: dict[str, Any], names: list[str]) -> dict[str, dict[str, Any]]:
+        raw_entries = manifest.get("entries")
+        if not isinstance(raw_entries, list):
+            raise DomainRuleError("PROJECT_PACKAGE_INVALID", "manifest entries 必须是数组")
+        if len(raw_entries) > MAX_ENTRIES:
+            raise DomainRuleError("PROJECT_PACKAGE_TOO_MANY_ENTRIES", "项目包文件数超过上限")
+        expected: dict[str, dict[str, Any]] = {}
+        for item in raw_entries:
+            if not isinstance(item, dict):
+                raise DomainRuleError("PROJECT_PACKAGE_INVALID", "manifest entry 必须是对象")
+            path = item.get("path")
+            if not isinstance(path, str) or not path:
+                raise DomainRuleError("PROJECT_PACKAGE_INVALID", "manifest entry path 必须是非空字符串")
+            if path in expected:
+                raise DomainRuleError("PROJECT_PACKAGE_DUPLICATE_PATH", "manifest 包含重复路径", {"path": path})
+            expected[path] = {
+                "path": path,
+                "byte_size": _require_non_negative_int(item.get("byte_size"), f"manifest[{path}].byte_size"),
+                "sha256": _require_sha256(item.get("sha256"), f"manifest[{path}].sha256"),
+            }
+        entry_count = _require_non_negative_int(manifest.get("entry_count"), "manifest.entry_count")
+        expanded_bytes = _require_non_negative_int(manifest.get("expanded_bytes"), "manifest.expanded_bytes")
+        if entry_count != len(expected) or expanded_bytes != sum(int(item["byte_size"]) for item in expected.values()):
+            raise DomainRuleError("PROJECT_PACKAGE_MANIFEST_MISMATCH", "manifest 汇总计数与文件清单不一致")
+        if set(expected) != set(names) - {"package-manifest.json"}:
+            raise DomainRuleError("PROJECT_PACKAGE_MANIFEST_MISMATCH", "manifest 文件清单与压缩包不一致")
+        return expected
+
+    def _validate_state_structure(self, state: dict[str, Any]) -> list[str]:
+        """Validate state types, record counts and required shape before use.
+
+        Returns the fields an older package legitimately omitted, so callers can
+        surface them instead of pretending the data was simply empty.
+        """
+        project = state.get("project")
+        if not isinstance(project, dict):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包 project 必须是对象")
+        if not all(isinstance(project.get(key), str) and project.get(key) for key in ("id", "code", "title")):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包项目身份不完整")
+        records = 0
+        for key in STATE_LIST_KEYS:
+            if key not in state:
+                if key in STATE_MAY_BE_ABSENT_KEYS:
+                    continue
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", f"项目包缺少 {key} 列表", {"key": key})
+            value = state[key]
+            if not isinstance(value, list):
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", f"项目包 {key} 必须是数组", {"key": key})
+            records += len(value)
+            if any(not isinstance(item, dict) for item in value):
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", f"项目包 {key} 条目必须是对象", {"key": key})
+        if records > MAX_STATE_RECORDS:
+            raise DomainRuleError("PROJECT_PACKAGE_TOO_MANY_RECORDS", "项目包状态记录数超过上限", {"records": records})
+        binding = state.get("project_director_recipe_binding")
+        if binding is not None and not isinstance(binding, dict):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包导演配方绑定格式无效")
+        plan = state.get("production_plan")
+        if plan is not None and not isinstance(plan, dict):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包制作方案格式无效")
+        missing = [key for key in MANUSCRIPT_STATE_KEYS if key not in state]
+        if "target_duration_ms" not in project:
+            missing.append("project.target_duration_ms")
+        return missing
 
     def inspect_path(self, package: Path) -> dict[str, Any]:
         try:
@@ -384,29 +669,41 @@ class ProjectPackageService:
                     raise DomainRuleError("PROJECT_PACKAGE_REPARSE_POINT", "项目包不接受 symlink 条目")
                 if "package-manifest.json" not in names or "project-state.json" not in names:
                     raise DomainRuleError("PROJECT_PACKAGE_REQUIRED_FILE_MISSING", "项目包缺少 manifest 或 state")
+                declared = {info.filename: info for info in infos}
                 expanded = sum(info.file_size for info in infos)
                 compressed = sum(max(info.compress_size, 1) for info in infos)
                 if expanded > MAX_EXPANDED_BYTES or expanded / compressed > MAX_COMPRESSION_RATIO:
                     raise DomainRuleError("PROJECT_PACKAGE_EXPANSION_UNSAFE", "项目包展开大小或压缩比不安全")
-                manifest = json.loads(archive.read("package-manifest.json"))
-                state = json.loads(archive.read("project-state.json"))
-                if manifest.get("schema_version") != PACKAGE_SCHEMA or state.get("schema_version") != STATE_SCHEMA:
+                manifest = self._require_json_object(
+                    self._load_metadata_json(archive, "package-manifest.json", declared["package-manifest.json"].file_size),
+                    "package-manifest.json",
+                )
+                state = self._require_json_object(
+                    self._load_metadata_json(archive, "project-state.json", declared["project-state.json"].file_size),
+                    "project-state.json",
+                )
+                if manifest.get("schema_version") != PACKAGE_SCHEMA:
                     raise DomainRuleError("PROJECT_PACKAGE_SCHEMA_UNSUPPORTED", "项目包 schema 不受支持")
-                expected = {str(item["path"]): item for item in manifest.get("entries", [])}
-                if set(expected) != set(names) - {"package-manifest.json"}:
-                    raise DomainRuleError("PROJECT_PACKAGE_MANIFEST_MISMATCH", "manifest 文件清单与压缩包不一致")
-                if int(manifest.get("entry_count", -1)) != len(expected) or int(manifest.get("expanded_bytes", -1)) != sum(
-                    int(item["byte_size"]) for item in expected.values()
-                ):
-                    raise DomainRuleError("PROJECT_PACKAGE_MANIFEST_MISMATCH", "manifest 汇总计数与文件清单不一致")
+                if state.get("schema_version") not in SUPPORTED_STATE_SCHEMAS:
+                    raise DomainRuleError("PROJECT_PACKAGE_SCHEMA_UNSUPPORTED", "项目包状态 schema 不受支持")
+                manifest_project_id = manifest.get("project_id")
+                manifest_project_code = manifest.get("project_code")
+                if not isinstance(manifest_project_id, str) or not manifest_project_id:
+                    raise DomainRuleError("PROJECT_PACKAGE_INVALID", "manifest project_id 必须是非空字符串")
+                if not isinstance(manifest_project_code, str) or not manifest_project_code:
+                    raise DomainRuleError("PROJECT_PACKAGE_INVALID", "manifest project_code 必须是非空字符串")
+                expected = self._validate_manifest_entries(manifest, names)
+                state_entry = expected.get("project-state.json")
+                declared_state_sha = _require_sha256(manifest.get("state_sha256"), "manifest.state_sha256")
+                if state_entry is None or state_entry["sha256"] != declared_state_sha:
+                    raise DomainRuleError("PROJECT_PACKAGE_MANIFEST_MISMATCH", "manifest state_sha256 与 state 条目不一致")
+                missing_fields = self._validate_state_structure(state)
                 for name, item in expected.items():
                     size, digest = _zip_digest(archive, name)
                     if size != int(item["byte_size"]) or digest != item["sha256"]:
                         raise DomainRuleError("PROJECT_PACKAGE_HASH_MISMATCH", "项目包文件 hash/size 不匹配", {"path": name})
                 media_assets = state.get("media_assets", [])
                 media_versions = state.get("media_versions", [])
-                if not isinstance(media_assets, list) or not isinstance(media_versions, list):
-                    raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包媒体状态格式无效")
                 asset_ids = {str(item.get("id")) for item in media_assets}
                 version_ids = {str(item.get("id")) for item in media_versions}
                 if len(asset_ids) != len(media_assets) or len(version_ids) != len(media_versions):
@@ -421,7 +718,19 @@ class ProjectPackageService:
                     entry = expected.get(media_path)
                     if entry is None or int(entry["byte_size"]) != int(version.get("byte_size", -1)) or entry["sha256"] != version.get("sha256"):
                         raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "媒体版本与 manifest 文件不一致", {"path": media_path})
-        except (OSError, zipfile.BadZipFile, KeyError, ValueError, json.JSONDecodeError) as error:
+        except DomainRuleError:
+            raise
+        except (
+            OSError,
+            zipfile.BadZipFile,
+            KeyError,
+            ValueError,
+            TypeError,
+            AttributeError,
+            json.JSONDecodeError,
+            OverflowError,
+            RecursionError,
+        ) as error:
             raise DomainRuleError("PROJECT_PACKAGE_INVALID", "项目包无法安全读取") from error
         project_id, project_code = str(manifest["project_id"]), str(manifest["project_code"])
         with self.database.connect() as connection:
@@ -433,6 +742,7 @@ class ProjectPackageService:
         status = "READY_REBIND_EXISTING" if id_match and str(id_match["code"]) == project_code and free >= expanded else ("IDENTITY_CONFLICT" if conflict else ("READY_IMPORT" if not blockers else "BLOCKED"))
         return {"status": status, "project_id": project_id, "project_code": project_code, "entry_count": int(manifest["entry_count"]), "expanded_bytes": expanded,
                 "free_bytes": free, "blockers": blockers, "conflict_options": ["REBIND_EXISTING", "IMPORT_AS_COPY_REWRITE_IDENTITY"] if conflict else [],
+                "state_schema_version": str(state.get("schema_version")), "missing_fields": missing_fields,
                 "would_import": False, "mutated": False, "runtime_contacted": False, "network_contacted": False}
 
     def dry_run(self, project_id: str, rel_path: str) -> dict[str, Any]:
@@ -511,16 +821,17 @@ class ProjectPackageService:
         self.dry_run_staged(stage_token)
         return (self.staging_root / "staged" / f"{stage_token}.ldspkg").resolve()
 
-    def _read_state(self, package: Path) -> dict[str, Any]:
-        self.inspect_path(package)
+    def _read_state(self, package: Path) -> tuple[dict[str, Any], list[str]]:
+        """Return the validated state plus the fields an older package omitted."""
+        inspected = self.inspect_path(package)
         with zipfile.ZipFile(package) as archive:
-            state = cast(dict[str, Any], json.loads(archive.read("project-state.json")))
-        required_lists = ("seasons", "episodes", "scenes", "shots", "profile_bindings", "delivery_targets")
-        if not isinstance(state.get("project"), dict) or any(not isinstance(state.get(key), list) for key in required_lists):
+            raw_state = json.loads(archive.read("project-state.json"))
+        state = self._require_json_object(raw_state, "project-state.json")
+        missing_fields = [str(item) for item in inspected.get("missing_fields") or []]
+        required_lists = REQUIRED_STATE_LIST_KEYS
+        if any(not isinstance(state.get(key), list) for key in required_lists):
             raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包结构状态不完整")
         project = state["project"]
-        if not all(project.get(key) for key in ("id", "code", "title")):
-            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包项目身份不完整")
         season_ids = {str(item.get("id")) for item in state["seasons"]}
         episode_ids = {str(item.get("id")) for item in state["episodes"]}
         if len(season_ids) != len(state["seasons"]) or len(episode_ids) != len(state["episodes"]):
@@ -529,34 +840,17 @@ class ProjectPackageService:
             raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包分集引用了未知季")
         if any(str(item.get("episode_id")) not in episode_ids for item in state["shots"]):
             raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包镜头引用了未知分集")
-        state.setdefault("media_assets", [])
-        state.setdefault("media_versions", [])
-        optional_lists = (
-            "shot_groups",
-            "shot_group_members",
-            "story_assets",
-            "story_asset_proposals",
-            "story_asset_states",
-            "story_asset_references",
-            "episode_asset_state_bindings",
-            "shot_asset_bindings",
-            "generation_preference_sets",
-            "generation_preference_versions",
-            "generation_qc_policy_sets",
-            "generation_qc_policy_versions",
-            "director_recipes",
-            "director_recipe_versions",
-        )
-        for key in optional_lists:
-            state.setdefault(key, [])
-        if not isinstance(state["media_assets"], list) or not isinstance(state["media_versions"], list):
-            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包媒体状态格式无效")
-        if any(not isinstance(state[key], list) for key in optional_lists):
-            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包扩展状态格式无效")
-        if any(not isinstance(item, dict) for key in optional_lists for item in state[key]):
-            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包扩展状态条目无效")
-        if state.get("project_director_recipe_binding") is not None and not isinstance(state["project_director_recipe_binding"], dict):
-            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包导演配方绑定格式无效")
+        for key in (*OPTIONAL_STATE_MEDIA_KEYS, *OPTIONAL_STATE_LIST_KEYS, *MANUSCRIPT_STATE_KEYS):
+            state[key] = state.get(key, [])
+        for session in state["import_sessions"]:
+            session["preview"] = self._parsed_or_raw_json(session, "preview", "preview_json", "import_sessions.preview_json")
+            if "committed_scope" not in session:
+                raw_scope = session.pop("committed_scope_json", None)
+                session["committed_scope"] = None if raw_scope is None else self._embedded_json(raw_scope, "import_sessions.committed_scope_json")
+        for item in state["import_session_items"]:
+            item["payload"] = self._parsed_or_raw_json(item, "payload", "payload_json", "import_session_items.payload_json")
+        for version in state["source_document_versions"]:
+            version["metadata"] = self._parsed_or_raw_json(version, "metadata", "metadata_json", "source_document_versions.metadata_json")
         media_asset_ids = {str(item.get("id")) for item in state["media_assets"]}
         media_version_ids = {str(item.get("id")) for item in state["media_versions"]}
         if len(media_asset_ids) != len(state["media_assets"]) or len(media_version_ids) != len(state["media_versions"]):
@@ -698,7 +992,79 @@ class ProjectPackageService:
         all_recipe_version_ids = set().union(*recipe_versions_by_recipe.values()) if recipe_versions_by_recipe else set()
         if binding is not None and str(binding.get("recipe_version_id")) not in all_recipe_version_ids:
             raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目导演配方绑定引用未知版本")
-        return state
+        self._validate_manuscript_references(state)
+        return state, missing_fields
+
+    @staticmethod
+    def _embedded_json(value: object, label: str) -> Any:
+        if isinstance(value, (dict, list)):
+            return value
+        try:
+            parsed = json.loads(str(value) if value is not None and str(value) else "{}")
+        except (json.JSONDecodeError, ValueError) as error:
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", f"{label} 内嵌 JSON 无效", {"field": label}) from error
+        if not isinstance(parsed, (dict, list)):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", f"{label} 内嵌 JSON 必须是对象或数组", {"field": label})
+        return parsed
+
+    @classmethod
+    def _parsed_or_raw_json(cls, container: dict[str, Any], parsed_key: str, raw_key: str, label: str) -> Any:
+        """Accept both the parsed form (current exports) and the raw JSON string.
+
+        Packages written by older versions stored only ``*_json`` text columns,
+        so the raw key stays readable instead of silently becoming ``{}``.
+        """
+        if parsed_key in container:
+            return container[parsed_key]
+        return cls._embedded_json(container.pop(raw_key, None), label)
+
+    @staticmethod
+    def _validate_manuscript_references(state: dict[str, Any]) -> None:
+        """Verify the manuscript lineage of a package before it is imported."""
+        document_ids: set[str] = set()
+        for document in state["source_documents"]:
+            document_id = str(document.get("id") or "")
+            if not document_id or document_id == "None":
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包原稿缺少 ID")
+            if document_id in document_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包包含重复原稿 ID")
+            document_ids.add(document_id)
+            if not all(isinstance(document.get(key), str) and document.get(key) for key in ("code", "title", "source_kind")):
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包原稿身份不完整")
+        version_ids: set[str] = set()
+        for version in state["source_document_versions"]:
+            version_id = str(version.get("id") or "")
+            if not version_id or version_id == "None" or version_id in version_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包原稿版本 ID 缺失或重复")
+            version_ids.add(version_id)
+            if str(version.get("source_document_id")) not in document_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "原稿版本引用了未知原稿")
+            if not isinstance(version.get("rel_path"), str) or not version["rel_path"]:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "原稿版本缺少文件路径")
+            _require_sha256(version.get("sha256"), "source_document_versions.sha256")
+            text_sha = version.get("text_sha256")
+            if text_sha is not None:
+                _require_sha256(text_sha, "source_document_versions.text_sha256")
+            _require_non_negative_int(version.get("byte_size"), "source_document_versions.byte_size")
+        session_ids: set[str] = set()
+        for session in state["import_sessions"]:
+            session_id = str(session.get("id") or "")
+            if not session_id or session_id == "None" or session_id in session_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包导入会话 ID 缺失或重复")
+            session_ids.add(session_id)
+            if str(session.get("source_document_version_id")) not in version_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "导入会话引用了未知原稿版本")
+            if not isinstance(session.get("session_kind"), str) or not isinstance(session.get("status"), str):
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "导入会话类型或状态无效")
+        for item in state["import_session_items"]:
+            if str(item.get("session_id")) not in session_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "导入会话条目引用了未知会话")
+            source_start, source_end = item.get("source_start"), item.get("source_end")
+            for value in (source_start, source_end):
+                if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
+                    raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "导入会话条目正文范围无效")
+            if source_start is not None and source_end is not None and source_end <= source_start:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "导入会话条目正文范围无效")
 
     def _manifest_entries(self, package: Path) -> list[dict[str, Any]]:
         with zipfile.ZipFile(package) as archive:
@@ -737,8 +1103,19 @@ class ProjectPackageService:
         if not title or len(title) > 200:
             raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
         package = self._staged_package(stage_token)
-        state = self._read_state(package)
+        state, missing_fields = self._read_state(package)
         source_project = state["project"]
+        copyable = TemplateCopyableConfiguration.from_project_row(source_project)
+        copied_default_duration_ms = copyable.explicit_default_duration_ms()
+        manuscript_sessions = [item for item in state["import_sessions"] if str(item.get("status")) in TERMINAL_IMPORT_SESSION_STATUSES]
+        manuscript_session_ids = {str(item["id"]) for item in manuscript_sessions}
+        excluded_state = [
+            {
+                "domain": "import_sessions",
+                "rule": "PENDING_IMPORT_SESSION_NOT_REPLAYED",
+                "session_ids": sorted(str(item["id"]) for item in state["import_sessions"] if str(item["id"]) not in manuscript_session_ids),
+            }
+        ] if len(manuscript_sessions) != len(state["import_sessions"]) else []
         identity_mode = "IMPORT_AS_COPY_REWRITE_IDENTITY"
         operation_key = hashlib.sha256(f"{stage_token}\0{identity_mode}\0{code}".encode()).hexdigest()
         now = _utc_now()
@@ -811,7 +1188,10 @@ class ProjectPackageService:
                   "shot_groups": 0, "shot_group_members": 0,
                   "generation_qc_policy_sets": 0, "generation_qc_policy_versions": 0,
                   "director_recipes": 0, "director_recipe_versions": 0,
-                  "project_director_recipe_bindings": 0}
+                  "project_director_recipe_bindings": 0,
+                  "source_documents": 0, "source_document_versions": 0,
+                  "import_sessions": 0, "import_session_items": 0,
+                  "import_sessions_excluded_pending": len(state["import_sessions"]) - len(manuscript_sessions)}
         thumbnail_media_version_ids: list[str] = []
         try:
             self._extract_payload(package, temporary_root)
@@ -847,12 +1227,12 @@ class ProjectPackageService:
                     raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
                 connection.execute(
                     """INSERT INTO projects (id,code,title,status,template_version,root_rel,aspect_ratio,fps_num,fps_den,timezone,
-                    width,height,primary_language,subtitle_mode,subtitle_language,created_at,updated_at,created_by)
-                    VALUES (?,?,?,'DRAFT',?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (project_id, code, title, TEMPLATE_VERSION, code, source_project.get("aspect_ratio"), source_project.get("fps_num"),
-                     source_project.get("fps_den"), source_project.get("timezone") or "Asia/Shanghai", source_project.get("width"),
-                     source_project.get("height"), source_project.get("primary_language"), source_project.get("subtitle_mode"),
-                     source_project.get("subtitle_language"), now, now, actor),
+                    width,height,primary_language,subtitle_mode,subtitle_language,target_duration_ms,created_at,updated_at,created_by)
+                    VALUES (?,?,?,'DRAFT',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (project_id, code, title, TEMPLATE_VERSION, code, copyable.aspect_ratio, copyable.fps_num,
+                     copyable.fps_den, copyable.timezone or "Asia/Shanghai", copyable.width,
+                     copyable.height, copyable.primary_language, copyable.subtitle_mode,
+                     copyable.subtitle_language, copied_default_duration_ms, now, now, actor),
                 )
                 for season in state["seasons"]:
                     connection.execute(
@@ -1188,6 +1568,85 @@ class ProjectPackageService:
                          int(recipe_binding.get("revision") or 1), recipe_binding.get("schema_version") or "v1"),
                     )
                     counts["project_director_recipe_bindings"] += 1
+                # Manuscript business records.  Every identity is rewritten to a
+                # fresh UUID owned by the copy, references are checked against
+                # the rewritten maps, and each source file is re-hashed before it
+                # is trusted.
+                source_document_map = {str(item["id"]): str(uuid.uuid4()) for item in state["source_documents"]}
+                source_document_version_map = {str(item["id"]): str(uuid.uuid4()) for item in state["source_document_versions"]}
+                import_session_map = {str(item["id"]): str(uuid.uuid4()) for item in manuscript_sessions}
+                for document in state["source_documents"]:
+                    connection.execute(
+                        """INSERT INTO source_documents
+                        (id,project_id,code,title,source_kind,created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                        (source_document_map[str(document["id"])], project_id, str(document["code"]), str(document["title"]),
+                         str(document["source_kind"]), document.get("created_at") or now, document.get("updated_at") or now,
+                         document.get("created_by") or actor, int(document.get("revision") or 1),
+                         document.get("schema_version") or "v2"),
+                    )
+                    counts["source_documents"] += 1
+                for version in state["source_document_versions"]:
+                    relative = _safe_member(str(version["rel_path"]))
+                    source_path = (final_root / Path(*relative.parts)).resolve()
+                    if final_root not in source_path.parents or not source_path.is_file() or _is_reparse(source_path):
+                        raise DomainRuleError("PROJECT_PACKAGE_MANUSCRIPT_FILE_MISSING", "导入原稿文件缺失或越界", {"rel_path": str(relative)})
+                    if source_path.stat().st_size != int(version["byte_size"]) or _sha256(source_path) != str(version["sha256"]):
+                        raise DomainRuleError("PROJECT_PACKAGE_MANUSCRIPT_HASH_MISMATCH", "导入原稿文件 hash/size 不匹配", {"rel_path": str(relative)})
+                    connection.execute(
+                        """INSERT INTO source_document_versions
+                        (id,source_document_id,version_no,rel_path,source_name,mime_type,byte_size,sha256,text_sha256,
+                        extracted_text_rel,parse_status,parser_version,structure_version,metadata_json,created_at,updated_at,
+                        created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (source_document_version_map[str(version["id"])],
+                         source_document_map[str(version["source_document_id"])], int(version["version_no"]),
+                         relative.as_posix(), str(version.get("source_name") or relative.name),
+                         str(version.get("mime_type") or "application/octet-stream"), int(version["byte_size"]),
+                         str(version["sha256"]), version.get("text_sha256"), version.get("extracted_text_rel"),
+                         str(version.get("parse_status") or "PARSED"), int(version.get("parser_version") or 1),
+                         int(version.get("structure_version") or 1),
+                         json.dumps(version.get("metadata") or {}, ensure_ascii=False, sort_keys=True),
+                         version.get("created_at") or now, version.get("updated_at") or now,
+                         version.get("created_by") or actor, int(version.get("revision") or 1),
+                         version.get("schema_version") or "v2"),
+                    )
+                    counts["source_document_versions"] += 1
+                for session in manuscript_sessions:
+                    committed_scope = session.get("committed_scope")
+                    connection.execute(
+                        """INSERT INTO import_sessions
+                        (id,project_id,source_document_version_id,session_kind,status,preview_json,error_summary,
+                        committed_scope_json,committed_scope_hash,created_at,updated_at,created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (import_session_map[str(session["id"])], project_id,
+                         source_document_version_map[str(session["source_document_version_id"])],
+                         str(session["session_kind"]), str(session["status"]),
+                         json.dumps(session.get("preview") or {}, ensure_ascii=False, sort_keys=True),
+                         session.get("error_summary"),
+                         None if committed_scope is None else json.dumps(committed_scope, ensure_ascii=False, sort_keys=True),
+                         session.get("committed_scope_hash"), session.get("created_at") or now,
+                         session.get("updated_at") or now, session.get("created_by") or actor,
+                         int(session.get("revision") or 1), session.get("schema_version") or "v2"),
+                    )
+                    counts["import_sessions"] += 1
+                for item in state["import_session_items"]:
+                    session_id = str(item["session_id"])
+                    if session_id not in import_session_map:
+                        continue
+                    connection.execute(
+                        """INSERT INTO import_session_items
+                        (id,session_id,item_type,source_start,source_end,payload_json,validation_status,created_at,updated_at,
+                        created_by,revision,schema_version)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (str(uuid.uuid4()), import_session_map[session_id], str(item["item_type"]),
+                         item.get("source_start"), item.get("source_end"),
+                         json.dumps(item.get("payload") or {}, ensure_ascii=False, sort_keys=True),
+                         str(item.get("validation_status") or "VALID"), item.get("created_at") or now,
+                         item.get("updated_at") or now, item.get("created_by") or actor,
+                         int(item.get("revision") or 1), item.get("schema_version") or "v2"),
+                    )
+                    counts["import_session_items"] += 1
                 plan = state.get("production_plan")
                 if isinstance(plan, dict):
                     plan_id, version_id = str(uuid.uuid4()), str(uuid.uuid4())
@@ -1245,7 +1704,10 @@ class ProjectPackageService:
                     )
                     counts["delivery_targets"] += 1
                 metadata = {"stage_token": stage_token, "source_project_id": source_project["id"], "identity_mode": "IMPORT_AS_COPY_REWRITE_IDENTITY",
-                            "counts": counts, "excluded_domains": state.get("excluded_domains", [])}
+                            "counts": counts, "excluded_domains": state.get("excluded_domains", []),
+                            "missing_fields": missing_fields, "excluded_state": excluded_state,
+                            "target_duration_ms": copied_default_duration_ms,
+                            "target_duration_source": copyable.duration_provenance()}
                 connection.execute(
                     """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,request_id,summary,metadata_redacted_json)
                     VALUES (?,'producer','PROJECT_PACKAGE_IMPORTED','project',?,?,?,?)""",
@@ -1260,7 +1722,11 @@ class ProjectPackageService:
                 result = {"status": "IMPORTED", "identity_mode": identity_mode, "project_id": project_id,
                           "project_code": code, "source_project_id": source_project["id"], "stage_token": stage_token,
                           "counts": counts, "staged_package_retained": True, "runtime_contacted": False,
-                          "network_contacted": False, "reused": False}
+                          "network_contacted": False, "reused": False,
+                          "state_schema_version": str(state.get("schema_version")),
+                          "missing_fields": missing_fields, "excluded_state": excluded_state,
+                          "target_duration_ms": copied_default_duration_ms,
+                          "target_duration_source": copyable.duration_provenance()}
                 connection.execute(
                     """UPDATE project_package_imports SET status='COMPLETED',result_json=?,last_error_code=NULL,updated_at=?
                     WHERE operation_key=?""",
@@ -1300,7 +1766,7 @@ class ProjectPackageService:
         simulate_failure: bool = False,
     ) -> dict[str, Any]:
         package = self._staged_package(stage_token)
-        state = self._read_state(package)
+        state, missing_fields = self._read_state(package)
         package_project = state["project"]
         project_id, project_code = str(package_project["id"]), str(package_project["code"])
         with self.database.connect() as connection:
@@ -1340,7 +1806,8 @@ class ProjectPackageService:
                 current = connection.execute("SELECT id,code FROM projects WHERE id=?", (project_id,)).fetchone()
                 if current is None or str(current["code"]) != project_code:
                     raise DomainRuleError("PROJECT_PACKAGE_REBIND_IDENTITY_MISMATCH", "提交期间项目身份发生变化")
-                metadata = {"stage_token": stage_token, "identity_mode": "REBIND_EXISTING", "database_structure_changed": False}
+                metadata = {"stage_token": stage_token, "identity_mode": "REBIND_EXISTING", "database_structure_changed": False,
+                            "missing_fields": missing_fields}
                 connection.execute(
                     """INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,request_id,summary,metadata_redacted_json)
                     VALUES (?,'producer','PROJECT_PACKAGE_REBOUND','project',?,?,?,?)""",
@@ -1357,5 +1824,6 @@ class ProjectPackageService:
         thumbnail_result = self._rebuild_thumbnails(thumbnail_media_version_ids)
         return {"status": "REBOUND", "identity_mode": "REBIND_EXISTING", "project_id": project_id,
                 "project_code": project_code, "stage_token": stage_token, "database_structure_changed": False,
+                "missing_fields": missing_fields,
                 "staged_package_retained": True, "thumbnail_rebuild": thumbnail_result,
                 "runtime_contacted": False, "network_contacted": False}

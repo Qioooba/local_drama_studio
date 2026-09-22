@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import sqlite3
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -11,6 +13,7 @@ from typing import Any, cast
 from local_drama.domain.capabilities import normalize_capability
 from local_drama.domain.duration import DEFAULT_PROJECT_TARGET_DURATION_MS, MAX_TARGET_DURATION_MS
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.explainers.contracts import ProductKind
 from local_drama.domain.policies import (
     VALID_PROJECT_TRANSITIONS,
     require_transition,
@@ -28,12 +31,95 @@ from local_drama.infrastructure.filesystem.path_policy import (
 )
 from local_drama.infrastructure.filesystem.template import TEMPLATE_VERSION, build_project_tree
 
+from .project_ownership import require_episode, require_scene
 from .reviews import ReviewService
 
 PROJECT_RESOURCE_POLICIES: dict[str, tuple[str, frozenset[str]]] = {
     "LUT": ("00_admin/color", frozenset({".cube"})),
     "LICENSE_EVIDENCE": ("00_admin/licenses", frozenset({".json", ".txt", ".md", ".pdf"})),
 }
+
+#: Scope used for ``Idempotency-Key`` replays of ``POST /api/v1/projects``.
+PROJECT_CREATE_IDEMPOTENCY_SCOPE = "project:create"
+MAX_IDEMPOTENCY_KEY_LENGTH = 200
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateCopyableConfiguration:
+    """The project-level configuration a template copy may legally carry.
+
+    A copy must reproduce the source project's *explicit* configuration —
+    including ``target_duration_ms`` — while every already-created episode
+    keeps the duration it resolved earlier.  Expressing this once, as a typed
+    projection, is what keeps template copy and project-package import from
+    drifting apart again (a NULL in a copy makes later episodes fall back to
+    the product default instead of the user's chosen length).
+    """
+
+    aspect_ratio: str | None
+    fps_num: int | None
+    fps_den: int | None
+    timezone: str | None
+    width: int | None
+    height: int | None
+    primary_language: str | None
+    subtitle_mode: str | None
+    subtitle_language: str | None
+    target_duration_ms: int | None
+
+    @classmethod
+    def from_project_row(cls, row: Any) -> TemplateCopyableConfiguration:
+        return cls(
+            aspect_ratio=_optional_text(row, "aspect_ratio"),
+            fps_num=_optional_int(row, "fps_num"),
+            fps_den=_optional_int(row, "fps_den"),
+            timezone=_optional_text(row, "timezone"),
+            width=_optional_int(row, "width"),
+            height=_optional_int(row, "height"),
+            primary_language=_optional_text(row, "primary_language"),
+            subtitle_mode=_optional_text(row, "subtitle_mode"),
+            subtitle_language=_optional_text(row, "subtitle_language"),
+            target_duration_ms=_optional_int(row, "target_duration_ms"),
+        )
+
+    def explicit_default_duration_ms(self) -> int | None:
+        """Return the copied project default, or ``None`` for a legacy NULL source.
+
+        A non-null value is validated against the shared 1 ms—24 h rule.  The
+        rule is never used to reverse-infer a default from an episode value.
+        """
+        value = self.target_duration_ms
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 < value <= MAX_TARGET_DURATION_MS:
+            raise DomainRuleError("INVALID_TARGET_DURATION", "项目默认时长必须大于 0 且不超过 24 小时", {"target_duration_ms": value})
+        return value
+
+    def duration_provenance(self) -> str:
+        """Human-readable rule for the copied default, surfaced to the user."""
+        return "SOURCE_PROJECT_DEFAULT" if self.target_duration_ms is not None else "PRODUCT_DEFAULT_FALLBACK"
+
+    def resolved_new_episode_duration_ms(self) -> int:
+        """Duration a *newly appended* episode of the copy will inherit."""
+        return self.target_duration_ms if self.target_duration_ms is not None else DEFAULT_PROJECT_TARGET_DURATION_MS
+
+
+def _optional_text(row: Any, key: str) -> str | None:
+    try:
+        value = row[key]
+    except (IndexError, KeyError):
+        return None
+    return None if value is None else str(value)
+
+
+def _optional_int(row: Any, key: str) -> int | None:
+    try:
+        value = row[key]
+    except (IndexError, KeyError):
+        return None
+    if value is None or isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return int(value)
 
 
 def _utc_now() -> str:
@@ -105,155 +191,335 @@ class ProjectService:
         actor: str = "local-user",
         request_id: str | None = None,
         simulate_failure: bool = False,
+        idempotency_key: str | None = None,
+        request_digest: str | None = None,
+        product_kind: str = ProductKind.DRAMA.value,
     ) -> dict[str, Any]:
         validate_project_code(code)
-        validate_project_spec(
-            episode_count=episode_count,
-            aspect_ratio=aspect_ratio,
-            fps_num=fps_num,
-            fps_den=fps_den,
-            allow_unconfigured=allow_unconfigured_capabilities,
-            season_count=season_count,
-            width=width,
-            height=height,
-            primary_language=primary_language,
-            subtitle_mode=subtitle_mode,
-            subtitle_language=subtitle_language,
-        )
-        if not title or len(title) > 200:
-            raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
+        if product_kind not in {item.value for item in ProductKind}:
+            raise DomainRuleError(
+                "INVALID_PRODUCT_KIND", "product_kind 必须是 DRAMA 或 EXPLAINER", {"product_kind": product_kind}
+            )
+        if product_kind == ProductKind.EXPLAINER.value:
+            # An explainer project deliberately owns no season and no episode.
+            # Creating a hidden "episode zero" is exactly what design §4.2 forbids.
+            if episode_count != 0 or season_count != 0:
+                raise DomainRuleError(
+                    "INVALID_EPISODE_COUNT",
+                    "解说项目不创建季与分集；请使用解说工厂的 edition 概念",
+                    {"episode_count": episode_count, "season_count": season_count},
+                )
+            if not title or len(title) > 200:
+                raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
+            if width is not None and height is not None and (width < 64 or height < 64):
+                raise DomainRuleError("INVALID_PRODUCTION_RESOLUTION", "制作分辨率必须同时提供有效 width 与 height")
+            if aspect_ratio is not None and aspect_ratio not in {
+                "16:9",
+                "9:16",
+                "3:4",
+                "1:1",
+                "4:3",
+                "2.39:1",
+                "2.35:1",
+                "21:9",
+            }:
+                raise DomainRuleError(
+                    "INVALID_ASPECT_RATIO", "画幅取值不合法", {"aspect_ratio": aspect_ratio}
+                )
+            if (fps_num is None) != (fps_den is None) or (fps_num is not None and (fps_num <= 0 or fps_den is None or fps_den <= 0)):
+                raise DomainRuleError("INVALID_FPS", "fps 必须是有效的正有理数")
+        else:
+            validate_project_spec(
+                episode_count=episode_count,
+                aspect_ratio=aspect_ratio,
+                fps_num=fps_num,
+                fps_den=fps_den,
+                allow_unconfigured=allow_unconfigured_capabilities,
+                season_count=season_count,
+                width=width,
+                height=height,
+                primary_language=primary_language,
+                subtitle_mode=subtitle_mode,
+                subtitle_language=subtitle_language,
+            )
+            if not title or len(title) > 200:
+                raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
         if isinstance(target_duration_ms, bool) or not isinstance(target_duration_ms, int) or not 0 < target_duration_ms <= MAX_TARGET_DURATION_MS:
             raise DomainRuleError("INVALID_TARGET_DURATION", "target_duration_ms 必须大于 0 且不超过 24 小时")
         profile_bindings = _canonical_profile_bindings(profile_bindings or [])
         self._validate_creation_bindings(production_plan, profile_bindings, delivery_target, require_complete=not allow_unconfigured_capabilities)
         project_id = str(uuid.uuid4())
         final_root: Path | None = None
+        created = False
+        replay_project_id: str | None = None
+        try:
+            with self.database.transaction() as connection:
+                if idempotency_key:
+                    replay_project_id = self._replay_project_creation(connection, idempotency_key, request_digest, code)
+                if replay_project_id is None:
+                    if connection.execute("SELECT id FROM projects WHERE code = ?", (code,)).fetchone():
+                        raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
+                    final_root = self._create_owned_project_root(project_id, code, title, episode_count, season_count)
+                    created = True
+                    self._insert_new_project(
+                        connection,
+                        project_id=project_id,
+                        code=code,
+                        title=title,
+                        episode_count=episode_count,
+                        season_count=season_count,
+                        aspect_ratio=aspect_ratio,
+                        fps_num=fps_num,
+                        fps_den=fps_den,
+                        target_duration_ms=target_duration_ms,
+                        width=width,
+                        height=height,
+                        primary_language=primary_language,
+                        subtitle_mode=subtitle_mode,
+                        subtitle_language=subtitle_language,
+                        production_plan=production_plan,
+                        profile_bindings=profile_bindings,
+                        delivery_target=delivery_target,
+                        actor=actor,
+                        request_id=request_id,
+                        simulate_failure=simulate_failure,
+                        product_kind=product_kind,
+                    )
+                    if idempotency_key:
+                        connection.execute(
+                            "INSERT INTO command_idempotencies (scope,idempotency_key,payload_hash,response_json) VALUES (?,?,?,?)",
+                            (PROJECT_CREATE_IDEMPOTENCY_SCOPE, idempotency_key.strip(), request_digest or "", _json({"project_id": project_id})),
+                        )
+        except Exception as error:
+            if created:
+                self._discard_owned_project_root(final_root, project_id)
+            if isinstance(error, sqlite3.OperationalError) and "locked" in str(error).lower():
+                if self._project_code_exists(code):
+                    raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code}) from error
+                # The write lock was held by a concurrent creator for longer
+                # than the busy timeout: report a retryable structured error
+                # instead of letting the raw driver exception escape as a 500.
+                raise DomainRuleError(
+                    "PROJECT_CREATE_CONTENDED",
+                    "项目创建与并发写入冲突，请重试",
+                    {"code": code},
+                ) from error
+            raise
+        if replay_project_id is not None:
+            # Same shape as the creation result, plus the replay marker so the
+            # HTTP envelope can report a real idempotent result.
+            return {**self.get_project(replay_project_id), "idempotent_replay": True}
+        return self.get_project(project_id)
+
+    def _create_owned_project_root(self, project_id: str, code: str, title: str, episode_count: int, season_count: int) -> Path:
+        """Create the project directory, or translate a conflict into a domain error.
+
+        The directory is created only after the code uniqueness check inside the
+        same write transaction, so a directory that already exists on disk is
+        never attributed to this request and is therefore never removed.
+        """
         try:
             final_root, _ = build_project_tree(self.projects_root, project_id, code, title, episode_count, season_count=season_count)
-            now = _utc_now()
-            with self.database.transaction() as connection:
-                existing = connection.execute("SELECT id FROM projects WHERE code = ?", (code,)).fetchone()
-                if existing:
-                    raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
+        except FileExistsError as error:
+            raise DomainRuleError("PROJECT_ROOT_EXISTS", "项目目录已存在，未写入或删除该目录", {"code": code}) from error
+        except OSError as error:
+            # A concurrent creator can win the same directory between the probe
+            # inside build_project_tree and the final rename.
+            if (self.projects_root / code).exists():
+                raise DomainRuleError("PROJECT_ROOT_EXISTS", "项目目录已存在，未写入或删除该目录", {"code": code}) from error
+            raise
+        return final_root
+
+    def _discard_owned_project_root(self, final_root: Path | None, project_id: str) -> None:
+        """Remove only a project directory this request actually created."""
+        if final_root is None:
+            return
+        marker = final_root / "project.json"
+        try:
+            marker_data = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if str(marker_data.get("project_id") or "") != project_id:
+            return
+        shutil.rmtree(final_root, ignore_errors=True)
+
+    def _project_code_exists(self, code: str) -> bool:
+        with self.database.connect() as connection:
+            return connection.execute("SELECT 1 FROM projects WHERE code=?", (code,)).fetchone() is not None
+
+    def _replay_project_creation(
+        self,
+        connection: sqlite3.Connection,
+        idempotency_key: str,
+        request_digest: str | None,
+        code: str,
+    ) -> str | None:
+        """Return the original project id when an Idempotency-Key is replayed."""
+        normalized_key = idempotency_key.strip()
+        if not normalized_key or len(normalized_key) > MAX_IDEMPOTENCY_KEY_LENGTH:
+            raise DomainRuleError("IDEMPOTENCY_KEY_INVALID", "Idempotency-Key 必须是 1—200 个字符")
+        row = connection.execute(
+            "SELECT payload_hash,response_json FROM command_idempotencies WHERE scope=? AND idempotency_key=?",
+            (PROJECT_CREATE_IDEMPOTENCY_SCOPE, normalized_key),
+        ).fetchone()
+        if row is None:
+            return None
+        if request_digest is None or str(row["payload_hash"]) != request_digest:
+            raise DomainRuleError(
+                "IDEMPOTENCY_KEY_CONFLICT",
+                "相同 Idempotency-Key 已用于不同的项目创建请求",
+                {"code": code},
+            )
+        payload = json.loads(str(row["response_json"]))
+        if not isinstance(payload, dict) or not payload.get("project_id"):
+            raise DomainRuleError("IDEMPOTENCY_KEY_CONFLICT", "幂等记录与实际项目不一致", {"code": code})
+        return str(payload["project_id"])
+
+    def _insert_new_project(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        project_id: str,
+        code: str,
+        title: str,
+        episode_count: int,
+        season_count: int,
+        aspect_ratio: str | None,
+        fps_num: int | None,
+        fps_den: int | None,
+        target_duration_ms: int,
+        width: int | None,
+        height: int | None,
+        primary_language: str | None,
+        subtitle_mode: str | None,
+        subtitle_language: str | None,
+        production_plan: dict[str, Any] | None,
+        profile_bindings: list[dict[str, str]],
+        delivery_target: dict[str, Any] | None,
+        actor: str,
+        request_id: str | None,
+        simulate_failure: bool,
+        product_kind: str = ProductKind.DRAMA.value,
+    ) -> None:
+        """Persist one new project tree inside the caller's write transaction."""
+        now = _utc_now()
+        connection.execute(
+            """INSERT INTO projects (id, code, title, status, template_version, root_rel, aspect_ratio, fps_num,
+            fps_den,width,height,primary_language,subtitle_mode,subtitle_language,target_duration_ms,product_kind,
+            created_at,updated_at,created_by)
+            VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                project_id,
+                code,
+                title,
+                TEMPLATE_VERSION,
+                code,
+                aspect_ratio,
+                fps_num,
+                fps_den,
+                width,
+                height,
+                primary_language,
+                subtitle_mode,
+                subtitle_language,
+                target_duration_ms,
+                product_kind,
+                now,
+                now,
+                actor,
+            ),
+        )
+        for season_number in range(1, season_count + 1):
+            season_id = str(uuid.uuid4())
+            season_code = f"SEASON_{season_number:03d}"
+            connection.execute(
+                """INSERT INTO seasons (id, project_id, number, code, title, display_order, created_at, updated_at, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (season_id, project_id, season_number, season_code, f"第 {season_number} 季", season_number, now, now, actor),
+            )
+            for episode_number in range(1, episode_count + 1):
+                global_number = (season_number - 1) * episode_count + episode_number
+                episode_code = f"EPISODE_{global_number:03d}"
                 connection.execute(
-                    """INSERT INTO projects (id, code, title, status, template_version, root_rel, aspect_ratio, fps_num,
-                    fps_den,width,height,primary_language,subtitle_mode,subtitle_language,target_duration_ms,created_at,updated_at,created_by)
-                    VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    """INSERT INTO episodes (id, season_id, number, display_order, code, title, narrative_status,
+                    production_status, target_duration_ms, source_range_json, created_at, updated_at, created_by)
+                    VALUES (?, ?, ?, ?, ?, ?, 'OUTLINE', 'NOT_STARTED', ?, '{}', ?, ?, ?)""",
                     (
-                        project_id,
-                        code,
-                        title,
-                        TEMPLATE_VERSION,
-                        code,
-                        aspect_ratio,
-                        fps_num,
-                        fps_den,
-                        width,
-                        height,
-                        primary_language,
-                        subtitle_mode,
-                        subtitle_language,
+                        str(uuid.uuid4()),
+                        season_id,
+                        episode_number,
+                        episode_number,
+                        episode_code,
+                        f"第 {episode_number} 集",
                         target_duration_ms,
                         now,
                         now,
                         actor,
                     ),
                 )
-                for season_number in range(1, season_count + 1):
-                    season_id = str(uuid.uuid4())
-                    season_code = f"SEASON_{season_number:03d}"
-                    connection.execute(
-                        """INSERT INTO seasons (id, project_id, number, code, title, display_order, created_at, updated_at, created_by)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (season_id, project_id, season_number, season_code, f"第 {season_number} 季", season_number, now, now, actor),
-                    )
-                    for episode_number in range(1, episode_count + 1):
-                        global_number = (season_number - 1) * episode_count + episode_number
-                        episode_code = f"EPISODE_{global_number:03d}"
-                        connection.execute(
-                            """INSERT INTO episodes (id, season_id, number, display_order, code, title, narrative_status,
-                            production_status, target_duration_ms, source_range_json, created_at, updated_at, created_by)
-                            VALUES (?, ?, ?, ?, ?, ?, 'OUTLINE', 'NOT_STARTED', ?, '{}', ?, ?, ?)""",
-                            (
-                                str(uuid.uuid4()),
-                                season_id,
-                                episode_number,
-                                episode_number,
-                                episode_code,
-                                f"第 {episode_number} 集",
-                                target_duration_ms,
-                                now,
-                                now,
-                                actor,
-                            ),
-                        )
-                if production_plan is not None:
-                    plan_id, plan_version_id = str(uuid.uuid4()), str(uuid.uuid4())
-                    connection.execute(
-                        "INSERT INTO production_plans (id,code,title,created_at,updated_at,created_by) VALUES (?,?,?,?,?,?)",
-                        (plan_id, production_plan["code"], production_plan["title"], now, now, actor),
-                    )
-                    connection.execute(
-                        """INSERT INTO production_plan_versions (id,production_plan_id,version_no,plan_json,status,
-                        created_at,updated_at,created_by) VALUES (?,?,1,?,'ACTIVE',?,?,?)""",
-                        (plan_version_id, plan_id, _json(production_plan["plan"]), now, now, actor),
-                    )
-                    connection.execute(
-                        "INSERT INTO project_plan_bindings (id,project_id,production_plan_version_id,created_at,updated_at,created_by) VALUES (?,?,?,?,?,?)",
-                        (str(uuid.uuid4()), project_id, plan_version_id, now, now, actor),
-                    )
-                    connection.execute("UPDATE projects SET production_plan_version_id=? WHERE id=?", (plan_version_id, project_id))
-                for binding in profile_bindings:
-                    connection.execute(
-                        """INSERT INTO project_profile_bindings (id,project_id,capability,execution_profile_version_id,status,
-                        created_at,updated_at,created_by) VALUES (?,?,?,?,'ACTIVE',?,?,?)""",
-                        (str(uuid.uuid4()), project_id, binding["capability"], binding["profile_version_id"], now, now, actor),
-                    )
-                if delivery_target is not None:
-                    target_id, target_version_id = str(uuid.uuid4()), str(uuid.uuid4())
-                    target_spec_json = _json(delivery_target["spec"])
-                    connection.execute(
-                        """INSERT INTO delivery_targets (id,project_id,code,title,transport,target_spec_json,status,
-                        created_at,updated_at,created_by) VALUES (?,?,?,?, 'LOCAL_FILESYSTEM',?,'ACTIVE',?,?,?)""",
-                        (target_id, project_id, delivery_target["code"], delivery_target["title"], target_spec_json, now, now, actor),
-                    )
-                    connection.execute(
-                        """INSERT INTO delivery_target_versions (id,delivery_target_id,version_no,target_spec_json,status,
-                        created_at,updated_at,created_by) VALUES (?,?,1,?,'ACTIVE',?,?,?)""",
-                        (target_version_id, target_id, target_spec_json, now, now, actor),
-                    )
-                connection.execute(
-                    """INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, request_id,
-                    summary, metadata_redacted_json) VALUES (?, 'producer', 'PROJECT_CREATED', 'project', ?, ?, ?, ?)""",
-                    (
-                        actor,
-                        project_id,
-                        request_id,
-                        f"创建项目 {code}",
-                        _json(
-                            {
-                                "season_count": season_count,
-                                "episode_count_per_season": episode_count,
-                                "total_episode_count": season_count * episode_count,
-                                "profile_binding_count": len(profile_bindings),
-                                "production_plan_bound": production_plan is not None,
-                                "delivery_target_created": delivery_target is not None,
-                            }
-                        ),
-                    ),
-                )
-                connection.execute(
-                    """INSERT INTO outbox_events (type, project_id, subject_type, subject_id, payload_json)
-                    VALUES ('project.changed', ?, 'project', ?, ?)""",
-                    (project_id, project_id, _json({"status": "DRAFT", "revision": 1})),
-                )
-                if simulate_failure:
-                    raise RuntimeError("simulated project creation failure")
-        except Exception:
-            if final_root and final_root.exists():
-                shutil.rmtree(final_root, ignore_errors=True)
-            raise
-        return self.get_project(project_id)
+        if production_plan is not None:
+            plan_id, plan_version_id = str(uuid.uuid4()), str(uuid.uuid4())
+            connection.execute(
+                "INSERT INTO production_plans (id,code,title,created_at,updated_at,created_by) VALUES (?,?,?,?,?,?)",
+                (plan_id, production_plan["code"], production_plan["title"], now, now, actor),
+            )
+            connection.execute(
+                """INSERT INTO production_plan_versions (id,production_plan_id,version_no,plan_json,status,
+                created_at,updated_at,created_by) VALUES (?,?,1,?,'ACTIVE',?,?,?)""",
+                (plan_version_id, plan_id, _json(production_plan["plan"]), now, now, actor),
+            )
+            connection.execute(
+                "INSERT INTO project_plan_bindings (id,project_id,production_plan_version_id,created_at,updated_at,created_by) VALUES (?,?,?,?,?,?)",
+                (str(uuid.uuid4()), project_id, plan_version_id, now, now, actor),
+            )
+            connection.execute("UPDATE projects SET production_plan_version_id=? WHERE id=?", (plan_version_id, project_id))
+        for binding in profile_bindings:
+            connection.execute(
+                """INSERT INTO project_profile_bindings (id,project_id,capability,execution_profile_version_id,status,
+                created_at,updated_at,created_by) VALUES (?,?,?,?,'ACTIVE',?,?,?)""",
+                (str(uuid.uuid4()), project_id, binding["capability"], binding["profile_version_id"], now, now, actor),
+            )
+        if delivery_target is not None:
+            target_id, target_version_id = str(uuid.uuid4()), str(uuid.uuid4())
+            target_spec_json = _json(delivery_target["spec"])
+            connection.execute(
+                """INSERT INTO delivery_targets (id,project_id,code,title,transport,target_spec_json,status,
+                created_at,updated_at,created_by) VALUES (?,?,?,?, 'LOCAL_FILESYSTEM',?,'ACTIVE',?,?,?)""",
+                (target_id, project_id, delivery_target["code"], delivery_target["title"], target_spec_json, now, now, actor),
+            )
+            connection.execute(
+                """INSERT INTO delivery_target_versions (id,delivery_target_id,version_no,target_spec_json,status,
+                created_at,updated_at,created_by) VALUES (?,?,1,?,'ACTIVE',?,?,?)""",
+                (target_version_id, target_id, target_spec_json, now, now, actor),
+            )
+        connection.execute(
+            """INSERT INTO audit_events (actor, role_context, action, subject_type, subject_id, request_id,
+            summary, metadata_redacted_json) VALUES (?, 'producer', 'PROJECT_CREATED', 'project', ?, ?, ?, ?)""",
+            (
+                actor,
+                project_id,
+                request_id,
+                f"创建项目 {code}",
+                _json(
+                    {
+                        "season_count": season_count,
+                        "episode_count_per_season": episode_count,
+                        "total_episode_count": season_count * episode_count,
+                        "profile_binding_count": len(profile_bindings),
+                        "production_plan_bound": production_plan is not None,
+                        "delivery_target_created": delivery_target is not None,
+                    }
+                ),
+            ),
+        )
+        connection.execute(
+            """INSERT INTO outbox_events (type, project_id, subject_type, subject_id, payload_json)
+            VALUES ('project.changed', ?, 'project', ?, ?)""",
+            (project_id, project_id, _json({"status": "DRAFT", "revision": 1})),
+        )
+        if simulate_failure:
+            raise RuntimeError("simulated project creation failure")
+
 
     def plan_project_creation(
         self,
@@ -506,26 +772,30 @@ class ProjectService:
             ).fetchall()
         if not episodes:
             raise DomainRuleError("PROJECT_TEMPLATE_EMPTY", "源项目没有可复制的分集结构")
+        # The copy carries the source's explicit configuration, resolved once
+        # through the typed projection.  Episodes keep the duration they already
+        # resolved; the project default is what a newly appended episode inherits.
+        copyable = TemplateCopyableConfiguration.from_project_row(source)
+        copied_default_duration_ms = copyable.explicit_default_duration_ms()
         validate_project_spec(
             episode_count=len(episodes),
-            aspect_ratio=source["aspect_ratio"],
-            fps_num=source["fps_num"],
-            fps_den=source["fps_den"],
+            aspect_ratio=copyable.aspect_ratio,
+            fps_num=copyable.fps_num,
+            fps_den=copyable.fps_den,
             allow_unconfigured=True,
         )
         project_id = str(uuid.uuid4())
         final_root: Path | None = None
+        created = False
         try:
             season_episode_counts: dict[str, int] = {}
             for episode in episodes:
                 season_key = str(episode["source_season_id"])
                 season_episode_counts[season_key] = season_episode_counts.get(season_key, 0) + 1
-            try:
-                final_root, _ = build_project_tree(
-                    self.projects_root, project_id, code, title, max(season_episode_counts.values()), season_count=len(season_episode_counts)
-                )
-            except FileExistsError as error:
-                raise DomainRuleError("PROJECT_ROOT_EXISTS", "目标项目目录已存在，未写入或删除该目录", {"code": code}) from error
+            final_root = self._create_owned_project_root(
+                project_id, code, title, max(season_episode_counts.values()), len(season_episode_counts)
+            )
+            created = True
             now = _utc_now()
             counts = {"seasons": 0, "episodes": 0, "scenes": 0, "shots": 0, "profiles": 0, "delivery_targets": 0}
             with self.database.transaction() as connection:
@@ -533,23 +803,25 @@ class ProjectService:
                     raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
                 connection.execute(
                     """INSERT INTO projects (id, code, title, status, template_version, root_rel, aspect_ratio, fps_num,
-                    fps_den,timezone,width,height,primary_language,subtitle_mode,subtitle_language,created_at,updated_at,created_by)
-                    VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    fps_den,timezone,width,height,primary_language,subtitle_mode,subtitle_language,target_duration_ms,
+                    created_at,updated_at,created_by)
+                    VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         project_id,
                         code,
                         title,
                         TEMPLATE_VERSION,
                         code,
-                        source["aspect_ratio"],
-                        source["fps_num"],
-                        source["fps_den"],
-                        source["timezone"],
-                        source["width"],
-                        source["height"],
-                        source["primary_language"],
-                        source["subtitle_mode"],
-                        source["subtitle_language"],
+                        copyable.aspect_ratio,
+                        copyable.fps_num,
+                        copyable.fps_den,
+                        copyable.timezone,
+                        copyable.width,
+                        copyable.height,
+                        copyable.primary_language,
+                        copyable.subtitle_mode,
+                        copyable.subtitle_language,
+                        copied_default_duration_ms,
                         now,
                         now,
                         actor,
@@ -717,8 +989,8 @@ class ProjectService:
                 if simulate_failure:
                     raise RuntimeError("simulated project template copy failure")
         except Exception:
-            if final_root and final_root.exists():
-                shutil.rmtree(final_root, ignore_errors=True)
+            if created:
+                self._discard_owned_project_root(final_root, project_id)
             raise
         return {
             "project": self.get_project(project_id),
@@ -726,17 +998,39 @@ class ProjectService:
                 "source_project_id": source_project_id,
                 "copied": counts,
                 "excluded": ["media", "workspace_asset_authorizations", "brand_kits", "jobs", "reviews", "deliveries", "audit_history"],
+                "configuration": {
+                    "target_duration_ms": copied_default_duration_ms,
+                    "target_duration_source": copyable.duration_provenance(),
+                    # What a newly appended episode of the copy will inherit, and
+                    # why; a legacy NULL source default stays NULL instead of
+                    # being reverse-inferred from the first episode.
+                    "new_episode_duration_ms": copyable.resolved_new_episode_duration_ms(),
+                    "episode_durations_preserved": True,
+                },
             },
         }
 
-    def list_projects(self, limit: int = 50, *, search: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
-        return cast(list[dict[str, Any]], self.list_projects_page(limit, search=search, status=status)["items"])
+    def list_projects(self, limit: int = 50, *, search: str | None = None, status: str | None = None, product_kind: str | None = None) -> list[dict[str, Any]]:
+        return cast(
+            list[dict[str, Any]],
+            self.list_projects_page(limit, search=search, status=status, product_kind=product_kind)["items"],
+        )
 
-    def list_projects_page(self, limit: int = 50, *, cursor: int = 0, search: str | None = None, status: str | None = None) -> dict[str, Any]:
+    def list_projects_page(
+        self,
+        limit: int = 50,
+        *,
+        cursor: int = 0,
+        search: str | None = None,
+        status: str | None = None,
+        product_kind: str | None = None,
+    ) -> dict[str, Any]:
         limit = max(1, min(limit, 200))
         cursor = max(0, int(cursor))
         if status is not None and status not in {"DRAFT", "ACTIVE", "PAUSED", "ARCHIVED"}:
             raise DomainRuleError("PROJECT_STATUS_INVALID", "项目状态筛选值无效", {"status": status})
+        if product_kind is not None and product_kind not in {item.value for item in ProductKind}:
+            raise DomainRuleError("INVALID_PRODUCT_KIND", "product_kind 必须是 DRAMA 或 EXPLAINER", {"product_kind": product_kind})
         filters: list[str] = []
         parameters: list[object] = []
         normalized_search = search.strip() if search else ""
@@ -747,6 +1041,10 @@ class ProjectService:
         if status:
             filters.append("p.status=?")
             parameters.append(status)
+        if product_kind:
+            # The "all / drama / explainer" filter on 全部项目 (design §5.1).
+            filters.append("p.product_kind=?")
+            parameters.append(product_kind)
         where = f" WHERE {' AND '.join(filters)}" if filters else ""
         small_poster_hash = hashlib.sha256(b"thumbnail-v2:small:first").hexdigest()
         query_parameters: list[object] = [small_poster_hash, *parameters, limit + 1, cursor]
@@ -996,16 +1294,34 @@ class ProjectService:
             )
         return self.get_project(project_id)
 
-    def create_shot(self, episode_id: str, code: str, target_duration_ms: int, shot_type: str = "OTHER") -> dict[str, Any]:
+    def create_shot(
+        self,
+        episode_id: str,
+        code: str,
+        target_duration_ms: int,
+        shot_type: str = "OTHER",
+        *,
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Insert one shot.
+
+        HTTP callers pass ``project_id`` from the URL; the episode is then
+        resolved through ``episodes -> seasons -> projects`` inside this same
+        write transaction, so a shot can never be written into an episode that
+        belongs to a different (or non-existent) project.
+        """
         if target_duration_ms <= 0:
             raise DomainRuleError("INVALID_TARGET_DURATION", "target_duration_ms 必须大于 0")
         shot_id = str(uuid.uuid4())
         revision_id = str(uuid.uuid4())
         now = _utc_now()
         with self.database.transaction() as connection:
-            episode = connection.execute("SELECT id FROM episodes WHERE id = ?", (episode_id,)).fetchone()
-            if episode is None:
-                raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
+            if project_id is not None:
+                require_episode(connection, project_id, episode_id)
+            else:
+                episode = connection.execute("SELECT id FROM episodes WHERE id = ?", (episode_id,)).fetchone()
+                if episode is None:
+                    raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
             maximum = connection.execute("SELECT COALESCE(MAX(CAST(order_key AS REAL)), 0) FROM shots WHERE episode_id = ?", (episode_id,)).fetchone()[0]
             connection.execute(
                 """INSERT INTO shots (id, episode_id, code, order_key, target_duration_ms, shot_type, status,
@@ -1065,11 +1381,19 @@ class ProjectService:
                 raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
             if str(project["status"]) == "ARCHIVED":
                 raise DomainRuleError("PROJECT_ARCHIVED", "归档项目不能追加季度或分集；请先恢复项目")
-            resolved_target_duration_ms = (
-                target_duration_ms
-                if target_duration_ms is not None
-                else int(project["target_duration_ms"] or DEFAULT_PROJECT_TARGET_DURATION_MS)
-            )
+            if target_duration_ms is not None:
+                resolved_target_duration_ms = target_duration_ms
+                target_duration_source = "EPISODE_EXPLICIT"
+            elif project["target_duration_ms"] is not None:
+                # The project's own explicit default is authoritative.
+                resolved_target_duration_ms = int(project["target_duration_ms"])
+                target_duration_source = "PROJECT_DEFAULT"
+            else:
+                # Legacy/partially imported project without an explicit default:
+                # fall back to the product default and say so, never to another
+                # episode's already-resolved value.
+                resolved_target_duration_ms = DEFAULT_PROJECT_TARGET_DURATION_MS
+                target_duration_source = "PRODUCT_DEFAULT_FALLBACK"
 
             if create_new_season:
                 next_season_number = int(
@@ -1158,6 +1482,7 @@ class ProjectService:
             "season_created": created_season,
             "season": {"id": season_id, "code": season_code, "title": resolved_season_title},
             "episode": self.get_episode(episode_id),
+            "target_duration_source": target_duration_source,
         }
 
     def episode_catalog(self, project_id: str) -> dict[str, Any]:
@@ -1339,13 +1664,11 @@ class ProjectService:
         now = _utc_now()
         with self.database.transaction() as connection:
             episode = connection.execute("SELECT e.id,s.project_id FROM episodes e JOIN seasons s ON s.id=e.season_id WHERE e.id=?", (episode_id,)).fetchone()
-            scene = connection.execute("SELECT id,project_id FROM scenes WHERE id=?", (scene_id,)).fetchone()
             if episode is None:
                 raise DomainRuleError("EPISODE_NOT_FOUND", "集不存在", {"episode_id": episode_id})
-            if scene is None:
-                raise DomainRuleError("SCENE_NOT_FOUND", "母本场次不存在", {"scene_id": scene_id})
-            if str(episode["project_id"]) != str(scene["project_id"]):
-                raise DomainRuleError("SCENE_EPISODE_PROJECT_MISMATCH", "母本场次与分集必须属于同一项目")
+            # Shared project-hierarchy ownership check: the master scene must
+            # belong to the same project as the episode it is bound to.
+            require_scene(connection, str(episode["project_id"]), scene_id)
             if connection.execute("SELECT 1 FROM episode_scene_ranges WHERE episode_id=? AND scene_id=?", (episode_id, scene_id)).fetchone():
                 raise DomainRuleError("SCENE_ALREADY_MAPPED_TO_EPISODE", "该母本场次已关联当前分集")
             if connection.execute("SELECT 1 FROM episode_scene_ranges WHERE episode_id=? AND ordinal=?", (episode_id, ordinal)).fetchone():

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Header, Query, Request
 from fastapi.responses import FileResponse
 
 from local_drama.api.schemas.local_artifacts import ProjectPackageExportEnvelope
@@ -52,10 +53,16 @@ def package_service(request: Request) -> ProjectPackageService:
     return ProjectPackageService(request.app.state.database, settings.projects_root, settings.data_root, settings=settings)
 
 
+def _creation_request_digest(payload: ProjectCreateRequest) -> str:
+    """Stable digest of the creation payload persisted for Idempotency-Key replay."""
+    canonical = json.dumps(payload.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
 @router.get("", operation_id="listProjects")
-async def list_projects(request: Request, limit: int = 50, cursor: int = 0, search: str | None = None, status: str | None = None) -> dict[str, object]:
+async def list_projects(request: Request, limit: int = 50, cursor: int = 0, search: str | None = None, status: str | None = None, product_kind: str | None = Query(default=None, max_length=24)) -> dict[str, object]:
     try:
-        return service(request).list_projects_page(limit, cursor=cursor, search=search, status=status)
+        return service(request).list_projects_page(limit, cursor=cursor, search=search, status=status, product_kind=product_kind)
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -66,29 +73,47 @@ async def create_project(
     payload: ProjectCreateRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, object]:
-    del idempotency_key  # G5 will make idempotency persistence universal; project codes are unique in G2.
+    """Create one project.
+
+    The declared ``Idempotency-Key`` header is honoured: the request digest is
+    persisted next to the created project id, so the same key with the same
+    payload returns the original project and the same key with a different
+    payload is rejected with a stable 409.  A duplicate ``code`` (or a project
+    directory that already exists) is a 409, never a 500.
+    """
     try:
-        result = service(request).create_project(
-            code=payload.code,
-            title=payload.title,
-            episode_count=payload.episode_count,
-            aspect_ratio=payload.aspect_ratio,
-            fps_num=payload.fps.numerator if payload.fps else None,
-            fps_den=payload.fps.denominator if payload.fps else None,
-            target_duration_ms=payload.target_duration_ms,
-            allow_unconfigured_capabilities=payload.allow_unconfigured_capabilities,
-            season_count=payload.season_count,
-            width=payload.width,
-            height=payload.height,
-            primary_language=payload.primary_language,
-            subtitle_mode=payload.subtitle_mode,
-            subtitle_language=payload.subtitle_language,
-            production_plan=payload.production_plan.model_dump() if payload.production_plan else None,
-            profile_bindings=[item.model_dump() for item in payload.profile_bindings],
-            delivery_target=payload.delivery_target.model_dump() if payload.delivery_target else None,
-            request_id=getattr(request.state, "request_id", None),
+        outcome = dict(
+            service(request).create_project(
+                code=payload.code,
+                title=payload.title,
+                episode_count=payload.episode_count,
+                aspect_ratio=payload.aspect_ratio,
+                fps_num=payload.fps.numerator if payload.fps else None,
+                fps_den=payload.fps.denominator if payload.fps else None,
+                target_duration_ms=payload.target_duration_ms,
+                allow_unconfigured_capabilities=payload.allow_unconfigured_capabilities,
+                season_count=payload.season_count,
+                width=payload.width,
+                height=payload.height,
+                primary_language=payload.primary_language,
+                subtitle_mode=payload.subtitle_mode,
+                subtitle_language=payload.subtitle_language,
+                production_plan=payload.production_plan.model_dump() if payload.production_plan else None,
+                profile_bindings=[item.model_dump() for item in payload.profile_bindings],
+                delivery_target=payload.delivery_target.model_dump() if payload.delivery_target else None,
+                request_id=getattr(request.state, "request_id", None),
+                idempotency_key=idempotency_key,
+                request_digest=_creation_request_digest(payload) if idempotency_key else None,
+            )
         )
-        return {"project": result, "blockers": ConfigurationService(request.app.state.database).blockers(str(result["id"]))}
+        idempotent_replay = bool(outcome.pop("idempotent_replay", False))
+        response: dict[str, object] = {
+            "project": outcome,
+            "blockers": ConfigurationService(request.app.state.database).blockers(str(outcome["id"])),
+        }
+        if idempotent_replay:
+            response["idempotent_replay"] = True
+        return response
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -476,9 +501,16 @@ async def get_shot(shot_id: str, request: Request) -> dict[str, object]:
 
 @router.post("/{project_id}/episodes/{episode_id}/shots", operation_id="createShot", status_code=201)
 async def create_shot(project_id: str, episode_id: str, payload: ShotCreateRequest, request: Request) -> dict[str, object]:
-    del project_id
     try:
-        return {"shot": service(request).create_shot(episode_id, payload.code, payload.target_duration_ms, payload.shot_type)}
+        return {
+            "shot": service(request).create_shot(
+                episode_id,
+                payload.code,
+                payload.target_duration_ms,
+                payload.shot_type,
+                project_id=project_id,
+            )
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
