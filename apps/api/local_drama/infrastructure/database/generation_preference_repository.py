@@ -6,8 +6,11 @@ import json
 import sqlite3
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from functools import lru_cache
+from typing import Any, Mapping
 
+from local_drama.application.model_licensing import commercial_use_allowed, load_policy
+from local_drama.application.workflow_contracts import image_workflow_is_production_grade
 from local_drama.domain.errors import DomainRuleError
 
 
@@ -15,8 +18,35 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+@lru_cache(maxsize=1)
+def _licence_policy() -> Mapping[str, Any]:
+    """Load the model licence record once; an unreadable policy authorises nothing."""
+
+    try:
+        return load_policy()
+    except DomainRuleError:
+        return {"models": []}
+
+
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _image_workflow_scale_applies(connection: sqlite3.Connection, capability: str) -> bool:
+    """Whether the bound-workflow scale gate can be evaluated for a capability.
+
+    Only image routes execute through a ComfyUI graph whose render scale matters,
+    and the historical compact test/read schema predates the workflow tables
+    entirely - there the profile-centric resolution must stay intact.
+    """
+
+    if not str(capability).upper().startswith("IMAGE_"):
+        return False
+    try:
+        connection.execute("SELECT 1 FROM workflow_versions LIMIT 1").fetchone()
+    except sqlite3.OperationalError:
+        return False
+    return True
 
 
 def _preference(row: sqlite3.Row) -> dict[str, Any]:
@@ -86,14 +116,42 @@ class SqliteGenerationPreferenceRepository:
         return item
 
     def auto_profile(self, capability: str) -> dict[str, Any] | None:
-        row = self.connection.execute(
+        """Return the newest published profile that can actually render.
+
+        The previous pure ``updated_at`` race could select a profile whose bound
+        workflow was missing, retired or a 256x256 / 1-step verification smoke
+        graph.  Image routes are therefore walked newest-first until one is
+        production-grade; non-image capabilities are unaffected.
+
+        A profile that records the model it runs is additionally skipped when
+        that model has no recorded commercial authorization.  Automatic
+        selection is production routing, so a research-licensed model must never
+        win it by merely being the most recently published row -- the operator
+        can still choose such a route explicitly.  Profiles that record no model
+        keep the previous behaviour.
+        """
+
+        rows = self.connection.execute(
             """SELECT v.id FROM execution_profile_versions v
             JOIN execution_profiles p ON p.id=v.execution_profile_id
             WHERE v.status='PUBLISHED' AND UPPER(v.capability)=?
-            ORDER BY v.updated_at DESC, p.code, v.version_no DESC LIMIT 1""",
+            ORDER BY v.updated_at DESC, p.code, v.version_no DESC""",
             (capability.upper(),),
-        ).fetchone()
-        return self.profile(str(row["id"])) if row else None
+        ).fetchall()
+        require_production_scale = _image_workflow_scale_applies(self.connection, capability)
+        for row in rows:
+            profile = self.profile(str(row["id"]))
+            if profile is None:
+                continue
+            model_code = (profile.get("model_bundle") or {}).get("model_code")
+            if isinstance(model_code, str) and model_code.strip() and not commercial_use_allowed(_licence_policy(), model_code.strip()):
+                continue
+            if require_production_scale and not image_workflow_is_production_grade(
+                self.connection, str(profile.get("workflow_version_id") or "")
+            ):
+                continue
+            return profile
+        return None
 
     def recent_terminal_attempts(self, profile_version_id: str, *, limit: int) -> dict[str, Any]:
         """Return bounded terminal evidence without assuming an old database has scheduler tables."""
@@ -119,7 +177,25 @@ class SqliteGenerationPreferenceRepository:
             ).fetchall()
         except sqlite3.DatabaseError:
             return {"schema_available": False, "items": [], "query_count": 4}
-        return {"schema_available": True, "items": [dict(row) for row in rows], "query_count": 4}
+        return {
+            "schema_available": True,
+            "items": [self._with_gpu_class(dict(row)) for row in rows],
+            "query_count": 4,
+        }
+
+    @staticmethod
+    def _with_gpu_class(row: dict[str, Any]) -> dict[str, Any]:
+        """Annotate the attempt with the GPU class resolved by the one authority.
+
+        The read projection consumes ``gpu_class`` instead of re-deriving the GPU
+        bucket, so the new query layer stays free of concrete application-service
+        imports while both estimate readers still agree on which attempts are
+        comparable.
+        """
+        from local_drama.infrastructure.database.generation_estimate_repository import classify_gpu_class
+
+        row["gpu_class"] = classify_gpu_class(row)
+        return row
 
     def current_preference(self, project_id: str, owner_type: str, owner_id: str, capability: str) -> dict[str, Any] | None:
         row = self.connection.execute(

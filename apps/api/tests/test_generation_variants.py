@@ -166,9 +166,23 @@ def _plan(
     )
 
 
-def _published_profile(workspace, database) -> str:
+def _published_profile(workspace, database, *, capability: str = "VIDEO_I2V") -> str:
+    """Publish the requested canonical capability and return its profile version id.
+
+    Selecting ``list_profiles()[0]`` silently depended on manifest ordering, so the
+    returned profile's capability changed whenever the manifest changed. Callers that
+    need a specific capability (for example a disk-budget gate that is only computed
+    for a resolvable ``VIDEO_I2V`` profile) must ask for it explicitly.
+    """
     ProfileService(database, workspace.manifest_path).sync_manifest()
-    profile_version_id = str(ProfileService(database, workspace.manifest_path).list_profiles()[0]["version_id"])
+    profiles = ProfileService(database, workspace.manifest_path).list_profiles()
+    matching = [item for item in profiles if str(item.get("capability")) == capability]
+    if not matching:
+        available = sorted({str(item.get("capability")) for item in profiles})
+        raise AssertionError(
+            f"no published profile declares capability {capability}; available={available}"
+        )
+    profile_version_id = str(matching[0]["version_id"])
     with database.transaction() as connection:
         now = "2026-08-13T00:00:00Z"
         workflow_id = str(uuid.uuid4())

@@ -22,6 +22,7 @@ from local_drama.api.schemas.comfy_lab import (
 from local_drama.api.server_paths import require_server_loopback
 from local_drama.application.comfy_lab import ComfyLabService
 from local_drama.application.errors import api_error_from_domain
+from local_drama.application.gpu_runtime import GpuRuntimeCoordinator
 from local_drama.application.workflows import WorkflowService
 from local_drama.domain.errors import DomainRuleError
 
@@ -29,7 +30,11 @@ router = APIRouter(tags=["comfy-lab"])
 
 
 def service(request: Request) -> ComfyLabService:
-    return ComfyLabService(request.app.state.settings)
+    database = request.app.state.database
+    settings = request.app.state.settings
+    # A Designer test run executes a real Comfy graph, so it must share the
+    # single-device lease with every other local GPU runtime.
+    return ComfyLabService(settings, database, gpu_coordinator=GpuRuntimeCoordinator(database, settings))
 
 
 @router.get("/comfy-lab/status", operation_id="getComfyLabStatus", response_model=ComfyLabStatusEnvelope)

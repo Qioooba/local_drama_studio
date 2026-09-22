@@ -108,9 +108,16 @@ def test_episode_quality_gate_uses_shots_times_frozen_profile_take_estimate_and_
     season = projects.list_seasons(project_id)[0]
     episode = projects.list_episodes(str(season["id"]))[0]
     projects.create_shot(str(episode["id"]), "S001", 4_000)
-    profile_id = _published_profile(workspace, database)
+    # The disk estimate is only computed for a resolvable canonical capability, so
+    # the fixture must publish and bind the profile that actually declares
+    # VIDEO_I2V instead of trusting whatever the manifest lists first.
+    profile_id = _published_profile(workspace, database, capability="VIDEO_I2V")
     now = "2026-08-20T00:00:00Z"
     with database.transaction() as connection:
+        declared = connection.execute(
+            "SELECT capability FROM execution_profile_versions WHERE id=?", (profile_id,)
+        ).fetchone()
+        assert declared is not None and declared["capability"] == "VIDEO_I2V"
         connection.execute(
             "UPDATE execution_profile_versions SET resource_policy_json=?,revision=revision+1 WHERE id=?",
             (json.dumps({"disk_bytes_per_take": 10_000}), profile_id),
@@ -130,6 +137,14 @@ def test_episode_quality_gate_uses_shots_times_frozen_profile_take_estimate_and_
     assert disk["evidence"]["take_count"] == 4
     assert disk["evidence"]["estimated_output_bytes"] == 40_000
     assert disk["evidence"]["required_free_bytes"] == 40_000
+    # A resolvable VIDEO_I2V profile must let the per-profile capability sub-item
+    # pass; if the fixture binds the wrong capability the estimate degrades to
+    # UNKNOWN and this test would silently stop exercising the disk budget.
+    profile_check = next(item for item in preflight["checks"] if item["code"] == "PROFILE_CAPABILITY_MISSING")
+    assert profile_check["status"] == "PASS", profile_check
+    assert profile_check["evidence"]["effective_profile_version_id"] == profile_id
+    assert profile_check["evidence"]["effective_profile_capability"] == "VIDEO_I2V"
+    assert disk["evidence"]["estimate_source"] == "FROZEN_PROFILE_RESOURCE_POLICY"
     with database.connect() as connection:
         before = tuple(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in ("automation_workflows", "automation_workflow_runs", "jobs"))
     with pytest.raises(DomainRuleError) as error:

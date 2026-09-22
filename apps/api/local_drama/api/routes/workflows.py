@@ -15,6 +15,7 @@ from local_drama.api.schemas.workflows import (
 )
 from local_drama.application.comfy_jobs import ComfyGenerationService
 from local_drama.application.errors import api_error_from_domain
+from local_drama.application.gpu_runtime import GpuRuntimeCoordinator
 from local_drama.application.h3_workflows import H3WorkflowFactory, production_tiers_payload
 from local_drama.application.workflow_definitions import WorkflowDefinitionService
 from local_drama.application.workflows import WorkflowService
@@ -38,7 +39,13 @@ def comfy_client(request: Request) -> ComfyClient:
 
 
 def comfy_service(request: Request) -> ComfyGenerationService:
-    return ComfyGenerationService(request.app.state.database, request.app.state.settings)
+    # The direct submit entry point is a GPU path: it must own the shared
+    # physical-device lease instead of only the L1 scheduler resource lease.
+    return ComfyGenerationService(
+        request.app.state.database,
+        request.app.state.settings,
+        gpu_coordinator=GpuRuntimeCoordinator(request.app.state.database, request.app.state.settings),
+    )
 
 
 def definition_service(request: Request) -> WorkflowDefinitionService:

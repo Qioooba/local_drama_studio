@@ -70,6 +70,101 @@ def _creative_asset_code(kind: str, name: str) -> str:
     return f"AI_{kind}_{_sha(name.casefold())[:12].upper()}"
 
 
+_LONG_UNIT_SLICE_CHARACTERS = 3_500
+_LONG_UNIT_SLICE_SEPARATORS = ("\n\n", "\n", "。", "！", "？", "；", ".", "!", "?", ";")
+
+
+def _bounded_character_slices(text: str, limit: int) -> list[tuple[int, int]]:
+    """Split ``text`` into ordered ``(start, end)`` spans of at most ``limit`` characters.
+
+    Every character of ``text`` lands in exactly one span, so the concatenation of
+    the spans is the original text. Splitting prefers a separator close to the
+    limit so that a natural sentence boundary survives, which keeps single-line
+    chapters from being flattened into one unwieldy window.
+    """
+    spans: list[tuple[int, int]] = []
+    position = 0
+    total = len(text)
+    floor = max(1, int(limit * 0.6))
+    while position < total:
+        end = min(total, position + limit)
+        if end < total:
+            window = text[position:end]
+            cut = -1
+            for separator in _LONG_UNIT_SLICE_SEPARATORS:
+                index = window.rfind(separator)
+                if index >= 0:
+                    cut = max(cut, index + len(separator))
+            if cut >= floor:
+                end = position + cut
+        spans.append((position, end))
+        position = end
+    return spans
+
+
+def _paragraph_windows(
+    group: list[Any], *, limit: int = PIPELINE_EPISODE_SOURCE_CHARACTER_LIMIT
+) -> list[dict[str, Any]]:
+    """Return bounded windows over ``group`` preserving the body text exactly.
+
+    The window text never exceeds ``limit`` characters, so the planner no longer
+    silently cuts a long chapter at the prompt boundary. Each window carries the
+    1-based paragraph span that produced its text, and concatenating the windows in
+    order reproduces the original authorised body character for character, which is
+    what lets the coverage report prove that nothing was skipped.
+    """
+    # An explicit blank-line sentinel owns the separator that a paragraph break
+    # contributes. Keeping it as its own piece means a window boundary may fall
+    # between the sentinel and the paragraph (or between paragraphs) without the
+    # separator being dropped or duplicated.
+    blank = object()
+    pieces: list[tuple[Any, str]] = []
+    for paragraph_index, paragraph in enumerate(group):
+        if paragraph_index:
+            pieces.append((blank, "\n\n"))
+        text = str(paragraph.text)
+        if len(text) <= limit:
+            pieces.append((paragraph, text))
+            continue
+        for start, end in _bounded_character_slices(text, limit):
+            pieces.append((paragraph, text[start:end]))
+    windows: list[dict[str, Any]] = []
+    current: list[tuple[Any, str]] = []
+    current_paragraphs: list[Any] = []
+    current_characters = 0
+
+    def flush() -> None:
+        nonlocal current, current_paragraphs, current_characters
+        if not current or not current_paragraphs:
+            current = []
+            current_paragraphs = []
+            current_characters = 0
+            return
+        windows.append(
+            {
+                "text": "".join(text for _, text in current),
+                "start_paragraph": int(current_paragraphs[0].number),
+                "end_paragraph": int(current_paragraphs[-1].number),
+                "character_count": current_characters,
+            }
+        )
+        current = []
+        current_paragraphs = []
+        current_characters = 0
+
+    for owner, text in pieces:
+        # A window must always accept at least one piece; an over-long paragraph was
+        # already bounded above, so a single piece can never exceed the limit.
+        if current and current_characters + len(text) > limit:
+            flush()
+        current.append((owner, text))
+        current_characters += len(text)
+        if owner is not blank:
+            current_paragraphs.append(owner)
+    flush()
+    return windows
+
+
 def _pipeline_quality_report(draft: dict[str, Any]) -> dict[str, Any]:
     source = draft.get("source") if isinstance(draft.get("source"), dict) else {}
     coverage = draft.get("source_coverage") if isinstance(draft.get("source_coverage"), dict) else {}
@@ -136,6 +231,10 @@ class PipelineOrchestratorService:
         production_authorization = input_snapshot.get("production_authorization")
         if not isinstance(production_authorization, dict):
             production_authorization = {"endpoint": "STRUCTURE_ONLY"}
+        analysis_cursor = input_snapshot.get("analysis_cursor")
+        analysis_cursor = analysis_cursor if isinstance(analysis_cursor, dict) else {}
+        next_window = int(analysis_cursor.get("next_window_index") or 0)
+        total_windows = int(analysis_cursor.get("total_window_count") or 0)
         return {
             "run_id": str(row["id"]),
             "project_id": str(row["project_id"]),
@@ -172,6 +271,13 @@ class PipelineOrchestratorService:
             "updated_at": str(row["updated_at"]),
             "error_message": str(row["error_message"]) if row["error_message"] else None,
             "auto_run_rendering": False,
+            "analysis_cursor": {
+                "schema_version": "pipeline.analysis-cursor.v1",
+                "completed_window_count": next_window,
+                "next_window_index": next_window,
+                "total_window_count": total_windows,
+                "has_more_windows": bool(total_windows) and next_window < total_windows,
+            },
             "application_authorization": authorization,
             "production_authorization": production_authorization,
         }
@@ -823,6 +929,132 @@ class PipelineOrchestratorService:
             )
         return self.get_pipeline(project_id, run_id)
 
+    def _analysis_windows(self, run: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Rebuild the current window plan for a run from its frozen source scope."""
+        snapshot = self._input_snapshot(str(run["run_id"]))
+        authorized_scope = snapshot.get("authorized_source_scope")
+        if not isinstance(authorized_scope, dict):
+            raise DomainRuleError(
+                "PIPELINE_SOURCE_SCOPE_REQUIRED",
+                "该任务没有可验证的授权正文范围，请重新发起分析。",
+            )
+        source_id = str(run.get("source_document_version_id") or "")
+        text, _ = self._read_source_version(str(run["project_id"]), source_id)
+        if _sha(text) != str(snapshot.get("source_sha256") or ""):
+            raise DomainRuleError("PIPELINE_SOURCE_CHANGED", "原稿内容与启动时快照不一致")
+        return (
+            self._episode_specs(
+                text,
+                start_paragraph=int(authorized_scope["start_paragraph"]),
+                end_paragraph=int(authorized_scope["end_paragraph"]),
+            ),
+            snapshot,
+        )
+
+    def _input_snapshot(self, run_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT input_snapshot_json FROM pipeline_runs WHERE id=?", (run_id,)
+            ).fetchone()
+        if row is None:
+            raise DomainRuleError("PIPELINE_RUN_NOT_FOUND", "草案运行记录不存在")
+        snapshot = _parse_json(_safe_col(row, "input_snapshot_json", "{}"), {})
+        return snapshot if isinstance(snapshot, dict) else {}
+
+    def continue_analysis(
+        self,
+        project_id: str,
+        run_id: str,
+        *,
+        expected_revision: int,
+        expected_source_sha256: str,
+        expected_next_window_index: int | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
+        """Queue the next bounded batch of the same authorised manuscript range.
+
+        The command is resolved against the server-side cursor, not against a
+        client-supplied range, so a replayed or stale command cannot skip or repeat
+        source text. Only unfinished windows are processed; already-planned units
+        are retained verbatim so production that already consumed them is untouched.
+        """
+        run = self.get_pipeline(project_id, run_id)
+        if run["revision"] != expected_revision:
+            raise DomainRuleError("PIPELINE_REVISION_CONFLICT", "草案状态已更新，请刷新后继续")
+        with self.database.connect() as connection:
+            active = connection.execute(
+                """SELECT id,state FROM jobs WHERE project_id=? AND subject_type='PIPELINE_RUN'
+                AND subject_id=? AND state IN ('QUEUED','CLAIMED','RUNNING','PAUSE_REQUESTED')
+                LIMIT 1""",
+                (project_id, run_id),
+            ).fetchone()
+        if active is not None:
+            raise DomainRuleError(
+                "PIPELINE_ALREADY_RUNNING", "该分析仍在执行，请等待当前批次结束后再继续"
+            )
+        if run["state"] not in {"SUCCEEDED", "FAILED"}:
+            raise DomainRuleError("PIPELINE_STATE_INVALID", "只有已完成或失败的分析可以继续")
+        all_specs, snapshot = self._analysis_windows(run)
+        source_sha = str(snapshot.get("source_sha256") or "")
+        if expected_source_sha256 and expected_source_sha256 != source_sha:
+            raise DomainRuleError(
+                "PIPELINE_SOURCE_CHANGED", "原稿已变化，旧续接游标不可用，请重新发起分析"
+            )
+        cursor = run["analysis_cursor"]
+        next_window = int(cursor["next_window_index"])
+        if expected_next_window_index is not None and next_window != expected_next_window_index:
+            raise DomainRuleError(
+                "PIPELINE_CURSOR_STALE",
+                "续接位置已变化，请刷新后按服务端游标继续",
+                {"server_next_window_index": next_window},
+            )
+        total_windows = len(all_specs)
+        if next_window >= total_windows:
+            raise DomainRuleError("PIPELINE_COVERAGE_COMPLETE", "授权原稿范围已全部分析完成")
+        if not run["job_id"]:
+            raise DomainRuleError("PIPELINE_STATE_INVALID", "该分析没有可续接的任务")
+        now = _now()
+        with self.database.transaction() as connection:
+            current = connection.execute(
+                "SELECT input_snapshot_json,revision FROM pipeline_runs WHERE id=? AND project_id=?",
+                (run_id, project_id),
+            ).fetchone()
+            if current is None:
+                raise DomainRuleError("PIPELINE_RUN_NOT_FOUND", "草案运行记录不存在")
+            if int(current["revision"]) != expected_revision:
+                raise DomainRuleError("PIPELINE_REVISION_CONFLICT", "草案状态已更新，请刷新后继续")
+            current_snapshot = _parse_json(current["input_snapshot_json"], {})
+            current_cursor = current_snapshot.get("analysis_cursor")
+            if isinstance(current_cursor, dict) and int(current_cursor.get("next_window_index") or 0) != next_window:
+                raise DomainRuleError(
+                    "PIPELINE_CURSOR_STALE",
+                    "续接位置已变化，请刷新后按服务端游标继续",
+                    {"server_next_window_index": int(current_cursor.get("next_window_index") or 0)},
+                )
+            job = self.jobs.create_job_in_transaction(
+                connection,
+                project_id,
+                PIPELINE_JOB_TYPE,
+                "PIPELINE_RUN",
+                run_id,
+                "CPU",
+                {"run_id": run_id, "project_id": project_id, "continue_from_window_index": next_window},
+                f"pipeline-continue:{run_id}:{next_window}",
+                actor=actor,
+                subject_kind="PIPELINE_RUN",
+                scope_kind="PROJECT",
+                scope_project_id=project_id,
+                stage_code="STORY_PIPELINE",
+                max_attempts=1,
+            )
+            connection.execute(
+                """UPDATE pipeline_runs SET state='RUNNING',stage='QUEUED',
+                stage_label='已按续接位置重新进入任务队列',progress_pct=2,error_message=NULL,
+                job_id=?,updated_at=?,revision=revision+1 WHERE id=?""",
+                (job["id"], now, run_id),
+            )
+        return self.get_pipeline(project_id, run_id)
+
     def _update_run(self, run_id: str, **values: Any) -> None:
         columns = {
             "state", "stage", "stage_label", "progress_pct", "episodes_count", "characters_count",
@@ -844,6 +1076,35 @@ class PipelineOrchestratorService:
             connection.execute(f"UPDATE pipeline_runs SET {','.join(sets)} WHERE id=?", params)
 
     @staticmethod
+    def _episode_spec_builder(
+        *,
+        number: int,
+        title: str,
+        summary: str,
+        window: dict[str, Any],
+        window_index: int,
+        window_count: int,
+    ) -> dict[str, Any]:
+        text = str(window["text"])
+        return {
+            "number": number,
+            "code": f"EP{number:02d}",
+            "title": title[:160],
+            "summary": summary[:320],
+            "source_start_paragraph": int(window["start_paragraph"]),
+            "source_end_paragraph": int(window["end_paragraph"]),
+            "source_text": text,
+            # Bounded-input provenance. A long chapter becomes several windows of
+            # the same episode unit, so the planner and the coverage report can
+            # prove that no character of the authorised range was skipped.
+            "unit_number": number,
+            "window_index": window_index,
+            "window_count": window_count,
+            "source_character_count": len(text),
+            "source_input_sha256": _sha(text),
+        }
+
+    @staticmethod
     def _episode_specs(
         text: str, *, start_paragraph: int = 1, end_paragraph: int | None = None
     ) -> list[dict[str, Any]]:
@@ -852,69 +1113,110 @@ class PipelineOrchestratorService:
         selected_paragraphs = [
             item for item in paragraphs if start_paragraph <= int(item.number) <= last_paragraph
         ]
-        chapters = []
-        for chapter in source_chapters(paragraphs):
-            chapter_start = int(chapter["start_paragraph"])
-            chapter_end = int(chapter["end_paragraph"])
-            if chapter_end < start_paragraph or chapter_start > last_paragraph:
-                continue
-            chapters.append(
-                {
-                    **chapter,
-                    "start_paragraph": max(start_paragraph, chapter_start),
-                    "end_paragraph": min(last_paragraph, chapter_end),
-                }
-            )
+        chapters = [
+            {
+                **chapter,
+                "start_paragraph": max(start_paragraph, int(chapter["start_paragraph"])),
+                "end_paragraph": min(last_paragraph, int(chapter["end_paragraph"])),
+            }
+            for chapter in source_chapters(paragraphs)
+            if int(chapter["end_paragraph"]) >= start_paragraph
+            and int(chapter["start_paragraph"]) <= last_paragraph
+        ]
         specs: list[dict[str, Any]] = []
+        number = 0
+
+        def append_unit(title: str, body_paragraphs: list[Any]) -> None:
+            nonlocal number
+            if not body_paragraphs:
+                return
+            number += 1
+            windows = _paragraph_windows(body_paragraphs)
+            window_count = len(windows)
+            body = "\n".join(str(item.text) for item in body_paragraphs)
+            for window_index, window in enumerate(windows, start=1):
+                specs.append(
+                    PipelineOrchestratorService._episode_spec_builder(
+                        number=number,
+                        title=title or f"第 {number} 集",
+                        summary=re.sub(r"\s+", " ", body),
+                        window=window,
+                        window_index=window_index,
+                        window_count=window_count,
+                    )
+                )
+
         if chapters:
-            for index, chapter in enumerate(chapters, start=1):
+            # The authorised range may open before the first recognised chapter.
+            # That prologue is real manuscript (序章/引子/背景/untitled opening) and
+            # must reach the model instead of being dropped between the chapter
+            # units; it becomes its own unit unless it carries no text at all.
+            first_chapter_start = int(chapters[0]["start_paragraph"])
+            append_unit(
+                "序幕与开篇",
+                [item for item in selected_paragraphs if int(item.number) < first_chapter_start],
+            )
+            for chapter in chapters:
                 start = int(chapter["start_paragraph"])
                 end = int(chapter["end_paragraph"])
                 # Source ranges are the same 1-based, inclusive paragraph
                 # numbers exposed by the import API.
-                group = [item for item in selected_paragraphs if start <= int(item.number) <= end]
-                body = "\n".join(item.text for item in group)
-                specs.append({
-                    "number": index,
-                    "code": f"EP{index:02d}",
-                    "title": str(chapter.get("title") or f"第 {index} 集")[:160],
-                    "summary": re.sub(r"\s+", " ", body)[:320],
-                    "source_start_paragraph": start,
-                    "source_end_paragraph": end,
-                    "source_text": body,
-                })
+                append_unit(
+                    str(chapter.get("title") or f"第 {number + 1} 集"),
+                    [item for item in selected_paragraphs if start <= int(item.number) <= end],
+                )
         else:
-            paragraph_groups: list[tuple[int, int, list[Any]]] = []
+            groups: list[list[Any]] = []
             current: list[Any] = []
             current_chars = 0
-            group_start = 1
             for paragraph in selected_paragraphs:
-                if not current:
-                    group_start = int(paragraph.number)
+                # Close the group *before* adding a paragraph that would exceed the
+                # target size, so adjacent short paragraphs stay together instead of
+                # each becoming its own unit.
+                if current and current_chars + len(paragraph.text) > _LONG_UNIT_SLICE_CHARACTERS:
+                    groups.append(current)
+                    current, current_chars = [], 0
                 current.append(paragraph)
                 current_chars += len(paragraph.text)
-                if current_chars >= 3500:
-                    paragraph_groups.append((group_start, int(paragraph.number), current))
-                    current, current_chars = [], 0
             if current:
-                paragraph_groups.append((group_start, int(current[-1].number), current))
-            fallback_groups = paragraph_groups or [
-                (start_paragraph, max(start_paragraph, last_paragraph), selected_paragraphs)
+                groups.append(current)
+            for group in groups:
+                append_unit(f"第 {number + 1} 集", group)
+        if specs:
+            return specs
+        fallback = [item for item in selected_paragraphs]
+        if not fallback and start_paragraph <= last_paragraph:
+            fallback = [
+                item
+                for item in paragraphs
+                if start_paragraph <= int(item.number) <= last_paragraph
             ]
-            for index, (start, end, group) in enumerate(fallback_groups, start=1):
-                body = "\n".join(item.text for item in group)
-                specs.append({
-                    "number": index, "code": f"EP{index:02d}", "title": f"第 {index} 集",
-                    "summary": re.sub(r"\s+", " ", body)[:320],
-                    "source_start_paragraph": start, "source_end_paragraph": end,
-                    "source_text": body,
-                })
-        return specs or [{
-            "number": 1, "code": "EP01", "title": "第 1 集", "summary": text[:320],
-            "source_start_paragraph": start_paragraph,
-            "source_end_paragraph": max(start_paragraph, last_paragraph),
-            "source_text": "\n".join(item.text for item in selected_paragraphs),
-        }]
+        return [
+            {
+                "number": 1,
+                "code": "EP01",
+                "title": "第 1 集",
+                "summary": text[:320],
+                "source_start_paragraph": start_paragraph,
+                "source_end_paragraph": max(start_paragraph, last_paragraph),
+                "source_text": "\n".join(item.text for item in fallback),
+                "unit_number": 1,
+                "window_index": 1,
+                "window_count": 1,
+                "source_character_count": len("\n".join(item.text for item in fallback)),
+                "source_input_sha256": _sha("\n".join(item.text for item in fallback)),
+            }
+        ]
+
+    @staticmethod
+    def _merge_intervals(intervals: list[tuple[int, int]]) -> list[list[int]]:
+        merged: list[list[int]] = []
+        for start, end in sorted(intervals):
+            if merged and start <= merged[-1][1] + 1:
+                merged[-1][1] = max(merged[-1][1], end)
+            else:
+                merged.append([start, end])
+        return merged
 
     @staticmethod
     def _source_coverage(
@@ -924,25 +1226,47 @@ class PipelineOrchestratorService:
         all_specs: list[dict[str, Any]],
         selected_specs: list[dict[str, Any]],
         completed_count: int,
+        completed_window_count: int | None = None,
+        selected_window_offset: int | None = None,
     ) -> dict[str, Any]:
         completed_specs = selected_specs[: max(0, min(completed_count, len(selected_specs)))]
+        # A resumed run reports only the windows it still owes, so the number of
+        # already-processed windows is carried in explicitly instead of being
+        # inferred from this batch. ``coverage_complete`` is still proved by the
+        # interval set difference below, never by these counts.
+        prior_window_count = max(0, int(completed_window_count or 0))
+        batch_offset = max(0, int(selected_window_offset or 0))
+        # Windows before the resumed batch were settled by an earlier batch; they
+        # count as covered but must never be reported as still-unprocessed.
+        prior_specs = all_specs[:batch_offset]
         completed_ranges: list[dict[str, Any]] = []
         unprocessed_ranges: list[dict[str, Any]] = []
         fully_covered: list[tuple[int, int]] = []
-        for spec in completed_specs:
-            character_count = len(str(spec.get("source_text") or ""))
+        for index, spec in enumerate(prior_specs + completed_specs):
+            settled_by_earlier_batch = index < len(prior_specs)
+            # Narrow the local once instead of re-reading the dict, so the checker
+            # can prove the value is a usable number.
+            declared_characters = spec.get("source_character_count")
+            character_count = (
+                int(declared_characters)
+                if isinstance(declared_characters, int)
+                else len(str(spec.get("source_text") or ""))
+            )
             submitted_count = min(character_count, PIPELINE_EPISODE_SOURCE_CHARACTER_LIMIT)
             truncated = submitted_count < character_count
-            completed_ranges.append(
-                {
-                    "unit_number": int(spec["number"]),
-                    "start_paragraph": int(spec["source_start_paragraph"]),
-                    "end_paragraph": int(spec["source_end_paragraph"]),
-                    "authorized_character_count": character_count,
-                    "submitted_character_count": submitted_count,
-                    "status": "PARTIAL" if truncated else "COMPLETED",
-                }
-            )
+            if not settled_by_earlier_batch:
+                completed_ranges.append(
+                    {
+                        "unit_number": int(spec["number"]),
+                        "window_index": int(spec.get("window_index") or 1),
+                        "start_paragraph": int(spec["source_start_paragraph"]),
+                        "end_paragraph": int(spec["source_end_paragraph"]),
+                        "authorized_character_count": character_count,
+                        "submitted_character_count": submitted_count,
+                        "input_sha256": str(spec.get("source_input_sha256") or ""),
+                        "status": "PARTIAL" if truncated else "COMPLETED",
+                    }
+                )
             if not truncated:
                 fully_covered.append(
                     (int(spec["source_start_paragraph"]), int(spec["source_end_paragraph"]))
@@ -954,6 +1278,7 @@ class PipelineOrchestratorService:
                         "end_paragraph": int(spec["source_end_paragraph"]),
                         "reason": "EPISODE_INPUT_CHARACTER_LIMIT",
                         "unit_number": int(spec["number"]),
+                        "window_index": int(spec.get("window_index") or 1),
                         "resume_character_offset_in_unit": submitted_count,
                         "unprocessed_character_count": character_count - submitted_count,
                     }
@@ -965,38 +1290,75 @@ class PipelineOrchestratorService:
                     "end_paragraph": int(spec["source_end_paragraph"]),
                     "reason": "WINDOW_NOT_COMPLETED",
                     "unit_number": int(spec["number"]),
+                    "window_index": int(spec.get("window_index") or 1),
                 }
             )
-        if len(all_specs) > len(selected_specs):
-            tail = all_specs[len(selected_specs):]
+        tail = all_specs[batch_offset + len(selected_specs):]
+        if tail:
             unprocessed_ranges.append(
                 {
                     "start_paragraph": int(tail[0]["source_start_paragraph"]),
                     "end_paragraph": int(tail[-1]["source_end_paragraph"]),
                     "reason": "BATCH_EPISODE_LIMIT",
                     "resume_unit_number": int(tail[0]["number"]),
-                    "unprocessed_unit_count": len(tail),
+                    "resume_window_index": int(tail[0].get("window_index") or 1),
+                    "unprocessed_window_count": len(tail),
+                    "unprocessed_unit_count": len({int(item["number"]) for item in tail}),
                 }
             )
-        merged: list[list[int]] = []
-        for start, end in sorted(fully_covered):
-            if merged and start <= merged[-1][1] + 1:
-                merged[-1][1] = max(merged[-1][1], end)
-            else:
-                merged.append([start, end])
+
+        authorized_start = int(authorized_scope["start_paragraph"])
+        authorized_end = int(authorized_scope["end_paragraph"])
+        merged = PipelineOrchestratorService._merge_intervals(fully_covered)
+        # Completeness is a set comparison against the authorised range, never a
+        # count comparison. Any authorised paragraph missing from the union of
+        # processed intervals is an explicit gap, so a run can no longer report
+        # FULL while silently dropping the prologue or a truncated window.
+        merged_authorized = PipelineOrchestratorService._merge_intervals(
+            [(max(authorized_start, start), min(authorized_end, end)) for start, end in merged
+             if start <= authorized_end and end >= authorized_start]
+        )
         covered_paragraph_count = sum(end - start + 1 for start, end in merged)
         authorized_count = int(authorized_scope["paragraph_count"])
+        coverage_gaps: list[dict[str, Any]] = []
+        cursor = authorized_start
+        for start, end in merged_authorized:
+            if start > cursor:
+                coverage_gaps.append(
+                    {
+                        "start_paragraph": cursor,
+                        "end_paragraph": start - 1,
+                        "reason": "AUTHORIZED_RANGE_NOT_COVERED",
+                    }
+                )
+            cursor = max(cursor, end + 1)
+        if cursor <= authorized_end:
+            coverage_gaps.append(
+                {
+                    "start_paragraph": cursor,
+                    "end_paragraph": authorized_end,
+                    "reason": "AUTHORIZED_RANGE_NOT_COVERED",
+                }
+            )
+        coverage_complete = (
+            not coverage_gaps
+            and not unprocessed_ranges
+            and prior_window_count + len(completed_specs) >= len(all_specs)
+        )
         status = (
             "FULL"
-            if completed_count == len(all_specs) == len(selected_specs) and not unprocessed_ranges
+            if coverage_complete
             else "PARTIAL"
-            if completed_count > 0
+            if prior_window_count + completed_count > 0
             else "NOT_STARTED"
         )
         return {
-            "schema_version": "pipeline.source-coverage.v1",
+            "schema_version": "pipeline.source-coverage.v2",
             "source_sha256": source_sha256,
             "status": status,
+            "coverage_complete": coverage_complete,
+            "completed_window_count": prior_window_count + len(completed_specs),
+            "total_window_count": len(all_specs),
             "authorized_range": dict(authorized_scope),
             "completed_ranges": completed_ranges,
             "completed_paragraph_intervals": [
@@ -1004,8 +1366,9 @@ class PipelineOrchestratorService:
             ],
             "covered_paragraph_count": covered_paragraph_count,
             "authorized_paragraph_count": authorized_count,
+            "coverage_gaps": coverage_gaps,
             "unprocessed_ranges": unprocessed_ranges,
-            "resume": unprocessed_ranges[0] if unprocessed_ranges else None,
+            "resume": (unprocessed_ranges or coverage_gaps or [None])[0],
         }
 
     @staticmethod
@@ -1085,37 +1448,57 @@ class PipelineOrchestratorService:
                 start_paragraph=int(authorized_scope["start_paragraph"]),
                 end_paragraph=int(authorized_scope["end_paragraph"]),
             )
-            episode_specs = all_episode_specs[:PIPELINE_EPISODE_BATCH_LIMIT]
+            # A ``continue-analysis`` job resumes at the durable cursor instead of
+            # restarting from the first window, so already-planned units are never
+            # re-requested and never overwritten.
+            cursor = snapshot.get("analysis_cursor")
+            cursor = cursor if isinstance(cursor, dict) else {}
+            resume_from_window = max(0, int(cursor.get("next_window_index") or 0))
+            if resume_from_window > len(all_episode_specs):
+                raise DomainRuleError(
+                    "PIPELINE_CURSOR_INVALID", "续接游标已超出当前原稿范围，请重新发起分析"
+                )
+            remaining_specs = all_episode_specs[resume_from_window:]
+            episode_specs = remaining_specs[:PIPELINE_EPISODE_BATCH_LIMIT]
             saved_episodes = _parse_json(_safe_col(row, "episodes_json", "[]"), [])
             saved_episodes = saved_episodes if isinstance(saved_episodes, list) else []
+            prior_windows = resume_from_window
             completed = min(len(saved_episodes), len(episode_specs))
-            initial_percent = 18 + round(57 * completed / max(1, len(episode_specs)))
+            initial_percent = 18 + round(57 * (prior_windows + completed) / max(1, len(all_episode_specs)))
             progress(
                 "STORY_PLANNING",
-                f"AI 正在生成轻量分集提纲；已从检查点恢复 {completed}/{len(episode_specs)} 集" if completed else "AI 正在生成轻量分集提纲",
+                (
+                    f"AI 正在续接原稿；已处理 {prior_windows}/{len(all_episode_specs)} 个输入窗口"
+                    if prior_windows
+                    else f"AI 正在生成轻量分集提纲；已从检查点恢复 {completed}/{len(episode_specs)} 集"
+                    if completed
+                    else "AI 正在生成轻量分集提纲"
+                ),
                 initial_percent,
             )
 
             def episode_progress(done: int, total: int) -> None:
-                percent = 18 + round(57 * done / max(1, total))
-                progress("STORY_PLANNING", f"AI 已规划 {done}/{total} 集", percent)
+                percent = 18 + round(57 * (prior_windows + done) / max(1, len(all_episode_specs)))
+                progress("STORY_PLANNING", f"AI 已规划 {prior_windows + done}/{len(all_episode_specs)} 个输入窗口", percent)
 
             def episode_checkpoint(items: list[dict[str, Any]], done: int, total: int) -> None:
-                percent = 18 + round(57 * done / max(1, total))
+                percent = 18 + round(57 * (prior_windows + done) / max(1, len(all_episode_specs)))
                 checkpoint_coverage = self._source_coverage(
                     source_sha256=str(snapshot["source_sha256"]),
                     authorized_scope=authorized_scope,
                     all_specs=all_episode_specs,
                     selected_specs=episode_specs,
                     completed_count=done,
+                    completed_window_count=prior_windows,
+                    selected_window_offset=prior_windows,
                 )
                 self._update_run(
                     run_id,
                     stage="STORY_PLANNING",
-                    stage_label=f"AI 已规划 {done}/{total} 集；检查点已保存",
+                    stage_label=f"AI 已规划 {prior_windows + done}/{len(all_episode_specs)} 个输入窗口；检查点已保存",
                     progress_pct=percent,
-                    episodes_count=done,
-                    episodes_json=items,
+                    episodes_count=len(saved_episodes) + done,
+                    episodes_json=[*saved_episodes, *items],
                     draft_json={"source_coverage": checkpoint_coverage},
                 )
 
@@ -1126,14 +1509,21 @@ class PipelineOrchestratorService:
                 profile_version_id=run["capability_profile_version_id"],
                 cancel_check=cancel_check,
                 on_episode=episode_progress,
-                resume_episodes=saved_episodes,
+                # Only the units being continued are handed back as a checkpoint;
+                # completed units are retained verbatim so a later batch cannot
+                # rewrite names or memory that production already consumed.
+                resume_episodes=[] if prior_windows else saved_episodes,
                 on_episode_checkpoint=episode_checkpoint,
             )
             progress("ASSET_EXTRACTION", "正在合并核心人物、场景、道具与连续性记忆", 82)
             ai_episodes = generated["episodes"]
+            if prior_windows and saved_episodes:
+                merged_episodes = [*saved_episodes[:prior_windows], *ai_episodes]
+            else:
+                merged_episodes = ai_episodes
             plan_episodes = [
                 {key: value for key, value in item.items() if key not in {"scenes", "entity_observations"}}
-                for item in ai_episodes
+                for item in merged_episodes
             ]
             assets = generated["assets"]
             bible = {
@@ -1150,7 +1540,9 @@ class PipelineOrchestratorService:
                 authorized_scope=authorized_scope,
                 all_specs=all_episode_specs,
                 selected_specs=episode_specs,
-                completed_count=len(plan_episodes),
+                completed_count=len(ai_episodes),
+                completed_window_count=prior_windows,
+                selected_window_offset=prior_windows,
             )
             draft = {
                 "schema_version": "pipeline.story-plan.v3",
@@ -1193,6 +1585,33 @@ class PipelineOrchestratorService:
                 llm_error=None,
                 error_message=None,
             )
+            # Persist the durable analysis cursor. It is the only thing a later
+            # ``continue-analysis`` command trusts about how far this run got, so a
+            # replayed or concurrent command can be detected instead of redoing
+            # work or skipping a window.
+            settled_windows = prior_windows + len(episode_specs)
+            with self.database.transaction() as connection:
+                current = connection.execute(
+                    "SELECT input_snapshot_json FROM pipeline_runs WHERE id=?", (run_id,)
+                ).fetchone()
+                current_snapshot = _parse_json(current["input_snapshot_json"], {})
+                previous_cursor = current_snapshot.get("analysis_cursor")
+                previous_cursor = previous_cursor if isinstance(previous_cursor, dict) else {}
+                current_snapshot["analysis_cursor"] = {
+                    "schema_version": "pipeline.analysis-cursor.v1",
+                    "completed_window_count": settled_windows,
+                    "next_window_index": settled_windows,
+                    "total_window_count": len(all_episode_specs),
+                    "source_sha256": str(snapshot["source_sha256"]),
+                    "updated_at": _now(),
+                    "previous_completed_window_count": int(
+                        previous_cursor.get("completed_window_count") or 0
+                    ),
+                }
+                connection.execute(
+                    "UPDATE pipeline_runs SET input_snapshot_json=? WHERE id=?",
+                    (_json(current_snapshot), run_id),
+                )
             # The dependent apply Job cannot be claimed until this draft Job
             # succeeds. Freeze the exact generated draft now, so later edits
             # cannot silently widen the launch-time authorization.
@@ -1246,6 +1665,8 @@ class PipelineOrchestratorService:
                         all_specs=all_episode_specs,
                         selected_specs=episode_specs,
                         completed_count=completed_count,
+                        completed_window_count=prior_windows,
+                    selected_window_offset=prior_windows,
                     )
                     self._update_run(
                         run_id,
@@ -1761,10 +2182,12 @@ class PipelineOrchestratorService:
                     raise DomainRuleError("PIPELINE_IMPORT_SESSION_MISSING", "原稿缺少导入会话，无法创建分场草稿")
                 for item in draft["breakdowns"]:
                     episode_number = int(item["episode_number"])
-                    episode_id = episode_ids.get(episode_number)
+                    # Distinct local name: the surrounding scope already binds
+                    # ``episode_id`` to a non-optional id from the STORY_PLAN pass.
+                    breakdown_episode_id = episode_ids.get(episode_number)
                     breakdown_payload = {
                         **item["draft"],
-                        "episode_id": episode_id,
+                        "episode_id": breakdown_episode_id,
                         "episode_number": episode_number,
                         "pipeline_run_id": run_id,
                     }

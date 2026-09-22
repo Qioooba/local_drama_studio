@@ -52,12 +52,92 @@ class ComfyGenerationService:
         self.jobs = JobService(database, settings)
         self.media = MediaService(database, settings)
         self.workflows = WorkflowService(database, settings)
-        self.comfy = ComfyClient(
+        self._default_comfy = ComfyClient(
             settings.comfy_base_url,
             settings.comfy_output_root,
             allow_private_network=settings.allows_private_network,
         )
+        # A Profile may record its own ComfyUI runtime (for example the isolated
+        # Qwen-Image-2.1 instance on another loopback port).  When it does, that
+        # endpoint -- and that runtime's output directory -- replace the
+        # process-wide client for the duration of one Job.
+        self._active_comfy: ComfyClient | None = None
         self.gpu_coordinator = gpu_coordinator
+
+    @property
+    def comfy(self) -> ComfyClient:
+        """The ComfyUI endpoint that owns the Job currently being handled."""
+
+        return self._active_comfy or self._default_comfy
+
+    def _client_for_profile(self, profile_version_id: str | None) -> ComfyClient | None:
+        """Resolve a Profile's recorded ComfyUI runtime, or None for the default.
+
+        Fails closed on anything that is not a plain loopback endpoint with an
+        output root inside the controlled work tree; an invalid record must not
+        silently fall back to the production server, because the graph may
+        reference nodes that only the recorded runtime has.
+        """
+
+        if not profile_version_id:
+            return None
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """SELECT version.configuration_json AS configuration,
+                          profile.runtime_version_id AS runtime_version_id
+                   FROM execution_profile_versions profile
+                   LEFT JOIN mp_runtime_installation_versions version ON version.id=profile.runtime_version_id
+                   WHERE profile.id=?""",
+                (profile_version_id,),
+            ).fetchone()
+        if row is None or not row["runtime_version_id"]:
+            return None
+        configuration = json.loads(str(row["configuration"] or "{}"))
+        base_url = str(configuration.get("base_url") or "").strip()
+        if not base_url:
+            return None
+        parsed = urlparse(base_url)
+        if parsed.scheme != "http" or (parsed.hostname or "").casefold() not in {"127.0.0.1", "localhost", "::1"}:
+            raise DomainRuleError(
+                "COMFY_PROFILE_RUNTIME_NOT_LOOPBACK",
+                "Profile 记录的 ComfyUI 运行时地址必须是本机 loopback HTTP 端点",
+                {"base_url_scheme": parsed.scheme, "host": parsed.hostname or ""},
+            )
+        output_root = self.settings.comfy_output_root
+        raw_output = configuration.get("output_root")
+        if isinstance(raw_output, str) and raw_output.strip():
+            candidate = Path(raw_output).resolve()
+            if not candidate.is_relative_to(self.settings.work_root.resolve()):
+                raise DomainRuleError(
+                    "COMFY_PROFILE_RUNTIME_OUTPUT_OUTSIDE_WORK_ROOT",
+                    "Profile 记录的 ComfyUI 输出目录必须位于受控 work_root 内",
+                    {"profile_version_id": profile_version_id},
+                )
+            output_root = candidate
+        return ComfyClient(base_url, output_root, allow_private_network=False)
+
+    def _bind_runtime_from_snapshot(self, snapshot: Any) -> None:
+        self._active_comfy = None
+        if not isinstance(snapshot, dict):
+            return
+        execution = snapshot.get("execution_snapshot")
+        profile_version_id = execution.get("profile_version_id") if isinstance(execution, dict) else None
+        if isinstance(profile_version_id, str) and profile_version_id.strip():
+            self._active_comfy = self._client_for_profile(profile_version_id.strip())
+
+    def _bind_runtime_from_job(self, job_id: str | None) -> None:
+        self._active_comfy = None
+        if not job_id:
+            return
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT input_snapshot_json FROM jobs WHERE id=?", (job_id,)).fetchone()
+        if row is None:
+            return
+        try:
+            snapshot = json.loads(str(row["input_snapshot_json"] or "{}"))
+        except ValueError:
+            return
+        self._bind_runtime_from_snapshot(snapshot)
 
     @staticmethod
     def _runtime_semantic_inputs(snapshot: dict[str, Any], declared_roles: set[str]) -> tuple[dict[str, Any], dict[str, str]]:
@@ -90,6 +170,7 @@ class ComfyGenerationService:
         *,
         worker_session_id: str | None = None,
         before_queue_prompt: Callable[[dict[str, Any], dict[str, Any]], None] | None = None,
+        gpu_session: bool = True,
     ) -> dict[str, Any] | None:
         claim = self.jobs.claim(
             worker_id,
@@ -108,6 +189,7 @@ class ComfyGenerationService:
         attempt = claim["attempt"]
         token = str(attempt["lease_token"])
         snapshot = job["input_snapshot"]
+        self._bind_runtime_from_snapshot(snapshot)
         workflow_version_id = str(snapshot.get("workflow_version_id", ""))
         if not workflow_version_id:
             self.jobs.complete(
@@ -254,16 +336,30 @@ class ComfyGenerationService:
                 progress={"phase": "SUBMITTING_TO_PROVIDER", "client_id": client_id},
                 lease_seconds=self.GPU_LEASE_SECONDS,
             )
-            response = self.comfy.queue_prompt(
-                compiled["workflow"],
-                client_id=client_id,
-                extra_data={
-                    "local_drama_job_id": job["id"],
-                    "compiled_hash": compiled["compiled_hash"],
-                    "workflow_runtime_binding": runtime_binding,
-                    "runtime_overrides": compiled.get("runtime_overrides", {}),
-                },
-            )
+            with ExitStack() as gpu_stack:
+                # This entry point previously took only the L1 scheduler lease,
+                # so a direct API/CLI submit could queue a heavy Comfy workflow
+                # while another runtime held the device.  Acquire the shared
+                # physical-GPU lease (L2) around the provider handoff unless the
+                # caller (LocalMediaWorker/run_once) already owns it.
+                if gpu_session and self.gpu_coordinator is not None:
+                    gpu_stack.enter_context(
+                        self.gpu_coordinator.session(
+                            GpuRuntime.COMFY,
+                            owner_kind="JOB_ATTEMPT",
+                            owner_ref=str(attempt["id"]),
+                        )
+                    )
+                response = self.comfy.queue_prompt(
+                    compiled["workflow"],
+                    client_id=client_id,
+                    extra_data={
+                        "local_drama_job_id": job["id"],
+                        "compiled_hash": compiled["compiled_hash"],
+                        "workflow_runtime_binding": runtime_binding,
+                        "runtime_overrides": compiled.get("runtime_overrides", {}),
+                    },
+                )
         except DomainRuleError as error:
             if error.code == "COMFY_LOOPBACK_UNAVAILABLE":
                 cause = str((error.details or {}).get("cause") or "")
@@ -568,6 +664,10 @@ class ComfyGenerationService:
                 worker_id,
                 worker_session_id=worker_session_id,
                 before_queue_prompt=prepare_runtime,
+                # run_once already holds the GPU session for the whole attempt
+                # (submit -> poll -> finalize), so submit_next must not re-enter
+                # the single-device lease.
+                gpu_session=False,
             )
             if submission is None:
                 return None
@@ -748,6 +848,10 @@ class ComfyGenerationService:
 
     def poll_attempt(self, attempt_id: str, worker_id: str) -> dict[str, Any]:
         attempt = self._active_attempt(attempt_id)
+        # Output collection must read the output directory of the runtime that
+        # actually produced the file, so the Job's own endpoint is re-bound here
+        # rather than inherited from whatever ran last.
+        self._bind_runtime_from_job(str(attempt.get("job_id") or ""))
         prompt_id = str(attempt.get("comfy_prompt_id") or attempt.get("provider_job_id") or "")
         if not prompt_id:
             raise DomainRuleError("COMFY_PROMPT_ID_REQUIRED", "Attempt 尚未记录 Comfy prompt_id")
@@ -800,17 +904,10 @@ class ComfyGenerationService:
                 provider_job_id=prompt_id,
             )
             return {"status": "FAILED", "prompt_id": prompt_id, "result": result}
-        outputs = self.comfy.collect_outputs(item)
-        output_root = self.settings.work_root / "jobs" / str(attempt["job_id"]) / "comfy"
+        outputs = self.comfy.collect_output_entries(item)
         artifacts: list[dict[str, Any]] = []
-        for source in outputs:
-            target = output_root / source.name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            partial = target.with_name(f".partial-{target.name}")
-            shutil.copyfile(source, partial)
-            replace_path(partial, target)
-            relative = target.relative_to(self.settings.work_root).as_posix()
-            artifacts.append(self.jobs.register_artifact(str(attempt["id"]), "COMFY_OUTPUT", relative))
+        for entry in outputs:
+            artifacts.append(self._publish_provider_output(attempt, entry))
         result = self.jobs.complete(str(attempt["id"]), str(attempt["lease_token"]), worker_id, success=True, provider_job_id=prompt_id)
         if str(result.get("job_state")) != "SUCCEEDED":
             self._record_provider_event(
@@ -857,6 +954,7 @@ class ComfyGenerationService:
 
     def interrupt_attempt(self, attempt_id: str, worker_id: str) -> dict[str, Any]:
         attempt = self._active_attempt(attempt_id)
+        self._bind_runtime_from_job(str(attempt.get("job_id") or ""))
         prompt_id = str(attempt.get("comfy_prompt_id") or attempt.get("provider_job_id") or "")
         queue = self.comfy.queue()
         running_ids = self._queue_prompt_ids(queue.get("queue_running", []))
@@ -881,24 +979,36 @@ class ComfyGenerationService:
         return {"attempt_id": attempt_id, "interrupt": interrupted, "provider_action": provider_action, "job": job, "worker_id": worker_id}
 
     def recover_attempt(self, attempt_id: str, provider_job_id: str) -> dict[str, Any]:
+        """Controlled reconciliation entry point for a frozen provider identity.
+
+        This is deliberately SEPARATE from ordinary registration: a crashed or
+        orphaned attempt is no longer CLAIMED/RUNNING, so the normal publish gate
+        must reject it.  Recovery may still adopt the work, but only after
+        re-reading the provider's own history and confirming that the frozen
+        provider prompt id still reports success for exactly this attempt —
+        otherwise a callback for an expired or reassigned provider job could
+        mint new ordinary VERIFIED artifacts.
+        """
         with self.database.connect() as connection:
             row = connection.execute("SELECT * FROM job_attempts WHERE id=?", (attempt_id,)).fetchone()
         if row is None:
             raise DomainRuleError("ATTEMPT_NOT_FOUND", "JobAttempt 不存在")
+        self._bind_runtime_from_job(str(row["job_id"] or ""))
+        frozen_provider_id = str(row["provider_job_id"] or "")
+        if frozen_provider_id and frozen_provider_id != provider_job_id:
+            raise DomainRuleError(
+                "COMFY_PROVIDER_IDENTITY_MISMATCH",
+                "恢复请求的提供方任务标识与该 Attempt 冻结的身份不一致",
+                {"attempt_provider_job_id": frozen_provider_id, "requested": provider_job_id},
+            )
         history = self.comfy.history(provider_job_id)
         item = history.get(provider_job_id)
         if not item or item.get("status", {}).get("status_str") != "success":
             raise DomainRuleError("COMFY_PROVIDER_NOT_SUCCEEDED", "Comfy history 尚未确认成功，不能恢复注册")
-        outputs = self.comfy.collect_outputs(item)
-        output_root = self.settings.work_root / "jobs" / str(row["job_id"]) / "comfy"
+        outputs = self.comfy.collect_output_entries(item)
         artifacts: list[dict[str, Any]] = []
-        for source in outputs:
-            target = output_root / source.name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            partial = target.with_name(f".partial-{target.name}")
-            shutil.copyfile(source, partial)
-            replace_path(partial, target)
-            artifacts.append(self.jobs.register_artifact(str(row["id"]), "COMFY_OUTPUT", target.relative_to(self.settings.work_root).as_posix()))
+        for entry in outputs:
+            artifacts.append(self._publish_provider_output(dict(row), entry))
         result = self.jobs.recover_provider_success(attempt_id, provider_job_id)
         business_outputs = self._finalize_business_outputs(str(row["job_id"]), artifacts)
         return {
@@ -908,6 +1018,71 @@ class ComfyGenerationService:
             "result": result,
             "business_outputs": business_outputs,
         }
+
+    @staticmethod
+    def _provider_output_target_name(entry: dict[str, Any]) -> str:
+        """Build a collision-free target name for one provider output.
+
+        MED-01: the identity is ``(node_id, media_group, ordinal,
+        source_relative_path)``.  Two nodes that both emit ``result.png`` — or
+        the same node emitting two slots, or a second attempt producing the same
+        basename — must land on two independent byte objects and two independent
+        records.  The original basename is preserved as a suffix so a human can
+        still recognise the file.
+        """
+        source_relative = str(entry["source_relative_path"]).replace("\\", "/")
+        identity = "|".join(
+            (
+                str(entry["node_id"]),
+                str(entry["media_group"]),
+                str(int(entry["ordinal"])),
+                source_relative,
+            )
+        )
+        identity_hash = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        basename = Path(source_relative).name
+        safe_node = "".join(character if character.isalnum() or character in {"-", "_"} else "_" for character in str(entry["node_id"]))[:24] or "node"
+        safe_group = "".join(character if character.isalnum() or character in {"-", "_"} else "_" for character in str(entry["media_group"]))[:24] or "out"
+        return f"node{safe_node}-{safe_group}-{int(entry['ordinal'])}-{identity_hash[:16]}-{basename}"
+
+    def _publish_provider_output(self, attempt: dict[str, Any], entry: dict[str, Any]) -> dict[str, Any]:
+        """Atomically publish ONE provider output as an attempt-scoped artifact.
+
+        The file is written to a per-attempt staging directory, verified for
+        size/hash, and only then moved into the attempt's own published directory
+        and registered.  A retry therefore starts from an empty attempt
+        directory instead of overwriting a previous attempt's artifact.
+        """
+        work_root = self.settings.work_root.resolve()
+        attempt_id = str(attempt["id"])
+        attempt_dir = work_root / "jobs" / str(attempt["job_id"]) / "comfy" / f"attempt-{attempt_id}"
+        published = attempt_dir / "published"
+        staging = attempt_dir / ".staging"
+        staging.mkdir(parents=True, exist_ok=True)
+        target_name = self._provider_output_target_name(entry)
+        staged = staging / target_name
+        source: Path = entry["path"]
+        shutil.copyfile(source, staged)
+        digest = hashlib.sha256()
+        with staged.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        source_digest = hashlib.sha256()
+        with source.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                source_digest.update(chunk)
+        if digest.hexdigest() != source_digest.hexdigest() or staged.stat().st_size != source.stat().st_size:
+            staged.unlink(missing_ok=True)
+            raise DomainRuleError(
+                "COMFY_OUTPUT_COPY_MISMATCH",
+                "Comfy 输出在暂存后校验失败，拒绝登记",
+                {"source": entry["source_relative_path"], "node_id": entry["node_id"]},
+            )
+        published.mkdir(parents=True, exist_ok=True)
+        target = published / target_name
+        replace_path(staged, target)
+        relative = target.relative_to(work_root).as_posix()
+        return self.jobs.register_artifact(str(attempt["id"]), "COMFY_OUTPUT", relative)
 
     def _finalize_business_outputs(self, job_id: str, artifacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         from local_drama.application.production_identity_inputs import (
@@ -1052,6 +1227,7 @@ class ComfyGenerationService:
             attempt_id = str(row["id"])
             provider_job_id = str(row["provider_job_id"])
             try:
+                self._bind_runtime_from_job(str(row["job_id"] or ""))
                 history = self.comfy.history(provider_job_id)
                 provider_item = history.get(provider_job_id)
                 provider_status = str((provider_item or {}).get("status", {}).get("status_str") or "UNKNOWN")

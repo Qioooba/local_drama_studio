@@ -209,9 +209,20 @@ async def register_artifact(attempt_id: str, payload: ArtifactRegisterRequest, r
 
 
 @router.get("/artifacts/{artifact_id}/download", operation_id="downloadJobArtifact")
-async def download_artifact(artifact_id: str, request: Request) -> FileResponse:
+async def download_artifact(
+    artifact_id: str,
+    request: Request,
+    range_header: str | None = Header(default=None, alias="Range"),
+) -> FileResponse:
     try:
-        _, path = service(request).artifact_download(artifact_id)
+        # A byte-range read is a seek inside one already-published immutable
+        # artifact, so it uses the stable file-identity cache instead of
+        # re-hashing the whole file on every range.  A full download always
+        # re-verifies the registered SHA-256 first.
+        if range_header:
+            _, path = service(request).artifact_download_for_range(artifact_id)
+        else:
+            _, path = service(request).artifact_download(artifact_id)
         media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         return FileResponse(path=path, media_type=media_type, filename=path.name)
     except DomainRuleError as error:

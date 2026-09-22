@@ -16,14 +16,19 @@ import signal
 import subprocess
 import sys
 import uuid
+from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from local_drama.application.job_resources import GpuRuntime
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.comfy import ComfyClient
 from local_drama.infrastructure.filesystem.atomic import replace_path
+
+if TYPE_CHECKING:
+    from local_drama.application.gpu_runtime import GpuRuntimeCoordinator
 
 
 def _now() -> str:
@@ -41,8 +46,18 @@ def _hash(value: Any) -> str:
 class ComfyLabService:
     """Owns only the Designer process and its disposable sandbox."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        database: Any | None = None,
+        *,
+        gpu_coordinator: GpuRuntimeCoordinator | None = None,
+    ) -> None:
         self.settings = settings
+        self.database = database
+        # A Designer test run executes a real Comfy graph; when a coordinator
+        # is supplied it must own the shared physical device for that window.
+        self.gpu_coordinator = gpu_coordinator
         self.sandbox_root = (settings.work_root / "comfy-lab").resolve()
         self.state_path = self.sandbox_root / "session.json"
         self.configuration_path = self.sandbox_root / "launch-config.json"
@@ -427,6 +442,24 @@ class ComfyLabService:
             raise DomainRuleError("COMFY_LAB_EXECUTION_TEST_REQUIRED", "提升为正式候选前必须对同一 capture 完成 PASS 执行测试", {"capture_id": capture_id})
         return capture
 
+    def _gpu_session(self, capture_id: str | None) -> AbstractContextManager[Any]:
+        """Own the shared physical GPU for one Designer test execution.
+
+        The Designer sandbox is a second ComfyUI process, so a test run must be
+        mutually exclusive with every production runtime.  The coordinator is
+        injected by the API/worker composition root; when it is absent (unit
+        tests, planning-only callers) execution stays lease-free as before.
+        """
+
+        if self.gpu_coordinator is None:
+            return nullcontext()
+        owner_ref = f"comfy-lab-test-run:{capture_id or uuid.uuid4().hex}"
+        return self.gpu_coordinator.session(
+            GpuRuntime.COMFY,
+            owner_kind="COMFY_LAB_TEST_RUN",
+            owner_ref=owner_ref,
+        )
+
     def test_run(self, workflow: dict[str, Any] | None, *, capture_id: str | None = None, execute: bool, client: ComfyClient | None = None) -> dict[str, Any]:
         capture = self.get_capture(capture_id) if capture_id else None
         if capture is not None:
@@ -441,9 +474,10 @@ class ComfyLabService:
         if status["status"] != "RUNNING":
             raise DomainRuleError("COMFY_LAB_NOT_RUNNING", "Designer 未运行，不能执行 test run", {"would_contact_comfyui": False})
         runtime = client or self._client()
-        result = runtime.queue_prompt(workflow, client_id=f"local-drama-designer-{uuid.uuid4().hex}")
-        prompt_id = str(result["prompt_id"])
-        history = runtime.wait_history(prompt_id, timeout_seconds=240.0)
+        with self._gpu_session(capture_id):
+            result = runtime.queue_prompt(workflow, client_id=f"local-drama-designer-{uuid.uuid4().hex}")
+            prompt_id = str(result["prompt_id"])
+            history = runtime.wait_history(prompt_id, timeout_seconds=240.0)
         passed = history.get("status") == "success"
         evidence = {
             "status": "PASS" if passed else "BLOCKED",

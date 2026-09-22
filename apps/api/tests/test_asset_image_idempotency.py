@@ -41,12 +41,30 @@ def _published_asset_image_profile(workspace, database) -> str:
     import json as _json
 
     profile = next(item for item in ProfileService(database, workspace.manifest_path).sync_manifest()["profiles"] if item["capability"] == "VIDEO_T2V")
+    # A real asset HERO route must control STEPS/WIDTH/HEIGHT; a smoke-scale
+    # 256x256 / 1-step verification graph is rejected by the batch service.
+    nodes = {
+        "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "local-model.safetensors"}},
+        "2": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["1", 1]}},
+        "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["1", 1]}},
+        "4": {"class_type": "EmptyLatentImage", "inputs": {"width": 1024, "height": 1024, "batch_size": 1}},
+        "5": {"class_type": "KSampler", "inputs": {"seed": 0, "steps": 20, "cfg": 4.0, "positive": ["2", 0], "negative": ["3", 0], "latent_image": ["4", 0]}},
+        "7": {"class_type": "SaveImage", "inputs": {"filename_prefix": "local_drama/asset_hero", "images": ["5", 0]}},
+    }
+    bindings = {
+        "PROMPT": {"node_id": "2", "input": "text"},
+        "SEED": {"node_id": "5", "input": "seed"},
+        "STEPS": {"node_id": "5", "input": "steps"},
+        "WIDTH": {"node_id": "4", "input": "width"},
+        "HEIGHT": {"node_id": "4", "input": "height"},
+        "OUTPUT_PREFIX": {"node_id": "7", "input": "filename_prefix"},
+    }
     workflow = WorkflowService(database, workspace).register_package(
         "asset_image_batch_submit",
         "Asset image batch submit",
-        {"1": {"class_type": "SaveImage", "inputs": {"prompt": "", "seed": 0}}},
+        nodes,
         {},
-        {"PROMPT": {"node_id": "1", "input": "prompt"}, "SEED": {"node_id": "1", "input": "seed"}},
+        bindings,
     )
     with database.transaction() as connection:
         connection.execute("UPDATE workflow_versions SET status='PUBLISHED' WHERE id=?", (workflow["id"],))

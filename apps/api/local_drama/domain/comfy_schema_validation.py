@@ -5,6 +5,47 @@ from typing import Any
 from local_drama.domain.image_input_roles import COMFY_IMAGE_INPUT_ROLES
 
 
+def _autogrow_names(name: str, definition: Any) -> tuple[set[str], list[str]]:
+    """Expand one ``COMFY_AUTOGROW_V3`` input into its concrete child names.
+
+    ComfyUI declares the children of an autogrow slot in one of two ways: an
+    explicit ``names`` list (as ``TextEncodeQwenImage21`` uses for
+    ``image_1``..``image_16``) or a ``prefix`` that the front-end expands.  Both
+    must be understood here, otherwise a perfectly valid graph is reported as
+    using undeclared inputs.
+    """
+
+    if not isinstance(definition, list) or not definition or definition[0] != "COMFY_AUTOGROW_V3":
+        return set(), []
+    if len(definition) < 2 or not isinstance(definition[1], dict):
+        return set(), []
+    template = definition[1].get("template")
+    if not isinstance(template, dict):
+        return set(), []
+    exact: set[str] = set()
+    names = template.get("names")
+    if isinstance(names, list):
+        exact.update(f"{name}.{item}" for item in names if isinstance(item, str) and item)
+    prefixes: list[str] = []
+    prefix = template.get("prefix")
+    if isinstance(prefix, str) and prefix:
+        prefixes.append(f"{name}.{prefix}")
+    return exact, prefixes
+
+
+def _same_choice(value: Any, choices: list[Any]) -> bool:
+    """Compare a submitted value against an advertised combo list, exactly.
+
+    This is deliberately *not* tolerant of path-separator differences: ComfyUI
+    advertises model filenames with the host separator and rejects the other
+    form at ``/prompt`` time.  Accepting ``a/b.safetensors`` here when the
+    runtime offers ``a\\b.safetensors`` would turn a hard runtime failure into a
+    passing local validation, which is the opposite of this check's purpose.
+    """
+
+    return value in choices
+
+
 def validate_comfy_inputs(
     graph: dict[str, Any], object_info: dict[str, Any], bindings: dict[str, Any],
 ) -> list[dict[str, Any]]:
@@ -26,6 +67,7 @@ def validate_comfy_inputs(
             continue
         inputs = node.get("inputs", {})
         definitions: dict[str, Any] = {}
+        dynamic_children: set[str] = set()
         dynamic_prefixes: list[str] = []
         for group in ("required", "optional", "hidden"):
             values = groups.get(group)
@@ -33,13 +75,9 @@ def validate_comfy_inputs(
                 continue
             definitions.update(values)
             for name, definition in values.items():
-                if not isinstance(definition, list) or not definition:
-                    continue
-                if definition[0] == "COMFY_AUTOGROW_V3" and len(definition) > 1 and isinstance(definition[1], dict):
-                    template = definition[1].get("template", {})
-                    prefix = template.get("prefix") if isinstance(template, dict) else None
-                    if isinstance(prefix, str) and prefix:
-                        dynamic_prefixes.append(f"{name}.{prefix}")
+                exact, prefixes = _autogrow_names(str(name), definition)
+                dynamic_children.update(exact)
+                dynamic_prefixes.extend(prefixes)
         def report(
             name: str,
             error: str,
@@ -66,7 +104,8 @@ def validate_comfy_inputs(
                     report(name, "REQUIRED_INPUT_MISSING")
         for name, value in inputs.items():
             if name not in definitions:
-                if definitions and not any(name.startswith(prefix) for prefix in dynamic_prefixes):
+                declared = name in dynamic_children or any(name.startswith(prefix) for prefix in dynamic_prefixes)
+                if definitions and not declared:
                     report(name, "INPUT_NOT_DECLARED")
                 continue
             definition = definitions[name]
@@ -80,6 +119,6 @@ def validate_comfy_inputs(
             choices = definition[0]
             if choices == "COMBO" and len(definition) > 1 and isinstance(definition[1], dict):
                 choices = definition[1].get("options")
-            if isinstance(choices, list) and value not in choices:
+            if isinstance(choices, list) and not _same_choice(value, choices):
                 report(name, "VALUE_NOT_IN_LIST", value=value, allowed_values=choices)
     return errors

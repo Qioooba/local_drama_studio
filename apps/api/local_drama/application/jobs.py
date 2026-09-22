@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import monotonic
@@ -27,7 +28,168 @@ CANCELLED = "CANCELLED"
 ORPHANED = "ORPHANED"
 NEEDS_ATTENTION = "NEEDS_ATTENTION"
 PAUSED = "PAUSED"
+DELETED = "DELETED"
+# ``PAUSED`` is only deletable while it owns no unsettled attempt; ``delete``
+# enforces that separately.  ``DELETED`` is a decision sentinel for a Job whose
+# ``deleted_at`` is set, never a value written into ``jobs.state``.
 DELETABLE_JOB_STATES = {SUCCEEDED, FAILED, CANCELLED, ORPHANED, NEEDS_ATTENTION, PAUSED}
+
+#: Attempt outcomes as observed by whoever is settling or recovering an Attempt.
+OUTCOME_SUCCEEDED = "SUCCEEDED"
+OUTCOME_ATTENTION = "ATTENTION"
+OUTCOME_FAILED = "FAILED"
+#: A retryable worker-declared failure: a new attempt is only allowed while the
+#: Job's automatic budget remains.
+OUTCOME_RETRYABLE_FAILURE = "RETRYABLE_FAILURE"
+#: The attempt vanished (expired lease, dead worker session) without declaring
+#: any outcome.  Its side effect is unknown, so the automatic budget decides.
+OUTCOME_UNKNOWN = "UNKNOWN"
+
+#: One claim scans bounded priority-ordered pages so a runnable Job behind a
+#: resource-blocked prefix is still found, without degrading into an unbounded
+#: full-table scan on a very large queue.
+CLAIM_CANDIDATE_PAGE_SIZE = 128
+CANDIDATE_SCAN_LIMIT = 4096
+
+
+@dataclass(frozen=True, slots=True)
+class JobStateFacts:
+    """Everything the single state-decision authority is allowed to look at.
+
+    Every recovery path (explicit retry/resume, lease expiry reconciliation,
+    worker-session recovery and worker completion acknowledgement) must build
+    these facts from the persisted Job row before writing a new Job state, so
+    cancellation, pause and deletion intent cannot be lost by one path that
+    forgot to read it.
+    """
+
+    state: str
+    deleted: bool = False
+    cancel_requested: bool = False
+    #: A durable resume intent persisted by ``resume`` while an old attempt was
+    #: still settling.  It is the only thing that may move PAUSED back to QUEUED.
+    resume_requested: bool = False
+    #: The provider may already have accepted the work, so a local re-queue
+    #: could duplicate a real side effect.
+    provider_accepted: bool = False
+    #: Number of attempts already recorded for this Job, including the one being
+    #: settled.
+    attempt_no: int = 0
+    max_attempts: int = 1
+    #: Explicit operator retry (``JobService.retry``) is not bounded by the
+    #: automatic ``max_attempts`` budget; it is a deliberate new instruction.
+    operator_authorised: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class JobStateDecision:
+    """Result of the shared state decision, including the audit reason."""
+
+    job_state: str
+    #: ``None`` means "leave the persisted timestamp alone"; ``"NOW"`` means the
+    #: caller's current timestamp; any other value is a concrete ISO timestamp.
+    next_run_at: str | None
+    reason: str
+
+
+def decide_job_state(facts: JobStateFacts, outcome: str) -> JobStateDecision:
+    """The single authority that maps a Job's persisted intent to its next state.
+
+    Precedence is fixed and intentional:
+
+    1. A soft-deleted Job is terminal and must never become claimable again.
+    2. A requested cancellation always wins over success, failure or a pause.
+    3. A pause only releases when the user explicitly asked to resume.
+    4. Provider acceptance uncertainty is quarantined instead of re-queued.
+    5. Only then does the attempt outcome (or the remaining budget) decide.
+
+    ``cancel_requested_at`` is also the cooperative stop flag a pause writes
+    while an attempt is still unsettled, so the PAUSED branch is evaluated
+    before the bare stop flag; an explicit ``CANCEL_REQUESTED`` Job state
+    always outranks a pause.
+
+    The caller passes ``outcome`` from the *attempt* being settled:
+    ``OUTCOME_SUCCEEDED``, ``OUTCOME_ATTENTION``, ``OUTCOME_FAILED`` or
+    ``OUTCOME_UNKNOWN`` (a lost worker/lease whose side effect is unknown).
+    """
+
+    if facts.deleted:
+        return JobStateDecision(DELETED, None, "deleted_job_remains_terminal")
+    if facts.state == CANCEL_REQUESTED:
+        return JobStateDecision(CANCELLED, None, "cancel_requested_precedence")
+    if facts.state == PAUSED:
+        if not facts.resume_requested:
+            return JobStateDecision(PAUSED, None, "paused_without_resume_intent")
+        if facts.provider_accepted:
+            return JobStateDecision(NEEDS_ATTENTION, None, "provider_acceptance_unknown")
+        if facts.attempt_no < facts.max_attempts:
+            # Claimable at once: the settle releases the lease in the same
+            # transaction, so the operator's resume runs without extra delay.
+            return JobStateDecision(QUEUED, "NOW", "resume_intent_after_attempt_settled")
+        return JobStateDecision(NEEDS_ATTENTION, None, "attempt_budget_exhausted")
+    if facts.cancel_requested:
+        # The cooperative stop flag an explicit cancellation wrote on a Job
+        # that is no longer in CANCEL_REQUESTED state (for example after a
+        # pause round-trip) still outranks a late success.
+        return JobStateDecision(CANCELLED, None, "cancel_requested_precedence")
+    if facts.provider_accepted:
+        return JobStateDecision(NEEDS_ATTENTION, None, "provider_acceptance_unknown")
+    if outcome == OUTCOME_SUCCEEDED:
+        return JobStateDecision(SUCCEEDED, None, "attempt_succeeded")
+    if outcome == OUTCOME_ATTENTION:
+        return JobStateDecision(NEEDS_ATTENTION, None, "operator_attention_required")
+    if outcome == OUTCOME_FAILED:
+        # The worker declared the failure terminal for this Job, so a remaining
+        # automatic budget must not resurrect it; only an explicit operator
+        # retry may.
+        return JobStateDecision(QUEUED, "NOW", "operator_retry_budget") if facts.operator_authorised else JobStateDecision(FAILED, None, "attempt_failed_without_retry_budget")
+    if outcome == OUTCOME_RETRYABLE_FAILURE:
+        # An explicit retryable failure consumes the automatic budget instead of
+        # asking a human; running out of attempts is a plain FAILED.
+        if facts.attempt_no < facts.max_attempts:
+            return JobStateDecision(QUEUED, "NOW", "retry_budget_remains")
+        return JobStateDecision(FAILED, None, "attempt_budget_exhausted")
+    # OUTCOME_UNKNOWN: the attempt disappeared without a declared outcome, so
+    # the automatic budget decides between another attempt and quarantining.
+    if facts.operator_authorised or facts.attempt_no < facts.max_attempts:
+        return JobStateDecision(QUEUED, "NOW", "retry_budget_remains")
+    return JobStateDecision(NEEDS_ATTENTION, None, "attempt_budget_exhausted")
+
+
+def _job_state_facts(
+    row: Any,
+    *,
+    provider_accepted: bool = False,
+    operator_authorised: bool = False,
+    attempt_no: int | None = None,
+) -> JobStateFacts:
+    """Read the decision inputs from one persisted Job row.
+
+    ``deleted_at`` and ``cancel_requested_at`` are read defensively so callers
+    that only selected a subset of columns still get the safe (conservative)
+    answer instead of an accidental revival.
+    """
+
+    keys = row.keys()
+    state = str(row["state"])
+    return JobStateFacts(
+        state=state,
+        deleted=state == DELETED or (("deleted_at" in keys) and row["deleted_at"] is not None),
+        cancel_requested=(("cancel_requested_at" in keys) and row["cancel_requested_at"] is not None) or state == CANCEL_REQUESTED,
+        resume_requested=("next_run_at" in keys) and row["next_run_at"] is not None,
+        provider_accepted=provider_accepted,
+        attempt_no=int(row["attempt_no"]) if (attempt_no is None and "attempt_no" in keys) else int(attempt_no or 0),
+        max_attempts=int(row["max_attempts"]) if "max_attempts" in keys else 1,
+        operator_authorised=operator_authorised,
+    )
+
+
+def resolve_next_run_at(next_run_at: str | None, *, now: str) -> str | None:
+    """Turn a decision's timestamp token into the value persisted on the Job."""
+
+    if next_run_at is None:
+        return None
+    return now if next_run_at == "NOW" else next_run_at
 
 
 def _utc_now() -> datetime:
@@ -48,6 +210,58 @@ def _payload_hash(value: Any) -> str:
 
 def _parse_json(value: str) -> Any:
     return json.loads(value) if value else {}
+
+
+#: Stable file-identity cache for verified artifact content.
+#:
+#: Entries are keyed by artifact id and by absolute path, each valued with
+#: (path, size, mtime_ns, inode) -> digest.  A byte-range download is a seek
+#: inside one already-published immutable file, so it must not re-hash a
+#: multi-gigabyte video on every range; the full hash runs again only when the
+#: file's identity actually changed.
+_ARTIFACT_IDENTITY_CACHE: dict[str, tuple[str, int, int, int, str]] = {}
+
+
+def _file_identity(path: Path) -> tuple[str, int, int, int]:
+    stat = path.stat()
+    return (str(path), int(stat.st_size), int(stat.st_mtime_ns), int(getattr(stat, "st_ino", 0)))
+
+
+def _hash_file_cached(path: Path) -> tuple[str, int]:
+    """Streamed SHA-256 + size, cached by file identity."""
+    identity = _file_identity(path)
+    cached = _ARTIFACT_IDENTITY_CACHE.get(identity[0])
+    if cached is not None and cached[:4] == identity:
+        return cached[4], identity[1]
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    hexdigest = digest.hexdigest()
+    _ARTIFACT_IDENTITY_CACHE[identity[0]] = (*identity, hexdigest)
+    return hexdigest, identity[1]
+
+
+def _hash_path_cached(path: Path, *, artifact_id: str | None = None) -> tuple[str, int]:
+    """Hash a path, reusing the cached digest when the file identity is stable."""
+    if artifact_id is not None:
+        cached = _ARTIFACT_IDENTITY_CACHE.get(artifact_id)
+        if cached is not None and cached[:4] == _file_identity(path):
+            return cached[4], cached[1]
+    return _hash_file_cached(path)
+
+
+def _remember_artifact_identity(artifact_id: str, path: Path, digest: str, size: int) -> None:
+    identity = _file_identity(path)
+    _ARTIFACT_IDENTITY_CACHE[artifact_id] = (*identity, digest)
+    _ARTIFACT_IDENTITY_CACHE[str(path)] = (*identity, digest)
+
+
+def _artifact_identity_is_verified(artifact_id: str, path: Path, expected_sha256: str) -> bool:
+    cached = _ARTIFACT_IDENTITY_CACHE.get(artifact_id)
+    if cached is None or cached[:4] != _file_identity(path):
+        return False
+    return hmac.compare_digest(cached[4], expected_sha256)
 
 
 class JobService:
@@ -397,6 +611,19 @@ class JobService:
             for row in rows
         ]
 
+    def _require_job_for_mutation(self, connection: Any, job_id: str) -> Any:
+        """Load a Job for a creator-facing mutation, refusing deleted history.
+
+        A soft-deleted Job is terminal: every write path that could revive it
+        must be rejected with the same stable not-found error the read API uses,
+        so a deleted Job can never become an invisible background task again.
+        """
+
+        row = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+        if row is None or row["deleted_at"] is not None:
+            raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在", {"job_id": job_id})
+        return row
+
     def delete(self, job_id: str, *, actor: str = "local-user") -> dict[str, Any]:
         """Remove a terminal Job from creator-facing history without erasing evidence."""
         now = _iso(_utc_now())
@@ -412,8 +639,21 @@ class JobService:
                     "运行中的任务不能删除，请先取消并等待任务结束",
                     {"job_id": job_id, "state": row["state"]},
                 )
+            # A PAUSED Job may still own an unsettled attempt or a pending resume
+            # intent.  Hiding it here would let the old attempt settle later and
+            # revive a Job the creator can no longer see.
+            unsettled_attempt = connection.execute(
+                "SELECT id FROM job_attempts WHERE job_id=? AND state IN ('CLAIMED','RUNNING') LIMIT 1",
+                (job_id,),
+            ).fetchone()
+            if unsettled_attempt is not None:
+                raise DomainRuleError(
+                    "JOB_DELETE_ACTIVE_FORBIDDEN",
+                    "任务仍有未结算的尝试，请先取消并等待任务结束",
+                    {"job_id": job_id, "state": row["state"], "attempt_id": str(unsettled_attempt["id"])},
+                )
             connection.execute(
-                "UPDATE jobs SET deleted_at=?, updated_at=?, revision=revision+1 WHERE id=? AND deleted_at IS NULL",
+                "UPDATE jobs SET deleted_at=?, next_run_at=NULL, updated_at=?, revision=revision+1 WHERE id=? AND deleted_at IS NULL",
                 (now, now, job_id),
             )
             event_id = self._emit(connection, "JOB_DELETED", str(row["project_id"]) if row["project_id"] else None, "JOB", job_id, {"state": row["state"]})
@@ -492,29 +732,47 @@ class JobService:
                 type_clause += f" AND j.type NOT IN ({','.join('?' for _ in normalized_excluded)})"
                 params.extend(normalized_excluded)
             params.append(worker_id)
-            candidates = connection.execute(
-                f"""SELECT j.* FROM jobs j
-                WHERE j.state='QUEUED' AND (j.next_run_at IS NULL OR j.next_run_at<=?) {channel_clause}{type_clause}
-                AND NOT EXISTS (SELECT 1 FROM job_attempts active JOIN jobs aj ON aj.id=active.job_id
-                                WHERE active.worker_id=? AND active.state IN ('CLAIMED','RUNNING') AND aj.channel=j.channel)
-                AND NOT EXISTS (SELECT 1 FROM job_dependencies d JOIN jobs dependency ON dependency.id=d.depends_on_job_id WHERE d.job_id=j.id AND dependency.state!='SUCCEEDED')
-                ORDER BY j.priority ASC, j.created_at ASC LIMIT 128""",
-                params,
-            ).fetchall()
+            # Resource filtering is not expressible in SQL: a Job's scheduler
+            # resource depends on its frozen snapshot, not on a column.  A
+            # single LIMIT therefore starves every runnable candidate behind a
+            # prefix that is blocked on one exclusive resource.  Scan bounded
+            # priority-ordered pages instead and stop at the first runnable
+            # candidate, keeping the same global ordering (priority, FIFO) and
+            # preserving single-GPU mutual exclusion exactly.
             active_resource_keys = {
                 str(item["resource_key"])
                 for item in connection.execute(
                     "SELECT resource_key FROM job_resource_leases WHERE released_at IS NULL"
                 ).fetchall()
             }
-            row = next(
-                (
-                    candidate
-                    for candidate in candidates
-                    if scheduler_resource_key(dict(candidate), worker_id) not in active_resource_keys
-                ),
-                None,
-            )
+            row: Any = None
+            scanned = 0
+            offset = 0
+            while scanned < CANDIDATE_SCAN_LIMIT:
+                page_limit = min(CLAIM_CANDIDATE_PAGE_SIZE, CANDIDATE_SCAN_LIMIT - scanned)
+                candidates = connection.execute(
+                    f"""SELECT j.* FROM jobs j
+                    WHERE j.state='QUEUED' AND j.deleted_at IS NULL AND (j.next_run_at IS NULL OR j.next_run_at<=?) {channel_clause}{type_clause}
+                    AND NOT EXISTS (SELECT 1 FROM job_attempts active JOIN jobs aj ON aj.id=active.job_id
+                                    WHERE active.worker_id=? AND active.state IN ('CLAIMED','RUNNING') AND aj.channel=j.channel)
+                    AND NOT EXISTS (SELECT 1 FROM job_dependencies d JOIN jobs dependency ON dependency.id=d.depends_on_job_id WHERE d.job_id=j.id AND dependency.state!='SUCCEEDED')
+                    ORDER BY j.priority ASC, j.created_at ASC, j.id ASC LIMIT ? OFFSET ?""",
+                    [*params, page_limit, offset],
+                ).fetchall()
+                if not candidates:
+                    break
+                scanned += len(candidates)
+                offset += len(candidates)
+                row = next(
+                    (
+                        candidate
+                        for candidate in candidates
+                        if scheduler_resource_key(dict(candidate), worker_id) not in active_resource_keys
+                    ),
+                    None,
+                )
+                if row is not None or len(candidates) < page_limit:
+                    break
             if row is None:
                 return None
             attempt_row = connection.execute("SELECT COALESCE(MAX(attempt_no), 0) + 1 AS attempt_no FROM job_attempts WHERE job_id=?", (row["id"],)).fetchone()
@@ -558,15 +816,21 @@ class JobService:
                 },
             }
 
-    def _leased_attempt(self, connection: Any, attempt_id: str, lease_token: str, worker_id: str) -> Any:
+    def _leased_attempt(self, connection: Any, attempt_id: str, lease_token: str, worker_id: str, *, allow_deleted: bool = False) -> Any:
         row = connection.execute(
-            "SELECT a.*, j.project_id, j.state AS job_state FROM job_attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=?",
+            "SELECT a.*, j.project_id, j.state AS job_state, j.deleted_at AS job_deleted_at FROM job_attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=?",
             (attempt_id,),
         ).fetchone()
         if row is None:
             raise DomainRuleError("ATTEMPT_NOT_FOUND", "JobAttempt 不存在")
         if row["worker_id"] != worker_id or not hmac.compare_digest(str(row["lease_token"] or ""), lease_token):
             raise DomainRuleError("LEASE_TOKEN_INVALID", "lease_token 或 worker_id 无效")
+        # A soft-deleted Job is terminal.  Its attempt may still settle through
+        # ``complete``, which passes ``allow_deleted=True`` so the resource lock
+        # is released, but it must never accept new progress, provider binding
+        # or resume intents that could revive hidden work.
+        if row["job_deleted_at"] is not None and not allow_deleted:
+            raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在", {"job_id": str(row["job_id"])})
         if row["state"] not in {CLAIMED, RUNNING}:
             raise DomainRuleError("ATTEMPT_NOT_ACTIVE", "JobAttempt 不再接受 worker 写入")
         if row["lease_expires_at"] and datetime.fromisoformat(row["lease_expires_at"]) <= _utc_now():
@@ -750,39 +1014,51 @@ class JobService:
     ) -> dict[str, Any]:
         now = _iso(_utc_now())
         with self.database.transaction() as connection:
-            row = self._leased_attempt(connection, attempt_id, lease_token, worker_id)
+            row = self._leased_attempt(connection, attempt_id, lease_token, worker_id, allow_deleted=True)
             job = connection.execute("SELECT * FROM jobs WHERE id=?", (row["job_id"],)).fetchone()
             if job is None:
                 raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在")
-            # A cancellation requested while a local runtime is finishing must
-            # never be overwritten by a late success heartbeat/completion.
-            if job["state"] == CANCEL_REQUESTED:
-                attempt_state = CANCELLED
-                job_state = CANCELLED
-                next_run_at = None
-            elif job["state"] == PAUSED:
-                attempt_state = CANCELLED
-                # ``resume`` may be requested while the old process is still
-                # settling.  Keep PAUSED visible until this attempt releases
-                # its lease, then atomically make the same Job claimable.
-                job_state = QUEUED if job["next_run_at"] is not None else PAUSED
-                next_run_at = str(job["next_run_at"]) if job["next_run_at"] is not None else None
-            elif success:
-                attempt_state = SUCCEEDED
-                job_state = SUCCEEDED
-                next_run_at = None
+            # Cancellation, pause and deletion intent are all decided by the one
+            # shared authority so a late completion cannot revive a Job the user
+            # already stopped or removed.
+            if success:
+                outcome = OUTCOME_SUCCEEDED
             elif needs_attention:
-                attempt_state = NEEDS_ATTENTION
-                job_state = NEEDS_ATTENTION
-                next_run_at = None
-            elif retryable and int(row["attempt_no"]) < int(job["max_attempts"]):
-                attempt_state = FAILED
-                job_state = QUEUED
+                outcome = OUTCOME_ATTENTION
+            elif retryable:
+                # A retryable worker failure may use the automatic budget, but
+                # exhausting it is a terminal FAILED rather than a quarantine.
+                outcome = OUTCOME_RETRYABLE_FAILURE
+            else:
+                outcome = OUTCOME_FAILED
+            decision = decide_job_state(
+                _job_state_facts(job, attempt_no=int(row["attempt_no"])),
+                outcome,
+            )
+            job_state = decision.job_state
+            next_run_at = resolve_next_run_at(decision.next_run_at, now=now)
+            if next_run_at is not None and decision.reason != "resume_intent_after_attempt_settled":
+                # Preserve the automatic retry backoff for an ordinary failed
+                # attempt instead of retrying immediately.  A pending operator
+                # resume keeps its own durable intent and is claimable at once.
                 next_run_at = _iso(_utc_now() + timedelta(seconds=min(300, 2 ** int(row["attempt_no"]))))
+            paused_job = str(job["state"]) == PAUSED
+            if job_state == DELETED:
+                attempt_state = SUCCEEDED if success else FAILED
+            elif job_state == CANCELLED or paused_job:
+                # A cancellation or a pause that stopped this attempt is
+                # recorded as a cancelled attempt, which is what the worker
+                # observes; a paused Job that only had a pending resume still
+                # becomes claimable again.
+                attempt_state = CANCELLED
+            elif job_state == SUCCEEDED:
+                attempt_state = SUCCEEDED
+            elif job_state == NEEDS_ATTENTION and not success and not needs_attention:
+                attempt_state = FAILED
+            elif job_state == NEEDS_ATTENTION:
+                attempt_state = NEEDS_ATTENTION
             else:
                 attempt_state = FAILED
-                job_state = FAILED
-                next_run_at = None
             existing_progress = _parse_json(str(row["progress_json"] or "{}"))
             existing_phase = str(existing_progress.get("phase") or "")
             # Preserve a worker's meaningful completed business phase (for
@@ -804,21 +1080,24 @@ class JobService:
                 "UPDATE job_attempts SET state=?, provider_job_id=?, error_code=?, error_detail_redacted=?, progress_json=?, lease_token=NULL, lease_expires_at=NULL, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
                 (attempt_state, provider_job_id, error_code, error_detail_redacted, _json(terminal_progress), now, now, attempt_id),
             )
-            connection.execute(
-                "UPDATE jobs SET state=?, next_run_at=?, progress_json=?, progress_updated_at=?, last_error_code=?, last_error_detail_redacted=?, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
-                (
-                    job_state,
-                    next_run_at,
-                    _json(terminal_progress),
-                    now,
-                    error_code,
-                    error_detail_redacted,
-                    now if job_state in {SUCCEEDED, FAILED, CANCELLED} else None,
-                    now,
-                    row["job_id"],
-                ),
-            )
-            self._sync_experiment_cell_status(connection, str(row["job_id"]), job_state, now)
+            if job_state != DELETED:
+                # A soft-deleted Job stays hidden: the attempt settles and its
+                # resource lock is released, but nothing revives the Job.
+                connection.execute(
+                    "UPDATE jobs SET state=?, next_run_at=?, progress_json=?, progress_updated_at=?, last_error_code=?, last_error_detail_redacted=?, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
+                    (
+                        job_state,
+                        next_run_at,
+                        _json(terminal_progress),
+                        now,
+                        error_code,
+                        error_detail_redacted,
+                        now if job_state in {SUCCEEDED, FAILED, CANCELLED} else None,
+                        now,
+                        row["job_id"],
+                    ),
+                )
+                self._sync_experiment_cell_status(connection, str(row["job_id"]), job_state, now)
             connection.execute("UPDATE job_resource_leases SET released_at=? WHERE attempt_id=? AND released_at IS NULL", (now, attempt_id))
             self._emit(
                 connection,
@@ -826,9 +1105,9 @@ class JobService:
                 row["project_id"],
                 "JOB_ATTEMPT",
                 attempt_id,
-                {"job_id": row["job_id"], "attempt_state": attempt_state, "job_state": job_state, "error_code": error_code},
+                {"job_id": row["job_id"], "attempt_state": attempt_state, "job_state": job_state, "error_code": error_code, "reason": decision.reason},
             )
-            if job_state in {FAILED, CANCELLED, NEEDS_ATTENTION, ORPHANED}:
+            if job_state in {FAILED, CANCELLED, NEEDS_ATTENTION, ORPHANED, DELETED}:
                 # Dependency propagation must remain immediate even though
                 # idle polling throttles full lease scans.
                 self._last_automatic_reconcile_at = None
@@ -838,7 +1117,7 @@ class JobService:
         now = _iso(_utc_now())
         with self.database.transaction() as connection:
             row = connection.execute(
-                "SELECT a.*, j.project_id, j.state AS job_state FROM job_attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=?",
+                "SELECT a.*, j.project_id, j.state AS job_state, j.deleted_at AS job_deleted_at FROM job_attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=?",
                 (attempt_id,),
             ).fetchone()
             if row is None:
@@ -847,10 +1126,23 @@ class JobService:
                 raise DomainRuleError("ATTEMPT_NOT_RECOVERABLE", "只有 ORPHANED 或 NEEDS_ATTENTION Attempt 可以恢复")
             if str(row["provider_job_id"] or "") != provider_job_id:
                 raise DomainRuleError("PROVIDER_JOB_MISMATCH", "provider_job_id 与 Attempt 记录不一致")
+            deleted = row["job_deleted_at"] is not None
             connection.execute(
                 "UPDATE job_attempts SET state='SUCCEEDED', lease_token=NULL, lease_expires_at=NULL, error_code=NULL, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
                 (now, now, attempt_id),
             )
+            if deleted:
+                # The provider really finished the work, so the attempt keeps
+                # that evidence, but a deleted Job stays hidden and terminal.
+                connection.execute("UPDATE job_resource_leases SET released_at=? WHERE attempt_id=? AND released_at IS NULL", (now, attempt_id))
+                return {
+                    "job_id": row["job_id"],
+                    "attempt_id": attempt_id,
+                    "attempt_state": SUCCEEDED,
+                    "job_state": DELETED,
+                    "recovered": False,
+                    "actor": actor,
+                }
             connection.execute(
                 "UPDATE jobs SET state='SUCCEEDED', next_run_at=NULL, last_error_code=NULL, last_error_detail_redacted=NULL, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
                 (now, now, row["job_id"]),
@@ -863,9 +1155,7 @@ class JobService:
     def cancel(self, job_id: str, actor: str = "local-user") -> dict[str, Any]:
         now = _iso(_utc_now())
         with self.database.transaction() as connection:
-            row = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
-            if row is None:
-                raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在")
+            row = self._require_job_for_mutation(connection, job_id)
             if row["state"] in {SUCCEEDED, FAILED, CANCELLED}:
                 return self._job_response(row)
             unsettled_attempt = connection.execute(
@@ -882,38 +1172,44 @@ class JobService:
             return self._job_response(updated)
 
     def retry(self, job_id: str, actor: str = "local-user") -> dict[str, Any]:
-        now = _iso(_utc_now())
+        """Re-queue a terminal Job in exactly one write transaction.
+
+        ``resume`` shares this implementation through :meth:`_retry_in_transaction`
+        so the FAILED-recovery path can never nest a second write transaction
+        (and therefore never self-deadlock on the ``BEGIN IMMEDIATE`` lock).
+        """
+
         with self.database.transaction() as connection:
-            row = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
-            if row is None:
-                raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在")
-            if row["state"] not in {FAILED, NEEDS_ATTENTION, ORPHANED}:
-                raise DomainRuleError("JOB_NOT_RETRYABLE", "只有失败、孤儿或需人工关注的 Job 可以 retry")
-            if str(row["last_error_code"] or "") in {
-                "COMFY_PROVIDER_ACCEPTANCE_UNKNOWN",
-                "PROVIDER_ACCEPTANCE_UNKNOWN",
-            }:
-                raise DomainRuleError(
-                    "PROVIDER_ACCEPTANCE_RECONCILIATION_REQUIRED",
-                    "外部受理状态未知；完成对账或明确新建任务前不能直接重试",
-                    {"job_id": job_id},
-                )
-            connection.execute(
-                "UPDATE jobs SET state='QUEUED', next_run_at=?, cancel_requested_at=NULL, progress_json='{}', progress_updated_at=NULL, last_error_code=NULL, last_error_detail_redacted=NULL, finished_at=NULL, updated_at=?, revision=revision+1 WHERE id=?",
-                (now, now, job_id),
+            return self._retry_in_transaction(connection, job_id, actor=actor)
+
+    def _retry_in_transaction(self, connection: Any, job_id: str, *, actor: str) -> dict[str, Any]:
+        now = _iso(_utc_now())
+        row = self._require_job_for_mutation(connection, job_id)
+        if row["state"] not in {FAILED, NEEDS_ATTENTION, ORPHANED}:
+            raise DomainRuleError("JOB_NOT_RETRYABLE", "只有失败、孤儿或需人工关注的 Job 可以 retry")
+        if str(row["last_error_code"] or "") in {
+            "COMFY_PROVIDER_ACCEPTANCE_UNKNOWN",
+            "PROVIDER_ACCEPTANCE_UNKNOWN",
+        }:
+            raise DomainRuleError(
+                "PROVIDER_ACCEPTANCE_RECONCILIATION_REQUIRED",
+                "外部受理状态未知；完成对账或明确新建任务前不能直接重试",
+                {"job_id": job_id},
             )
-            self._sync_experiment_cell_status(connection, job_id, QUEUED, now)
-            self._emit(connection, "JOB_REQUEUED", row["project_id"], "JOB", job_id, {"reason": "explicit_retry"})
-            updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
-            return self._job_response(updated)
+        connection.execute(
+            "UPDATE jobs SET state='QUEUED', next_run_at=?, cancel_requested_at=NULL, progress_json='{}', progress_updated_at=NULL, last_error_code=NULL, last_error_detail_redacted=NULL, finished_at=NULL, updated_at=?, revision=revision+1 WHERE id=? AND deleted_at IS NULL",
+            (now, now, job_id),
+        )
+        self._sync_experiment_cell_status(connection, job_id, QUEUED, now)
+        self._emit(connection, "JOB_REQUEUED", row["project_id"], "JOB", job_id, {"reason": "explicit_retry", "actor": actor})
+        updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+        return self._job_response(updated)
 
 
     def pause(self, job_id: str, actor: str = "local-user") -> dict[str, Any]:
         now = _iso(_utc_now())
         with self.database.transaction() as connection:
-            row = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
-            if row is None:
-                raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在")
+            row = self._require_job_for_mutation(connection, job_id)
             if row["state"] in {SUCCEEDED, FAILED, CANCELLED}:
                 return self._job_response(row)
             if row["state"] == PAUSED:
@@ -950,9 +1246,7 @@ class JobService:
     def resume(self, job_id: str, actor: str = "local-user") -> dict[str, Any]:
         now = _iso(_utc_now())
         with self.database.transaction() as connection:
-            row = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
-            if row is None:
-                raise DomainRuleError("JOB_NOT_FOUND", "Job 不存在")
+            row = self._require_job_for_mutation(connection, job_id)
             if row["state"] == PAUSED:
                 unsettled_attempt = connection.execute(
                     "SELECT 1 FROM job_attempts WHERE job_id=? AND state IN ('CLAIMED','RUNNING') LIMIT 1",
@@ -978,7 +1272,7 @@ class JobService:
                     updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
                     return self._job_response(updated)
                 connection.execute(
-                    "UPDATE jobs SET state='QUEUED', next_run_at=?, cancel_requested_at=NULL, updated_at=?, revision=revision+1 WHERE id=?",
+                    "UPDATE jobs SET state='QUEUED', next_run_at=?, cancel_requested_at=NULL, updated_at=?, revision=revision+1 WHERE id=? AND deleted_at IS NULL",
                     (now, now, job_id),
                 )
                 self._sync_experiment_cell_status(connection, job_id, QUEUED, now)
@@ -986,7 +1280,10 @@ class JobService:
                 updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
                 return self._job_response(updated)
             if row["state"] in {FAILED, NEEDS_ATTENTION, ORPHANED}:
-                return self.retry(job_id, actor=actor)
+                # Share the retry implementation *inside this transaction*, so
+                # recovery never opens a second write connection while holding
+                # the SQLite write lock (which used to self-deadlock ~10s).
+                return self._retry_in_transaction(connection, job_id, actor=actor)
             if row["state"] in {QUEUED, CLAIMED, RUNNING}:
                 return self._job_response(row)
             raise DomainRuleError("JOB_NOT_RESUMABLE", f"状态为 {row['state']} 的任务无法开始或恢复")
@@ -1157,31 +1454,39 @@ class JobService:
         recovered: list[dict[str, Any]] = []
         with self.database.transaction() as connection:
             rows = connection.execute(
-                "SELECT a.*, j.project_id, j.max_attempts, j.state AS job_state, j.next_run_at AS job_next_run_at FROM job_attempts a JOIN jobs j ON j.id=a.job_id WHERE a.state IN ('CLAIMED','RUNNING') AND a.lease_expires_at IS NOT NULL AND a.lease_expires_at<?",
+                "SELECT a.*, j.project_id, j.max_attempts, j.state AS job_state, j.next_run_at AS job_next_run_at, j.cancel_requested_at AS job_cancel_requested_at, j.deleted_at AS job_deleted_at FROM job_attempts a JOIN jobs j ON j.id=a.job_id WHERE a.state IN ('CLAIMED','RUNNING') AND a.lease_expires_at IS NOT NULL AND a.lease_expires_at<?",
                 (current_iso,),
             ).fetchall()
             for row in rows:
                 progress = _parse_json(str(row["progress_json"] or "{}"))
                 uncertain = bool(row["provider_job_id"]) or progress.get("phase") == "SUBMITTING_TO_PROVIDER"
-                if uncertain:
-                    next_job_state = NEEDS_ATTENTION
-                elif str(row["job_state"]) == PAUSED:
-                    next_job_state = QUEUED if row["job_next_run_at"] is not None else PAUSED
-                else:
-                    next_job_state = QUEUED if int(row["attempt_no"]) < int(row["max_attempts"]) else NEEDS_ATTENTION
-                next_run_at = (
-                    current_iso
-                    if next_job_state == QUEUED
-                    else None
+                # The same decision authority used by ``complete`` and by
+                # worker-session recovery: cancellation beats a pause, a pause
+                # without resume intent stays paused, and a deleted Job is never
+                # brought back by an expired lease.
+                decision = decide_job_state(
+                    JobStateFacts(
+                        state=str(row["job_state"]),
+                        deleted=row["job_deleted_at"] is not None,
+                        cancel_requested=row["job_cancel_requested_at"] is not None,
+                        resume_requested=row["job_next_run_at"] is not None,
+                        provider_accepted=uncertain,
+                        attempt_no=int(row["attempt_no"]),
+                        max_attempts=int(row["max_attempts"]),
+                    ),
+                    OUTCOME_UNKNOWN,
                 )
+                next_job_state = decision.job_state
+                next_run_at = resolve_next_run_at(decision.next_run_at, now=current_iso)
                 connection.execute(
                     "UPDATE job_attempts SET state='ORPHANED', error_code='WORKER_LEASE_EXPIRED', error_detail_redacted='lease expired; reconciled locally', lease_token=NULL, updated_at=?, revision=revision+1 WHERE id=?",
                     (current_iso, row["id"]),
                 )
-                connection.execute(
-                    "UPDATE jobs SET state=?, next_run_at=?, last_error_code='WORKER_LEASE_EXPIRED', updated_at=?, revision=revision+1 WHERE id=?",
-                    (next_job_state, next_run_at, current_iso, row["job_id"]),
-                )
+                if next_job_state != DELETED:
+                    connection.execute(
+                        "UPDATE jobs SET state=?, next_run_at=?, last_error_code='WORKER_LEASE_EXPIRED', updated_at=?, revision=revision+1 WHERE id=?",
+                        (next_job_state, next_run_at, current_iso, row["job_id"]),
+                    )
                 connection.execute("UPDATE job_resource_leases SET released_at=? WHERE attempt_id=? AND released_at IS NULL", (current_iso, row["id"]))
                 self._emit(
                     connection,
@@ -1189,7 +1494,13 @@ class JobService:
                     row["project_id"],
                     "JOB_ATTEMPT",
                     row["id"],
-                    {"job_id": row["job_id"], "attempt_state": ORPHANED, "job_state": next_job_state, "uncertain_side_effect": uncertain},
+                    {
+                        "job_id": row["job_id"],
+                        "attempt_state": ORPHANED,
+                        "job_state": next_job_state,
+                        "uncertain_side_effect": uncertain,
+                        "reason": decision.reason,
+                    },
                 )
                 recovered.append({"attempt_id": row["id"], "job_id": row["job_id"], "job_state": next_job_state, "uncertain_side_effect": uncertain})
             blocked_rows = connection.execute(
@@ -1197,7 +1508,8 @@ class JobService:
                 dependency.state AS dependency_state
                 FROM jobs j JOIN job_dependencies d ON d.job_id=j.id
                 JOIN jobs dependency ON dependency.id=d.depends_on_job_id
-                WHERE j.state='QUEUED' AND dependency.state IN ('FAILED','CANCELLED','NEEDS_ATTENTION','ORPHANED')
+                WHERE j.state='QUEUED' AND j.deleted_at IS NULL
+                  AND dependency.state IN ('FAILED','CANCELLED','NEEDS_ATTENTION','ORPHANED')
                 ORDER BY j.created_at, dependency.created_at"""
             ).fetchall()
             propagated: set[str] = set()
@@ -1259,6 +1571,7 @@ class JobService:
                 """SELECT j.id,j.project_id
                    FROM jobs j
                    WHERE j.state='NEEDS_ATTENTION'
+                     AND j.deleted_at IS NULL
                      AND j.last_error_code='JOB_DEPENDENCY_FAILED'
                      AND EXISTS (
                        SELECT 1 FROM job_dependencies d WHERE d.job_id=j.id
@@ -1304,6 +1617,45 @@ class JobService:
         return [{**dict(row), "payload": _parse_json(row["payload_json"])} for row in rows]
 
     def register_artifact(self, attempt_id: str, kind: str, sandbox_path: str, actor: str = "worker") -> dict[str, Any]:
+        return self._register_artifact(attempt_id, kind, sandbox_path, actor=actor, require_active_lease=False)
+
+    def register_artifact_for_worker(
+        self,
+        attempt_id: str,
+        kind: str,
+        sandbox_path: str,
+        *,
+        lease_token: str,
+        worker_id: str,
+        actor: str = "worker",
+    ) -> dict[str, Any]:
+        """Register an artifact on behalf of a live worker/lease holder.
+
+        Cancellation, deletion, lease expiry and expired provider callbacks must
+        not be able to add new ordinary VERIFIED artifacts, so the caller
+        presents the lease it is holding and the attempt must still be active.
+        """
+        return self._register_artifact(
+            attempt_id,
+            kind,
+            sandbox_path,
+            actor=actor,
+            require_active_lease=True,
+            lease_token=lease_token,
+            worker_id=worker_id,
+        )
+
+    def _register_artifact(
+        self,
+        attempt_id: str,
+        kind: str,
+        sandbox_path: str,
+        *,
+        actor: str,
+        require_active_lease: bool,
+        lease_token: str | None = None,
+        worker_id: str | None = None,
+    ) -> dict[str, Any]:
         if self.settings is None:
             raise DomainRuleError("WORKSPACE_REQUIRED", "artifact 注册需要本地 workspace")
         relative = Path(sandbox_path)
@@ -1317,24 +1669,42 @@ class JobService:
             require_file=True,
             code="ARTIFACT_NOT_FOUND",
         )
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        size = path.stat().st_size
+        canonical = relative.as_posix()
+        digest, size = _hash_path_cached(path)
         now = _iso(_utc_now())
         with self.database.transaction() as connection:
             attempt = connection.execute(
-                "SELECT a.id, a.job_id, j.project_id FROM job_attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=?", (attempt_id,)
+                """SELECT a.id, a.job_id, a.state AS attempt_state, a.worker_id, a.lease_token, a.lease_expires_at,
+                j.project_id, j.state AS job_state, j.cancel_requested_at, j.deleted_at
+                FROM job_attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=?""",
+                (attempt_id,),
             ).fetchone()
             if attempt is None:
                 raise DomainRuleError("ATTEMPT_NOT_FOUND", "JobAttempt 不存在")
+            self._assert_artifact_publish_allowed(attempt, require_active_lease=require_active_lease, lease_token=lease_token, worker_id=worker_id)
             existing = connection.execute(
-                "SELECT * FROM artifacts WHERE job_attempt_id=? AND kind=? AND sandbox_rel_path=?", (attempt_id, kind, relative.as_posix())
+                "SELECT * FROM artifacts WHERE job_attempt_id=? AND kind=? AND sandbox_rel_path=?", (attempt_id, kind, canonical)
             ).fetchone()
             if existing is not None:
-                return {**dict(existing), "idempotent_replay": True}
+                if not hmac.compare_digest(str(existing["sha256"]), digest):
+                    # A published artifact is immutable.  Re-registering the same
+                    # identity with different bytes means the file was replaced
+                    # after publish; never report the stale record as VERIFIED.
+                    raise DomainRuleError(
+                        "ARTIFACT_IDENTITY_CONFLICT",
+                        "同一 artifact 身份的文件内容已被替换，已登记记录保持不可变",
+                        {
+                            "artifact_id": str(existing["id"]),
+                            "sandbox_rel_path": canonical,
+                            "registered_sha256": str(existing["sha256"]),
+                            "observed_sha256": digest,
+                        },
+                    )
+                return {**dict(existing), "idempotent_replay": True, "byte_size": size}
             artifact_id = str(uuid.uuid4())
             connection.execute(
                 "INSERT INTO artifacts (id, job_attempt_id, kind, sandbox_rel_path, sha256, status, created_at, updated_at, created_by, revision, schema_version) VALUES (?, ?, ?, ?, ?, 'VERIFIED', ?, ?, ?, 1, 'v2')",
-                (artifact_id, attempt_id, kind, relative.as_posix(), digest, now, now, actor),
+                (artifact_id, attempt_id, kind, canonical, digest, now, now, actor),
             )
             self._emit(
                 connection,
@@ -1348,15 +1718,89 @@ class JobService:
                 "id": artifact_id,
                 "job_attempt_id": attempt_id,
                 "kind": kind,
-                "sandbox_rel_path": relative.as_posix(),
+                "sandbox_rel_path": canonical,
                 "sha256": digest,
                 "byte_size": size,
                 "status": "VERIFIED",
                 "idempotent_replay": False,
             }
 
+    def _assert_artifact_publish_allowed(
+        self,
+        attempt: Any,
+        *,
+        require_active_lease: bool,
+        lease_token: str | None,
+        worker_id: str | None,
+    ) -> None:
+        """Refuse to publish a new ordinary artifact outside a live attempt.
+
+        A cancelled/deleted job, an expired lease, a finished attempt or a
+        mismatch between the presenting worker and the lease holder must never
+        be able to add new VERIFIED artifacts.  Reconciliation of a genuinely
+        provider-confirmed success has its own controlled entry point
+        (``recover_provider_success``), which deliberately bypasses this gate.
+        """
+        if not require_active_lease:
+            return
+        attempt_state = str(attempt["attempt_state"] or "")
+        job_state = str(attempt["job_state"] or "")
+        if attempt_state not in {CLAIMED, RUNNING}:
+            raise DomainRuleError(
+                "ARTIFACT_ATTEMPT_NOT_ACTIVE",
+                "只有 CLAIMED/RUNNING 的 Attempt 可以登记新的普通产物",
+                {"attempt_state": attempt_state, "job_state": job_state},
+            )
+        if job_state in {CANCEL_REQUESTED, CANCELLED, FAILED, "DELETED"} or attempt["cancel_requested_at"] or attempt["deleted_at"]:
+            raise DomainRuleError(
+                "ARTIFACT_PUBLISH_FORBIDDEN",
+                "任务已取消或删除，拒绝登记新的普通产物",
+                {"job_state": job_state, "cancel_requested_at": attempt["cancel_requested_at"]},
+            )
+        if not lease_token or not attempt["lease_token"] or not hmac.compare_digest(str(lease_token), str(attempt["lease_token"])):
+            raise DomainRuleError("ARTIFACT_LEASE_REQUIRED", "登记产物必须出示当前 Attempt 的有效 lease")
+        if worker_id and str(attempt["worker_id"] or "") != str(worker_id):
+            raise DomainRuleError(
+                "ARTIFACT_LEASE_OWNER_MISMATCH",
+                "登记产物必须来自持有该 lease 的 worker",
+                {"lease_owner": str(attempt["worker_id"] or ""), "presented": str(worker_id)},
+            )
+        expires_at = attempt["lease_expires_at"]
+        if not expires_at:
+            raise DomainRuleError("ARTIFACT_LEASE_REQUIRED", "Attempt 没有有效 lease")
+        expires = datetime.fromisoformat(str(expires_at))
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=UTC)
+        if expires <= _utc_now():
+            raise DomainRuleError("ARTIFACT_LEASE_EXPIRED", "Attempt lease 已过期，拒绝登记新的普通产物")
+
     def artifact_download(self, artifact_id: str) -> tuple[dict[str, Any], Path]:
-        """Resolve a verified artifact to a safe, server-local file for download."""
+        """Resolve a verified artifact to a safe, server-local file for download.
+
+        The recorded SHA-256 is re-checked against the file on disk.  The check
+        is served from a stable file-identity cache keyed by (path, size,
+        mtime_ns, inode), so a byte-range seek on a multi-gigabyte video does not
+        re-hash the whole file for every range; it re-hashes only when the file
+        identity actually changed.
+        """
+        artifact, path = self._artifact_file(artifact_id)
+        self._assert_artifact_integrity(artifact, path)
+        return artifact, path
+
+    def artifact_download_for_range(self, artifact_id: str) -> tuple[dict[str, Any], Path]:
+        """Resolve an artifact for a byte-range read without re-hashing it.
+
+        A range read is a seek inside one already-published immutable file, not
+        a fresh hand-off, so it must not pay a full-file hash.  The identity
+        cache still proves the bytes belong to the registered content.
+        """
+        artifact, path = self._artifact_file(artifact_id)
+        if not _artifact_identity_is_verified(str(artifact["id"]), path, str(artifact["sha256"])):
+            # First observation of this identity: verify once, then cache it.
+            self._assert_artifact_integrity(artifact, path)
+        return artifact, path
+
+    def _artifact_file(self, artifact_id: str) -> tuple[dict[str, Any], Path]:
         if self.settings is None:
             raise DomainRuleError("WORKSPACE_REQUIRED", "artifact 下载需要本地 workspace")
         with self.database.connect() as connection:
@@ -1375,6 +1819,16 @@ class JobService:
             code="ARTIFACT_NOT_FOUND",
         )
         return artifact, path
+
+    def _assert_artifact_integrity(self, artifact: dict[str, Any], path: Path) -> None:
+        digest, size = _hash_path_cached(path, artifact_id=str(artifact["id"]))
+        if not hmac.compare_digest(digest, str(artifact.get("sha256") or "")):
+            raise DomainRuleError(
+                "ARTIFACT_INTEGRITY_FAILED",
+                "任务产物文件内容与已登记 hash 不一致，拒绝下载/预览/晋级",
+                {"artifact_id": str(artifact["id"]), "registered_sha256": str(artifact.get("sha256") or ""), "observed_sha256": digest},
+            )
+        _remember_artifact_identity(str(artifact["id"]), path, digest, size)
 
 
 def secrets_token() -> str:

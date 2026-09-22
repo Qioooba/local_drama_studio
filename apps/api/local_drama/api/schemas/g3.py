@@ -32,12 +32,25 @@ class MediaIntegrityRepairRequest(BaseModel):
 
 class DocumentImportRequest(BaseModel):
     source_path: str = Field(min_length=1)
+    # NP09: dense plain-text novels can be previewed with the newline paragraph
+    # strategy; AUTO keeps the conservative blank-line default.
+    paragraph_layout: Literal["AUTO", "BLANK_LINE", "NEWLINE"] = "AUTO"
 
 
 class DocumentImportCommitRequest(BaseModel):
     expected_preview_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     source_paragraph_start: int | None = Field(default=None, ge=1)
     source_paragraph_end: int | None = Field(default=None, ge=1)
+    # NP08: an already committed session cannot silently accept another range;
+    # this flag turns a conflicting range into an explicit new selection.
+    create_new_selection: bool = False
+
+
+class DocumentImportSelectionRequest(BaseModel):
+    """Authorise a new analysis range over an existing immutable source version."""
+
+    source_paragraph_start: int = Field(ge=1)
+    source_paragraph_end: int = Field(ge=1)
 
 
 class DocumentImportChapter(BaseModel):
@@ -55,6 +68,12 @@ class DocumentImportPreview(BaseModel):
     preview_truncated: bool
     offset_unit: Literal["UNICODE_CODEPOINT"]
     requires_llm_confirmation: Literal[True]
+    source_structure_version: int | None = None
+    source_parser_version: int | None = None
+    paragraph_layout: Literal["AUTO", "BLANK_LINE", "NEWLINE"] | None = None
+    paragraph_layout_recommended: Literal["NEWLINE"] | None = None
+    paragraph_layout_options: list[Literal["BLANK_LINE", "NEWLINE"]] | None = None
+    chapter_count: int | None = None
 
 
 class DocumentImportResult(BaseModel):
@@ -93,6 +112,20 @@ class LatestDocumentImport(BaseModel):
 
 class LatestDocumentImportResponse(BaseModel):
     latest: LatestDocumentImport | None
+
+
+class DocumentImportSelectionResult(BaseModel):
+    """New authorised analysis range derived from an existing import session."""
+
+    import_session_id: str = Field(min_length=1)
+    source_document_version_id: str = Field(min_length=1)
+    selected_range: DocumentImportSelectedRange
+    reused: bool
+    source_preserved: Literal[True]
+
+
+class DocumentImportSelectionResponse(BaseModel):
+    selection: DocumentImportSelectionResult
 
 
 class SourceParagraphItem(BaseModel):
@@ -149,15 +182,42 @@ class BreakdownDraftShotRevisionInput(BaseModel):
     action: str = Field(default="", max_length=4000)
     dialogue: Any = ""
     duration_seconds: float = Field(gt=0, le=3600)
+    # Director fields are optional. Leaving them unset keeps the original value,
+    # so editing only the action text no longer erases the shot's camera plan,
+    # composition, lighting, sound or continuity.
+    shot_type: str | None = Field(default=None, max_length=40)
+    camera: str | None = Field(default=None, max_length=400)
+    lighting: str | None = Field(default=None, max_length=400)
+    sound: str | None = Field(default=None, max_length=2000)
+    emotion: str | None = Field(default=None, max_length=200)
+    emotion_intensity: float | None = Field(default=None, ge=0, le=1)
+    continuity: str | None = Field(default=None, max_length=2000)
+    creative_intent: str | None = Field(default=None, max_length=4000)
+    composition: dict[str, Any] | None = None
+    camera_direction: str | None = Field(default=None, max_length=40)
+    camera_intensity: float | None = Field(default=None, ge=0, le=1)
+    camera_curve: str | None = Field(default=None, max_length=40)
+    facial_action: str | None = Field(default=None, max_length=2000)
+    eye_line: str | None = Field(default=None, max_length=200)
+    blocking_summary: str | None = Field(default=None, max_length=2000)
+    transition_plan: dict[str, Any] | None = None
 
 
 class BreakdownDraftSceneRevisionRequest(BaseModel):
     expected_revision: int = Field(ge=1)
     change_note: str = Field(min_length=2, max_length=500)
     title: str = Field(min_length=1, max_length=200)
-    summary: str = Field(default="", max_length=4000)
-    characters: list[str] = Field(default_factory=list, max_length=100)
+    summary: str | None = Field(default=None, max_length=4000)
+    characters: list[str] | None = Field(default=None, max_length=100)
     shots: list[BreakdownDraftShotRevisionInput] = Field(min_length=1, max_length=500)
+    # Optional scene-level director context; unset means "keep the original".
+    location: str | None = Field(default=None, max_length=400)
+    time: str | None = Field(default=None, max_length=200)
+    atmosphere: str | None = Field(default=None, max_length=400)
+    lighting: str | None = Field(default=None, max_length=400)
+    props: list[str] | None = Field(default=None, max_length=100)
+    purpose: str | None = Field(default=None, max_length=2000)
+    continuity: str | None = Field(default=None, max_length=2000)
 
 
 class ProfileBindingRequest(BaseModel):

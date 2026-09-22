@@ -64,12 +64,26 @@ def _elapsed_seconds(started_at: Any, finished_at: Any) -> float | None:
     return elapsed if math.isfinite(elapsed) and elapsed > 0 else None
 
 
+# Channels that own the single local GPU runtime. Plain data, so this read
+# projection can classify a row without importing a concrete application service.
+_GPU_CHANNELS = frozenset({"GPU_H3", "GPU", "VIDEO_GPU"})
+
+
 def _gpu_class(row: dict[str, Any]) -> str | None:
+    """Resolve the GPU class of one historical attempt.
+
+    Prefers the annotation the history port resolved (the scheduler's persisted
+    lease ``resource_key``, then the job shape) and falls back to reading the lease
+    key or channel directly, so a raw adapter row and a port-annotated row agree.
+    """
+    annotated = str(row.get("gpu_class") or "").strip()
+    if annotated:
+        return annotated
     persisted = str(row.get("resource_key") or "").strip()
     if persisted:
         return persisted
     channel = str(row.get("channel") or "").strip().upper()
-    return "GPU_H3_HEAVY" if channel in {"GPU_H3", "GPU", "VIDEO_GPU"} else (f"CHANNEL:{channel}" if channel else None)
+    return "GPU_H3_HEAVY" if channel in _GPU_CHANNELS else (f"CHANNEL:{channel}" if channel else None)
 
 
 def _nearest_rank(values: list[float], percentile: float) -> float:

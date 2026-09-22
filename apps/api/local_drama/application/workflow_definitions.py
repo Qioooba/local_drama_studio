@@ -18,6 +18,21 @@ from local_drama.infrastructure.comfy import ComfyClient
 from .comfy_smoke_contract import parse_comfy_smoke_contract
 from .h3_workflows import H3WorkflowFactory, production_tiers_payload
 from .qwen_identity_workflows import build_qwen_identity_workflow, build_qwen_text_workflow
+from .qwen_image21_workflows import (
+    DEFAULT_CFG,
+    DEFAULT_DENOISE,
+    DEFAULT_DIFFUSION_MODEL,
+    DEFAULT_SAMPLER,
+    DEFAULT_SCHEDULER,
+    DEFAULT_TEXT_ENCODER,
+    DEFAULT_VAE,
+    EDIT_REFERENCE_RESOLUTION,
+    SIZE_STEP,
+    T2I_PRESETS,
+    build_qwen21_edit_workflow,
+    build_qwen21_text_workflow,
+    t2i_preset_options,
+)
 
 WorkflowCompiler = Callable[[Settings, dict[str, Any]], dict[str, Any]]
 
@@ -135,6 +150,11 @@ class WorkflowDefinition:
     runtime_contract: dict[str, Any]
     compiler: WorkflowCompiler
     revision: int = 1
+    # Scalar semantic roles this definition exposes to the formal execution
+    # contract.  Image roles are derived from ``semantic_bindings``; a pure
+    # text-to-image graph still has to declare PROMPT and SEED here or the V2
+    # handler will reject a task that supplies them.
+    scalar_input_slots: dict[str, dict[str, Any]] | None = None
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -302,6 +322,239 @@ for _capability, _title in (
     WORKFLOW_DEFINITIONS[_definition.code] = _definition
 
 
+# --------------------------------------------------------------------------
+# Qwen-Image-2.1 (INT8 ConvRot DiT + Qwen3-VL 8B encoder + BF16 VAE)
+#
+# These are separate definitions rather than a file-name swap on the legacy
+# QWEN_* graphs: 2.1 shares one DiT between generation and editing, uses a
+# different encoder, returns its own latent from the text-encode node, and
+# must not inherit ModelSamplingAuraFlow / EmptySD3LatentImage.
+# --------------------------------------------------------------------------
+
+_QWEN21_RUNTIME = {"transport": "LOOPBACK_HTTP", "worker_policy": "ONE_GPU_TASK"}
+
+
+def _qwen21_loader_fields() -> dict[str, dict[str, Any]]:
+    return {
+        "model": _field(
+            "string", "2.1 DiT（INT8 ConvRot）", DEFAULT_DIFFUSION_MODEL,
+            runtime_input=("UNETLoader", "unet_name"),
+            help_text="官方 INT8 ConvRot 权重；不与 2512 / Edit-2511 的 GGUF 混用。",
+        ),
+        "text_encoder": _field(
+            "string", "2.1 文本/视觉编码器（INT8 ConvRot）", DEFAULT_TEXT_ENCODER,
+            runtime_input=("CLIPLoader", "clip_name"),
+            help_text="2.1 必须使用 Qwen3-VL 8B；旧 Qwen2.5-VL 编码器不兼容。",
+        ),
+        "vae": _field(
+            "string", "2.1 VAE（BF16）", DEFAULT_VAE,
+            runtime_input=("VAELoader", "vae_name"),
+            help_text="新的 64 通道 RGBA VAE；旧 qwen_image_vae 不兼容。",
+        ),
+    }
+
+
+def _qwen21_sampler_fields() -> dict[str, dict[str, Any]]:
+    return {
+        "cfg": _field("number", "CFG", DEFAULT_CFG, minimum=0, maximum=10, step=0.1, advanced=True,
+                      help_text="2.1 固定使用 CFG 1（原生条件路径不使用无分类器引导）。"),
+        "sampler": _field("string", "Sampler", DEFAULT_SAMPLER, advanced=True),
+        "scheduler": _field("string", "Scheduler", DEFAULT_SCHEDULER, advanced=True),
+        "denoise": _field("number", "Denoise", DEFAULT_DENOISE, minimum=0, maximum=1, step=0.05, advanced=True),
+    }
+
+
+_QWEN21_T2I_SCALAR_SLOTS = {
+    "PROMPT": {"required": True},
+    "NEGATIVE_PROMPT": {"required": False},
+    "SEED": {"required": True},
+    "WIDTH": {"required": False},
+    "HEIGHT": {"required": False},
+    "STEPS": {"required": False},
+    "CFG": {"required": False},
+    "OUTPUT_PREFIX": {"required": False},
+}
+
+_QWEN21_EDIT_SCALAR_SLOTS = {
+    "PROMPT": {"required": True},
+    "NEGATIVE_PROMPT": {"required": False},
+    "SEED": {"required": True},
+    "RESOLUTION": {"required": False},
+    "STEPS": {"required": False},
+    "CFG": {"required": False},
+    "OUTPUT_PREFIX": {"required": False},
+}
+
+
+def _qwen21_t2i_fields() -> dict[str, dict[str, Any]]:
+    return {
+        **_qwen21_loader_fields(),
+        "prompt": _field("textarea", "提示词", "电影画面，雨后的旧街，暖色灯光，细腻光影", effect="SEMANTIC_DEFAULT"),
+        "negative_prompt": _field("textarea", "负面提示词", "", required=False, effect="SEMANTIC_DEFAULT",
+                                  help_text="2.1 常规任务留空；留空是固定方案的一部分，不是缺失配置。"),
+        "seed": _field("integer", "Seed", 9183701, minimum=0, maximum=2**63 - 1, effect="SEMANTIC_DEFAULT",
+                       help_text="每个任务显式传入并保存实际值；seed 不是身份一致性保证。"),
+        "size_preset": _field(
+            "enum", "画布预设", "square", options=t2i_preset_options(),
+            help_text="2.1 尺寸按 32 像素网格对齐；预设直接决定宽高与步数，避免在 24GB 卡上误用超大画布。",
+        ),
+        **_qwen21_sampler_fields(),
+        "resolution": _field("integer", "参考图分辨率预算", EDIT_REFERENCE_RESOLUTION, minimum=0, maximum=4096,
+                             step=SIZE_STEP, advanced=True,
+                             help_text="0 会保留每张参考图自身尺寸，不要无意继承外部模板中的 0。"),
+        "filename_prefix": _field("string", "输出前缀", "local_drama/qwen_image_2_1", effect="SEMANTIC_DEFAULT"),
+    }
+
+
+def _qwen21_edit_fields(reference_count: int) -> dict[str, dict[str, Any]]:
+    fields: dict[str, dict[str, Any]] = {
+        **_qwen21_loader_fields(),
+        "prompt": _field("textarea", "编辑指令", "以 image_1 为构图底图，只替换背景，保持人物脸部特征与姿态不变",
+                         effect="SEMANTIC_DEFAULT"),
+        "negative_prompt": _field("textarea", "负面提示词", "", required=False, effect="SEMANTIC_DEFAULT",
+                                  help_text="2.1 常规编辑任务留空。"),
+        "seed": _field("integer", "Seed", 9183703, minimum=0, maximum=2**63 - 1, effect="SEMANTIC_DEFAULT"),
+        "resolution": _field("integer", "参考图分辨率预算", EDIT_REFERENCE_RESOLUTION, minimum=0, maximum=4096,
+                             step=SIZE_STEP,
+                             help_text="约 1MP 参考预算。0 会保留原尺寸；编辑输出比例跟随 image_1。"),
+        "steps": _field("integer", "采样步数", 40, minimum=1, maximum=200,
+                        help_text="2.1 编辑固定采用 40 步；编辑没有独立画布尺寸字段，输出比例跟随 image_1。"),
+        **_qwen21_sampler_fields(),
+        "cache_device": _field("enum", "前缀缓存设备", "auto", advanced=True,
+                               options=[_option(value, value) for value in ("auto", "gpu", "cpu", "off")],
+                               help_text="原生条件前缀缓存；off 会每步重算，仅用于排除缓存因素。"),
+        "cache_dtype": _field("enum", "前缀缓存精度", "default", advanced=True,
+                              options=[_option(value, value) for value in ("default", "int8", "int4")],
+                              help_text="default 为无损；int4 会明显增加每步误差。"),
+        "filename_prefix": _field("string", "输出前缀", "local_drama/qwen_image_2_1_edit", effect="SEMANTIC_DEFAULT"),
+    }
+    for index in range(1, reference_count + 1):
+        role = "主构图底图" if index == 1 else "人物/对象参考图"
+        fields[f"reference_image_{index}"] = _field(
+            "string", f"验证{role} {index}", f"runtime/qwen21-edit-{index}.png",
+            help_text="Comfy input 内相对文件名；正式运行由媒体语义槽覆盖。", effect="SEMANTIC_DEFAULT",
+        )
+    return fields
+
+
+def _qwen21_t2i_compiler(_settings: Settings, values: dict[str, Any]) -> dict[str, Any]:
+    preset = dict(T2I_PRESETS[str(values["size_preset"])])
+    return build_qwen21_text_workflow({**values, "width": preset["width"], "height": preset["height"], "steps": preset["steps"]})
+
+
+def _qwen21_edit_compiler(reference_count: int) -> WorkflowCompiler:
+    return lambda _settings, values: build_qwen21_edit_workflow(values, reference_count)
+
+
+def _qwen21_t2i_definition(capability: str, title: str) -> WorkflowDefinition:
+    return WorkflowDefinition(
+        f"QWEN_IMAGE_21_T2I_{capability.removeprefix('IMAGE_')}",
+        title,
+        "Qwen-Image-2.1 官方 INT8 ConvRot 文生图：无参考条件，使用 2.1 原生编码与采样路径。",
+        capability, "IMAGE",
+        _qwen21_t2i_fields(),
+        {
+            "PROMPT": {"node_id": "4", "input": "prompt"},
+            "NEGATIVE_PROMPT": {"node_id": "4", "input": "negative_prompt"},
+            "RESOLUTION": {"node_id": "4", "input": "resolution"},
+            "SEED": {"node_id": "6", "input": "seed"},
+            "WIDTH": {"node_id": "5", "input": "width"},
+            "HEIGHT": {"node_id": "5", "input": "height"},
+            "STEPS": {"node_id": "6", "input": "steps"},
+            "CFG": {"node_id": "6", "input": "cfg"},
+            "SAMPLER": {"node_id": "6", "input": "sampler_name"},
+            "SCHEDULER": {"node_id": "6", "input": "scheduler"},
+            "DENOISE": {"node_id": "6", "input": "denoise"},
+            "OUTPUT_PREFIX": {"node_id": "8", "input": "filename_prefix"},
+        },
+        _QWEN21_RUNTIME, _qwen21_t2i_compiler,
+        scalar_input_slots=_QWEN21_T2I_SCALAR_SLOTS,
+    )
+
+
+def _qwen21_edit_definition(reference_count: int) -> WorkflowDefinition:
+    code_suffix = "EDIT" if reference_count == 1 else f"EDIT_{reference_count}REF"
+    bindings = {
+        "PROMPT": {"node_id": "4", "input": "prompt"},
+        "NEGATIVE_PROMPT": {"node_id": "4", "input": "negative_prompt"},
+        "RESOLUTION": {"node_id": "4", "input": "resolution"},
+        "SEED": {"node_id": "6", "input": "seed"},
+        "STEPS": {"node_id": "6", "input": "steps"},
+        "CFG": {"node_id": "6", "input": "cfg"},
+        "SAMPLER": {"node_id": "6", "input": "sampler_name"},
+        "SCHEDULER": {"node_id": "6", "input": "scheduler"},
+        "DENOISE": {"node_id": "6", "input": "denoise"},
+        "OUTPUT_PREFIX": {"node_id": "8", "input": "filename_prefix"},
+    }
+    for index in range(1, reference_count + 1):
+        bindings[f"REFERENCE_IMAGE_{index}"] = {"node_id": str(9 + index - 1), "input": "image"}
+    title = "Qwen-Image-2.1 单参考编辑" if reference_count == 1 else "Qwen-Image-2.1 双参考编辑"
+    return WorkflowDefinition(
+        f"QWEN_IMAGE_21_{code_suffix}", title,
+        "Qwen-Image-2.1 原生编辑：采样使用编码节点返回的 latent，输出比例跟随 image_1。",
+        "IMAGE_EDIT", "IMAGE",
+        _qwen21_edit_fields(reference_count), bindings,
+        _QWEN21_RUNTIME, _qwen21_edit_compiler(reference_count),
+        scalar_input_slots=_QWEN21_EDIT_SCALAR_SLOTS,
+    )
+
+
+for _capability, _title in (
+    ("IMAGE_CONCEPT", "Qwen-Image-2.1 文生概念图"),
+    ("IMAGE_CHARACTER", "Qwen-Image-2.1 文生角色图"),
+    ("IMAGE_SCENE", "Qwen-Image-2.1 文生场景图"),
+):
+    _definition = _qwen21_t2i_definition(_capability, _title)
+    WORKFLOW_DEFINITIONS[_definition.code] = _definition
+
+for _reference_count in (1, 2):
+    _definition = _qwen21_edit_definition(_reference_count)
+    WORKFLOW_DEFINITIONS[_definition.code] = _definition
+
+# Smoke is deliberately cheaper than the frozen production preset: the graph
+# content keeps 1024x1024 / 40 steps / CFG 1, while the low-cost acceptance
+# probe runs at a reduced step count.  Keeping the two separate is what stops a
+# smoke configuration from silently becoming the production default again.
+_QWEN21_SMOKE_PROMPT = "A small red ceramic teapot beside a green plant on a worn wooden kitchen table, soft morning light, realistic photograph"
+_QWEN21_SMOKE_EDIT_PROMPT = "Replace only the background with a plain blue studio wall; keep the subject, viewpoint and lighting unchanged"
+QWEN21_SMOKE_REFERENCE_1 = "local_drama_qwen21_smoke_base.png"
+QWEN21_SMOKE_REFERENCE_2 = "local_drama_qwen21_smoke_ref.png"
+
+
+def _qwen21_smoke_contract(definition_code: str) -> dict[str, Any]:
+    base = {
+        "schema_version": "localdramastudio.comfy-smoke-contract.v1",
+        "timeout_seconds": 300,
+        "expected_output": {"media_kind": "IMAGE", "min_count": 1, "max_count": 1},
+    }
+    if "EDIT" in definition_code:
+        two_reference = definition_code.endswith("2REF")
+        semantic = {
+            "PROMPT": _QWEN21_SMOKE_EDIT_PROMPT,
+            "SEED": 9183703 if not two_reference else 9183705,
+            "REFERENCE_IMAGE_1": QWEN21_SMOKE_REFERENCE_1,
+            "RESOLUTION": EDIT_REFERENCE_RESOLUTION,
+            "STEPS": 10,
+            "CFG": 1.0,
+            "OUTPUT_PREFIX": "local_drama/qwen21_edit_smoke",
+        }
+        if two_reference:
+            semantic["REFERENCE_IMAGE_2"] = QWEN21_SMOKE_REFERENCE_2
+        return {**base, "semantic_inputs": semantic}
+    return {
+        **base,
+        "semantic_inputs": {
+            "PROMPT": _QWEN21_SMOKE_PROMPT,
+            "SEED": 9183701,
+            "WIDTH": 768,
+            "HEIGHT": 768,
+            "STEPS": 10,
+            "CFG": 1.0,
+            "OUTPUT_PREFIX": "local_drama/qwen21_smoke",
+        },
+    }
+
+
 class WorkflowDefinitionService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -397,6 +650,9 @@ class WorkflowDefinitionService:
             for role in definition.semantic_bindings
             if role in COMFY_IMAGE_INPUT_ROLES
         }
+        for role, slot in (definition.scalar_input_slots or {}).items():
+            if role not in input_slots and role in definition.semantic_bindings:
+                input_slots[role] = dict(slot)
         parameter_effects = {name: spec["effect"] for name, spec in definition.fields.items()}
         if definition.code.startswith("H3_"):
             if values["use_production_tier"]:
@@ -428,6 +684,14 @@ class WorkflowDefinitionService:
                 },
                 "timeout_seconds": 300,
                 "expected_output": {"media_kind": "IMAGE", "min_count": 1, "max_count": 1},
+            }
+            parse_comfy_smoke_contract(contract, definition.semantic_bindings)
+        if definition.code.startswith("QWEN_IMAGE_21_"):
+            contract["smoke_contract"] = _qwen21_smoke_contract(definition.code)
+            contract["license"] = {
+                "model_code": "qwen-image-2.1-int8-convrot",
+                "license_id": "qwen-research",
+                "commercial_use_requires_authorization": True,
             }
             parse_comfy_smoke_contract(contract, definition.semantic_bindings)
         if definition.code.startswith("H3_"):

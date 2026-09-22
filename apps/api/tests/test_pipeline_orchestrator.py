@@ -29,6 +29,78 @@ def _project_counts(database, project_id: str) -> dict[str, int]:
     return {key: int(row[key]) for key in row.keys()}
 
 
+def test_episode_specs_include_the_prologue_before_the_first_chapter() -> None:
+    """Text between the authorised start and the first chapter must be planned.
+
+    The prologue (序章/引子/untitled opening) is real manuscript. Before the fix
+    the chapter loop started at the first recognised chapter, so this text never
+    reached any unit while the run still reported FULL.
+    """
+    text = "\n\n".join(
+        [
+            "序幕：青灯在桥下的独有事实。",
+            "第一章 雨夜",
+            "第一章正文。",
+        ]
+    )
+    specs = PipelineOrchestratorService._episode_specs(text)
+    planned = "\n".join(spec["source_text"] for spec in specs)
+    assert "青灯在桥下的独有事实" in planned, "prologue text must reach a unit"
+    assert "第一章正文" in planned
+    prologue = specs[0]
+    assert prologue["source_start_paragraph"] == 1
+    assert prologue["source_end_paragraph"] == 1
+    assert prologue["source_text"] == "序幕：青灯在桥下的独有事实。"
+    assert specs[1]["source_start_paragraph"] == 2
+
+
+def test_source_coverage_never_reports_full_while_a_paragraph_is_uncovered() -> None:
+    """FULL is a set comparison, not a count comparison."""
+    text = "\n\n".join(["序幕独有事实。", "第一章", "正文一。", "正文二。"])
+    specs = PipelineOrchestratorService._episode_specs(text)
+    authorized = {"start_paragraph": 1, "end_paragraph": 4, "paragraph_count": 4}
+    complete = PipelineOrchestratorService._source_coverage(
+        source_sha256="h",
+        authorized_scope=authorized,
+        all_specs=specs,
+        selected_specs=specs,
+        completed_count=len(specs),
+    )
+    assert complete["status"] == "FULL"
+    assert complete["coverage_gaps"] == []
+    assert complete["completed_paragraph_intervals"] == [
+        {"start_paragraph": 1, "end_paragraph": 4}
+    ]
+
+    # Dropping the prologue unit leaves paragraph 1 uncovered. The old count-only
+    # rule reported FULL here because completed units equalled planned units.
+    prologue_dropped = PipelineOrchestratorService._source_coverage(
+        source_sha256="h",
+        authorized_scope=authorized,
+        all_specs=specs,
+        selected_specs=specs[1:],
+        completed_count=len(specs) - 1,
+    )
+    assert prologue_dropped["status"] == "PARTIAL"
+    assert prologue_dropped["coverage_complete"] is False
+    assert prologue_dropped["coverage_gaps"] == [
+        {"start_paragraph": 1, "end_paragraph": 1, "reason": "AUTHORIZED_RANGE_NOT_COVERED"}
+    ]
+
+    # A trailing authorised paragraph that no unit covers is also an explicit gap.
+    trailing = PipelineOrchestratorService._source_coverage(
+        source_sha256="h",
+        authorized_scope={"start_paragraph": 1, "end_paragraph": 6, "paragraph_count": 6},
+        all_specs=specs,
+        selected_specs=specs,
+        completed_count=len(specs),
+    )
+    assert trailing["status"] == "PARTIAL"
+    assert trailing["coverage_gaps"] == [
+        {"start_paragraph": 5, "end_paragraph": 6, "reason": "AUTHORIZED_RANGE_NOT_COVERED"}
+    ]
+
+
 def test_episode_specs_keep_import_api_paragraph_numbering() -> None:
     chaptered = PipelineOrchestratorService._episode_specs(
         "# 第一章\n\n第一段正文\n\n第二段正文\n\n# 第二章\n\n第三段正文"
@@ -78,8 +150,28 @@ def test_source_coverage_marks_units_after_batch_60_unprocessed(chapter_count: i
     ],
     ids=["long_chapter", "long_paragraph"],
 )
-def test_source_coverage_exposes_24000_character_tail(text: str) -> None:
+def test_long_unit_is_split_into_bounded_windows_covering_the_tail(text: str) -> None:
+    """A unit longer than the prompt budget becomes several bounded windows.
+
+    The previous behaviour cut the unit at 24,000 characters and reported the
+    remainder as unprocessed. Bounded windows must instead carry every character
+    of the unit, so the trailing fact still reaches the model and the authorised
+    range is provably complete.
+    """
     specs = PipelineOrchestratorService._episode_specs(text)
+    assert specs, "bounded windows must exist for a long unit"
+    for spec in specs:
+        assert spec["source_character_count"] == len(spec["source_text"])
+        assert len(spec["source_text"]) <= 24_000
+    # Every window belongs to the same episode unit exactly once.
+    assert {int(spec["unit_number"]) for spec in specs} == {1}
+    assert [spec["window_index"] for spec in specs] == list(range(1, len(specs) + 1))
+    assert all(spec["window_count"] == len(specs) for spec in specs)
+    assert "唯一尾部事件" in specs[-1]["source_text"]
+    # Concatenating the bounded windows in order reproduces the original unit text
+    # character for character, so no prose was dropped by the windowing step.
+    assert "".join(spec["source_text"] for spec in specs) == text
+
     coverage = PipelineOrchestratorService._source_coverage(
         source_sha256="emoji-hash",
         authorized_scope={
@@ -91,13 +183,14 @@ def test_source_coverage_exposes_24000_character_tail(text: str) -> None:
         selected_specs=specs,
         completed_count=len(specs),
     )
-    assert coverage["status"] == "PARTIAL"
-    truncated = next(
+    assert coverage["status"] == "FULL"
+    assert coverage["coverage_complete"] is True
+    assert coverage["coverage_gaps"] == []
+    assert coverage["unprocessed_ranges"] == []
+    assert not [
         item for item in coverage["unprocessed_ranges"]
         if item["reason"] == "EPISODE_INPUT_CHARACTER_LIMIT"
-    )
-    assert truncated["resume_character_offset_in_unit"] == 24_000
-    assert truncated["unprocessed_character_count"] > 0
+    ]
 
 
 def test_episode_prompt_submits_exactly_24000_unicode_characters() -> None:
@@ -109,6 +202,28 @@ def test_episode_prompt_submits_exactly_24000_unicode_characters() -> None:
     assert len(submitted) == 24_000
     assert submitted == "😀" * 24_000
     assert "唯一尾部事件" not in submitted
+
+
+def test_bounded_windows_preserve_body_text_when_boundary_falls_between_paragraphs() -> None:
+    """A window boundary between two paragraphs must keep the blank-line separator.
+
+    Regression: the separator used to be dropped whenever a window filled up exactly
+    at a paragraph break, so the tail of a long chapter silently lost characters.
+    """
+    # Six roughly 4,000-character paragraphs in one chapter exceed the 24,000
+    # character input budget, so the unit must be split while keeping the blank
+    # line that separates each paragraph.
+    paragraphs = "# 第一章\n\n" + "\n\n".join(
+        f"第{index}段开始。" + (f"第{index}段正文。" * 700) for index in range(1, 7)
+    )
+    specs = PipelineOrchestratorService._episode_specs(paragraphs)
+    assert len(specs) > 1, "the fixture must actually produce several windows"
+    assert [spec["window_index"] for spec in specs] == list(range(1, len(specs) + 1))
+    assert {int(spec["unit_number"]) for spec in specs} == {1}
+    assert "".join(spec["source_text"] for spec in specs) == paragraphs
+    for spec in specs:
+        assert len(spec["source_text"]) <= 24_000
+        assert spec["source_character_count"] == len(spec["source_text"])
 
 
 def test_source_coverage_merges_overlap_and_respects_authorized_first_ten_chapters() -> None:
@@ -649,3 +764,128 @@ def test_pipeline_apply_preview_preserves_produced_episode_and_reports_context_c
     assert impact["produced_episode_context_changes"] == ["EPISODE_001"]
     assert impact["requires_confirmation"] is True
     assert _project_counts(database, str(project["id"])) == before
+
+
+def test_continue_analysis_finishes_the_remaining_windows_of_a_long_novel(
+    workspace, database, mock_story_pipeline_ai,
+) -> None:
+    """A 61-chapter manuscript must be completable through continue-analysis.
+
+    Before the fix the run stopped after ``PIPELINE_EPISODE_BATCH_LIMIT`` units and
+    reported PARTIAL with no executable way to continue: ``:resume`` answered 422
+    PIPELINE_RESUME_UNSUPPORTED and ``:retry`` answered 409 PIPELINE_STATE_INVALID.
+    """
+    del mock_story_pipeline_ai
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="pipe_continue_61",
+        title="61章续接",
+        episode_count=1,
+        aspect_ratio="9:16",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=120_000,
+        allow_unconfigured_capabilities=True,
+    )
+    project_id = str(project["id"])
+    chapter_count = 61
+    source_text = "\n\n".join(
+        f"# 第{index}章\n\n第{index}章正文，尾部事件-{index}。" for index in range(1, chapter_count + 1)
+    )
+    with TestClient(create_app(workspace)) as client:
+        started = client.post(
+            f"/api/v1/projects/{project_id}/pipeline:start",
+            json={
+                "raw_text": source_text,
+                "visual_style": "国风仙侠 电影级写实 (Cinematic Realistic)",
+                "target_episode_duration_seconds": 120,
+            },
+        )
+        assert started.status_code == 200, started.text
+        run = started.json()["run"]
+        assert client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:resume"
+        ).status_code == 422
+
+        assert LocalMediaWorker(database, workspace).run_once("story-pipeline-batch-1", ["CPU"]) is not None
+        first = client.get(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}"
+        ).json()["run"]
+        assert first["state"] == "SUCCEEDED"
+        coverage = first["draft"]["source_coverage"]
+        assert coverage["status"] == "PARTIAL"
+        assert coverage["coverage_complete"] is False
+        cursor = first["analysis_cursor"]
+        assert cursor["has_more_windows"] is True
+        assert cursor["next_window_index"] == cursor["completed_window_count"]
+        first_planned = first["episodes_count"]
+        first_episode_titles = [item["title"] for item in first["episodes"]]
+        # The first batch stops at the documented episode limit, so the last chapter
+        # of the manuscript is unreachable until the cursor is continued.
+        assert first_planned == 60
+        assert first_episode_titles[-1] == f"第{chapter_count - 1}章"
+        assert f"第{chapter_count}章" not in first_episode_titles
+
+        completed = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:continue-analysis",
+            json={
+                "expected_revision": first["revision"],
+                "expected_source_sha256": coverage["source_sha256"],
+                "expected_next_window_index": cursor["next_window_index"] - 1,
+            },
+        )
+        assert completed.status_code == 409, completed.text
+        assert completed.json()["error"]["code"] == "PIPELINE_CURSOR_STALE"
+        assert completed.json()["error"]["details"]["server_next_window_index"] == cursor["next_window_index"]
+
+        queued = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:continue-analysis",
+            json={
+                "expected_revision": first["revision"],
+                "expected_source_sha256": coverage["source_sha256"],
+                "expected_next_window_index": cursor["next_window_index"],
+            },
+        )
+        assert queued.status_code == 200, queued.text
+        assert queued.json()["run"]["state"] == "RUNNING"
+
+        # A second command while the batch is queued must not double-run it.
+        again = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:continue-analysis",
+            json={
+                "expected_revision": queued.json()["run"]["revision"],
+                "expected_source_sha256": coverage["source_sha256"],
+            },
+        )
+        assert again.status_code == 409
+        assert again.json()["error"]["code"] == "PIPELINE_ALREADY_RUNNING"
+
+        assert LocalMediaWorker(database, workspace).run_once("story-pipeline-batch-2", ["CPU"]) is not None
+        final = client.get(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}"
+        ).json()["run"]
+        assert final["state"] == "SUCCEEDED"
+        final_coverage = final["draft"]["source_coverage"]
+        assert final_coverage["status"] == "FULL"
+        assert final_coverage["coverage_complete"] is True
+        assert final_coverage["coverage_gaps"] == []
+        assert final_coverage["unprocessed_ranges"] == []
+        assert final_coverage["covered_paragraph_count"] == final_coverage["authorized_paragraph_count"]
+        assert final_coverage["completed_paragraph_intervals"] == [
+            {"start_paragraph": 1, "end_paragraph": chapter_count * 2}
+        ]
+        # The units planned by the first batch are retained verbatim; the second
+        # batch may only append the units it was asked to plan.
+        assert final["episodes_count"] >= first_planned
+        assert [item["title"] for item in final["episodes"]][:len(first_episode_titles)] == first_episode_titles
+        assert final["analysis_cursor"]["has_more_windows"] is False
+
+        exhausted = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:continue-analysis",
+            json={
+                "expected_revision": final["revision"],
+                "expected_source_sha256": final_coverage["source_sha256"],
+            },
+        )
+        assert exhausted.status_code == 409
+        assert exhausted.json()["error"]["code"] == "PIPELINE_COVERAGE_COMPLETE"
+

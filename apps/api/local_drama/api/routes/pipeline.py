@@ -7,10 +7,12 @@ from starlette.concurrency import run_in_threadpool
 
 from local_drama.api.schemas.pipeline import (
     ApplyPipelineRequest,
+    ContinuePipelineAnalysisRequest,
     LLMProbeRequest,
     LLMProbeResponse,
     PipelineApplyPreviewResponse,
     PipelinePreflightRequest,
+    PipelineRunResponse,
     PreviewPipelineApplyRequest,
     RetryPipelineRequest,
     StartPipelineRequest,
@@ -207,6 +209,34 @@ async def retry_pipeline_run(
         service = _pipeline(request)
         run = await run_in_threadpool(
             lambda: service.retry_pipeline(project_id, run_id, payload.expected_revision)
+        )
+        return {"run": run}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post(
+    "/projects/{project_id}/pipeline/{run_id}:continue-analysis",
+    operation_id="continuePipelineAnalysis",
+    response_model=PipelineRunResponse,
+)
+async def continue_pipeline_analysis(
+    project_id: str,
+    run_id: str,
+    payload: ContinuePipelineAnalysisRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Process the next bounded batch of the same authorised manuscript range."""
+    try:
+        service = _pipeline(request)
+        run = await run_in_threadpool(
+            lambda: service.continue_analysis(
+                project_id,
+                run_id,
+                expected_revision=payload.expected_revision,
+                expected_source_sha256=payload.expected_source_sha256,
+                expected_next_window_index=payload.expected_next_window_index,
+            )
         )
         return {"run": run}
     except DomainRuleError as error:

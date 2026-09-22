@@ -167,11 +167,82 @@ class ComfyClient:
         )
         return dict(result)
 
+    def collect_output_entries(self, history_item: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return every provider output WITH its node/slot identity.
+
+        MED-01 root cause: flattening history outputs to ``output_root /
+        source.name`` collapsed ``node-a/result.png`` and ``node-b/result.png``
+        onto one path, so two distinct byte objects became one record.  Identity
+        is therefore surfaced here as ``(node_id, media_group, ordinal,
+        source_relative_path)`` and the caller builds a collision-free target.
+
+        The validated path list still comes from :meth:`collect_outputs`, so the
+        existing controlled-path/symlink guarantees — and any caller that
+        substitutes that seam — remain the single authority on which files are
+        collectable.
+        """
+        if self.output_root is None:
+            raise DomainRuleError("COMFY_OUTPUT_ROOT_REQUIRED", "收集 Comfy 输出需要显式配置本地 output_root")
+        paths = self.collect_outputs(history_item)
+        identities = self._output_identities(history_item)
+        entries: list[dict[str, Any]] = []
+        for path in paths:
+            identity = identities.get(path)
+            if identity is None:
+                # A caller substituted ``collect_outputs``; keep the validated
+                # path and fall back to a basename identity rather than dropping
+                # a real output.
+                entries.append(
+                    {
+                        "path": path,
+                        "node_id": "unattributed",
+                        "media_group": "unattributed",
+                        "ordinal": 0,
+                        "source_relative_path": path.name,
+                    }
+                )
+                continue
+            entries.append({"path": path, **identity})
+        return entries
+
+    def _output_identities(self, history_item: dict[str, Any]) -> dict[Path, dict[str, Any]]:
+        """Map each collectable output path to its provider node/slot identity."""
+        if self.output_root is None:
+            return {}
+        identities: dict[Path, dict[str, Any]] = {}
+        outputs = history_item.get("outputs", {})
+        if not isinstance(outputs, dict):
+            return {}
+        for node_id, node_output in outputs.items():
+            if not isinstance(node_output, dict):
+                continue
+            for media_group, media_items in node_output.items():
+                if not isinstance(media_items, list):
+                    continue
+                for ordinal, item in enumerate(media_items):
+                    if not isinstance(item, dict) or not item.get("filename"):
+                        continue
+                    relative = Path(str(item["subfolder"])) / str(item["filename"]) if item.get("subfolder") else Path(str(item["filename"]))
+                    candidate = (self.output_root / relative).resolve()
+                    identities.setdefault(
+                        candidate,
+                        {
+                            "node_id": str(node_id),
+                            "media_group": str(media_group),
+                            "ordinal": ordinal,
+                            "source_relative_path": relative.as_posix(),
+                        },
+                    )
+        return identities
+
     def collect_outputs(self, history_item: dict[str, Any]) -> list[Path]:
         if self.output_root is None:
             raise DomainRuleError("COMFY_OUTPUT_ROOT_REQUIRED", "收集 Comfy 输出需要显式配置本地 output_root")
         outputs: list[Path] = []
-        for node_output in history_item.get("outputs", {}).values():
+        history_outputs = history_item.get("outputs", {})
+        for node_output in history_outputs.values() if isinstance(history_outputs, dict) else ():
+            if not isinstance(node_output, dict):
+                continue
             for media_group in node_output.values():
                 if not isinstance(media_group, list):
                     continue

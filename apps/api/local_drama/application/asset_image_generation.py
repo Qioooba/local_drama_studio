@@ -23,7 +23,11 @@ from local_drama.application.ports.creative_generation import (
     MediaPromotionPort,
 )
 from local_drama.application.ports.database import DatabaseUnitOfWork
-from local_drama.application.workflow_contracts import effective_workflow_contract
+from local_drama.application.workflow_contracts import (
+    effective_workflow_contract,
+    image_workflow_is_production_grade,
+    image_workflow_production_scale,
+)
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.generation import VariantPlan
@@ -214,6 +218,33 @@ class AssetImageGenerationBatchService:
         return isinstance(bindings, dict) and {"PROMPT", "SEED"}.issubset(bindings)
 
     @classmethod
+    def _supports_production_scale(cls, connection: Any, profile: Any) -> bool:
+        """Reject verification/smoke-scale routes for real asset batches.
+
+        A published profile bound to a 256x256 / 1-step verification graph would
+        silently replace every asset HERO image with a smoke render, so this is
+        judged from the bound graph and its effective bindings rather than from
+        the workflow code string.
+        """
+
+        workflow_id = profile["workflow_version_id"]
+        return bool(workflow_id) and image_workflow_is_production_grade(connection, str(workflow_id))
+
+    @classmethod
+    def _supports_asset_batch_execution(cls, connection: Any, profile: Any) -> bool:
+        """Single executable-semantics decision shared by every selection path.
+
+        Auto-selection and the explicit web-UI selection must agree; keeping the
+        predicate in one place is what stops them diverging again.
+        """
+
+        return (
+            cls._published_workflow(connection, profile)
+            and cls._supports_executable_semantics(connection, profile)
+            and cls._supports_production_scale(connection, profile)
+        )
+
+    @classmethod
     def _find_text_to_image_profile(cls, connection: Any, capability: str) -> Any | None:
         rows = connection.execute(
             """SELECT * FROM execution_profile_versions
@@ -222,7 +253,7 @@ class AssetImageGenerationBatchService:
             (capability,),
         ).fetchall()
         for row in rows:
-            if not cls._published_workflow(connection, row) or not cls._supports_executable_semantics(connection, row):
+            if not cls._supports_asset_batch_execution(connection, row):
                 continue
             if cls._supports_text_to_image(row):
                 return row
@@ -250,7 +281,7 @@ class AssetImageGenerationBatchService:
         if explicit_id is None:
             selected_profile = None
             selected_resolution = resolution
-            if profile is not None and str(profile["status"]) == "PUBLISHED" and self._published_workflow(connection, profile) and self._supports_text_to_image(profile) and self._supports_executable_semantics(connection, profile) and self._profile_capability_allowed(str(profile["capability"]), capability):
+            if profile is not None and str(profile["status"]) == "PUBLISHED" and self._supports_text_to_image(profile) and self._supports_asset_batch_execution(connection, profile) and self._profile_capability_allowed(str(profile["capability"]), capability):
                 selected_profile = profile
                 selected_resolution = resolution
             if selected_profile is None:
@@ -287,6 +318,21 @@ class AssetImageGenerationBatchService:
             workflow = connection.execute("SELECT status FROM workflow_versions WHERE id=?", (profile["workflow_version_id"],)).fetchone()
             if workflow is None or str(workflow["status"]) != "PUBLISHED":
                 issues.append({"code": "ASSET_IMAGE_WORKFLOW_UNAVAILABLE", "message": "所选文生图工作流不可执行"})
+            elif explicit_id is not None and not self._supports_production_scale(connection, profile):
+                # An operator-selected route is never silently swapped for a
+                # different profile: fail closed with the exact route that must
+                # be republished at production scale.
+                raise DomainRuleError(
+                    "ASSET_IMAGE_PROFILE_NOT_PRODUCTION_GRADE",
+                    "所选文生图配置绑定的是验证/冒烟规模工作流（缺少 STEPS/WIDTH/HEIGHT 生产参数绑定），不能用于正式资产主图生成",
+                    {
+                        "profile_version_id": str(profile["id"]),
+                        "profile_capability": str(profile["capability"]),
+                        "profile_version_no": int(profile["version_no"]),
+                        "workflow_version_id": str(profile["workflow_version_id"]),
+                        "scale": image_workflow_production_scale(connection, str(profile["workflow_version_id"])),
+                    },
+                )
         return profile, {**resolution, "profile_version_id": str(profile["id"]) if profile is not None else (explicit_id or resolution.get("profile_version_id"))}, issues
 
     def plan(

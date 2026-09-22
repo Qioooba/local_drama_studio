@@ -59,6 +59,11 @@ TRUSTED_COMFY_BUILTINS = {
     "VAELoader",
     "TextEncodeAceStepAudio1.5",
     "TextEncodeQwenImageEditPlus",
+    # Qwen-Image-2.1 native nodes (ComfyUI v0.37+).  TextEncodeQwenImage21
+    # returns positive/negative conditioning plus the edit latent, and
+    # QwenImage21Cache sets the conditional-prefix KV cache device/precision.
+    "TextEncodeQwenImage21",
+    "QwenImage21Cache",
 }
 
 

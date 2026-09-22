@@ -31,6 +31,26 @@ from local_drama.main import create_app
 
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
 
+#: Production-scale text-to-image package.  Asset HERO batches only accept a
+#: route that controls STEPS/WIDTH/HEIGHT, so the shared fixtures must not model
+#: a verification/smoke graph (a 256x256 / 1-step route is deliberately rejected).
+PRODUCTION_IMAGE_NODES = {
+    "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "local-model.safetensors"}},
+    "2": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["1", 1]}},
+    "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["1", 1]}},
+    "4": {"class_type": "EmptyLatentImage", "inputs": {"width": 1024, "height": 1024, "batch_size": 1}},
+    "5": {"class_type": "KSampler", "inputs": {"seed": 0, "steps": 20, "cfg": 4.0, "positive": ["2", 0], "negative": ["3", 0], "latent_image": ["4", 0]}},
+    "7": {"class_type": "SaveImage", "inputs": {"filename_prefix": "local_drama/asset_hero", "images": ["5", 0]}},
+}
+PRODUCTION_IMAGE_BINDINGS = {
+    "PROMPT": {"node_id": "2", "input": "text"},
+    "SEED": {"node_id": "5", "input": "seed"},
+    "STEPS": {"node_id": "5", "input": "steps"},
+    "WIDTH": {"node_id": "4", "input": "width"},
+    "HEIGHT": {"node_id": "4", "input": "height"},
+    "OUTPUT_PREFIX": {"node_id": "7", "input": "filename_prefix"},
+}
+
 
 def _project(workspace, database, code: str):
     projects = ProjectService(database, workspace.projects_root)
@@ -81,9 +101,9 @@ def _published_asset_image_profile(workspace, database) -> str:
     workflow = WorkflowService(database, workspace).register_package(
         "asset_image_batch_submit",
         "Asset image batch submit",
-        {"1": {"class_type": "SaveImage", "inputs": {"prompt": "", "seed": 0}}},
+        PRODUCTION_IMAGE_NODES,
         {},
-        {"PROMPT": {"node_id": "1", "input": "prompt"}, "SEED": {"node_id": "1", "input": "seed"}},
+        PRODUCTION_IMAGE_BINDINGS,
     )
     with database.transaction() as connection:
         connection.execute("UPDATE workflow_versions SET status='PUBLISHED' WHERE id=?", (workflow["id"],))
@@ -118,9 +138,9 @@ def _published_image_profile_by_contract(
     workflow = WorkflowService(database, workspace).register_package(
         code,
         code,
-        {"1": {"class_type": "SaveImage", "inputs": {"prompt": "", "seed": 0}}},
+        PRODUCTION_IMAGE_NODES,
         {},
-        {"PROMPT": {"node_id": "1", "input": "prompt"}, "SEED": {"node_id": "1", "input": "seed"}},
+        PRODUCTION_IMAGE_BINDINGS,
     )
     profile_id = f"profile-{code}"
     version_id = f"version-{code}"

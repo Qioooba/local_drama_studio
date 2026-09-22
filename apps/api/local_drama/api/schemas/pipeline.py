@@ -240,3 +240,25 @@ class PipelineApplyPreviewResponse(BaseModel):
 
 class RetryPipelineRequest(BaseModel):
     expected_revision: int = Field(ge=1)
+
+
+class ContinuePipelineAnalysisRequest(BaseModel):
+    """Resume the next bounded batch of an already authorised manuscript range."""
+
+    expected_revision: int = Field(ge=1)
+    expected_source_sha256: str = Field(min_length=64, max_length=64)
+    expected_next_window_index: int | None = Field(default=None, ge=0)
+
+
+class PipelineRunResponse(BaseModel):
+    """Envelope for a single story-planning run.
+
+    ``run`` is the canonical pipeline run projection. It is intentionally typed as
+    a free-form object here: this endpoint returns the same projection the other
+    run commands return, and pinning a partial field list would silently drop
+    fields the frontend already relies on (``draft``, ``analysis_cursor``,
+    ``apply_continuation``, ...). The explicit envelope still gives the operation a
+    declared response contract instead of an untyped body.
+    """
+
+    run: dict[str, object]

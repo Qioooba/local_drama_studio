@@ -14,6 +14,20 @@ import sqlite3
 from collections.abc import Mapping
 from typing import Any
 
+#: Effective semantic bindings that let the runtime own an image route's scale.
+#: A route that binds all three can be executed at any production size/step
+#: count, so its baked graph defaults are only authoring placeholders.
+PRODUCTION_IMAGE_SCALE_ROLES: tuple[str, ...] = ("STEPS", "WIDTH", "HEIGHT")
+
+#: Baked graph values at or below these limits are verification/smoke scale.
+SMOKE_SAMPLER_STEP_LIMIT = 8
+SMOKE_LATENT_EDGE_LIMIT = 512
+
+#: Baked graph values that are self-evidently production scale even when the
+#: route cannot be re-parameterised.
+PRODUCTION_SAMPLER_STEP_FLOOR = 12
+PRODUCTION_LATENT_EDGE_FLOOR = 768
+
 
 def _object(raw: object) -> dict[str, Any]:
     try:
@@ -97,6 +111,121 @@ def effective_workflow_contract(
         "published_contract_capability": published_capability,
         "published_contract_bound": bound is not None,
     }
+
+
+def _numeric(value: object) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def image_workflow_scale_facts(workflow_content: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Extract the checkable render-scale facts from a frozen image graph.
+
+    Only immutable graph content is inspected: the sampler step count and the
+    latent size a text-to-image graph starts from.  A verification smoke graph
+    is exactly the pair of a tiny latent and a single sampler step.
+    """
+
+    steps: float | None = None
+    edges: list[float] = []
+    content = workflow_content if isinstance(workflow_content, Mapping) else {}
+    for node in content.values():
+        if not isinstance(node, Mapping):
+            continue
+        class_type = str(node.get("class_type") or "")
+        inputs = node.get("inputs")
+        if not isinstance(inputs, Mapping):
+            continue
+        if "Sampler" in class_type:
+            node_steps = _numeric(inputs.get("steps"))
+            if node_steps is not None:
+                steps = node_steps if steps is None else max(steps, node_steps)
+        if "Latent" in class_type:
+            for axis in ("width", "height"):
+                edge = _numeric(inputs.get(axis))
+                if edge is not None:
+                    edges.append(edge)
+    return {"sampler_steps": steps, "latent_edges": edges}
+
+
+def image_workflow_production_scale(
+    connection: Any,
+    workflow_version_id: str | None,
+    workflow_row: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return the production-scale verdict for a bound image workflow route.
+
+    The verdict is derived from checkable facts only - the published status of
+    the bound workflow, its effective semantic bindings and the scale baked into
+    the frozen graph - never from the workflow code string.  A route named
+    ``...-smoke`` that binds STEPS/WIDTH/HEIGHT and renders 848x480 for 20 steps
+    is usable; a route that hard-codes a 256x256 / 1-step verification graph is
+    not, whatever it is called.
+    """
+
+    normalized = str(workflow_version_id or "").strip()
+    report: dict[str, Any] = {
+        "workflow_version_id": normalized or None,
+        "production_grade": False,
+        "reason": "WORKFLOW_UNAVAILABLE",
+        "bound_scale_roles": [],
+        "missing_scale_roles": list(PRODUCTION_IMAGE_SCALE_ROLES),
+        "sampler_steps": None,
+        "latent_max_edge": None,
+    }
+    if not normalized:
+        return report
+    try:
+        contract = effective_workflow_contract(connection, normalized, workflow_row)
+    except sqlite3.OperationalError:
+        return report
+    if str(contract.get("workflow_status") or "") != "PUBLISHED":
+        return report
+    bindings = contract.get("workflow_bindings")
+    bound_roles = set(bindings) if isinstance(bindings, Mapping) else set()
+    report["bound_scale_roles"] = sorted(bound_roles.intersection(PRODUCTION_IMAGE_SCALE_ROLES))
+    report["missing_scale_roles"] = sorted(set(PRODUCTION_IMAGE_SCALE_ROLES) - bound_roles)
+    facts = image_workflow_scale_facts(contract.get("workflow_content"))
+    steps = facts["sampler_steps"]
+    edges = facts["latent_edges"]
+    report["sampler_steps"] = int(steps) if steps is not None else None
+    report["latent_max_edge"] = int(max(edges)) if edges else None
+    if not report["missing_scale_roles"]:
+        # The runtime owns step count and output size; the baked values are
+        # authoring placeholders (a 4-step SDXL Turbo preset is still real).
+        report["production_grade"] = True
+        report["reason"] = "BOUND_PRODUCTION_SCALE"
+        return report
+    if steps is None:
+        report["reason"] = "SCALE_EVIDENCE_MISSING"
+        return report
+    if steps <= SMOKE_SAMPLER_STEP_LIMIT and (not edges or max(edges) <= SMOKE_LATENT_EDGE_LIMIT):
+        report["reason"] = "SMOKE_SCALE"
+        return report
+    if steps >= PRODUCTION_SAMPLER_STEP_FLOOR or (bool(edges) and max(edges) >= PRODUCTION_LATENT_EDGE_FLOOR):
+        report["production_grade"] = True
+        report["reason"] = "GRAPH_PRODUCTION_SCALE"
+    return report
+
+
+def image_workflow_is_production_grade(
+    connection: Any,
+    workflow_version_id: str | None,
+    workflow_row: Mapping[str, Any] | None = None,
+) -> bool:
+    """Whether a published image route can render at production scale.
+
+    Kept as the single decision used by both profile auto-selection and
+    explicit profile selection so the two can never drift apart again.
+    """
+
+    return bool(image_workflow_production_scale(connection, workflow_version_id, workflow_row)["production_grade"])
 
 
 def latest_bound_profile_for_capability(

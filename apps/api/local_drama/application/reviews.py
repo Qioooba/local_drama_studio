@@ -127,28 +127,27 @@ class ReviewService:
         self.media = MediaService(cast(Any, database), settings) if settings is not None else None
 
     def ensure_templates(self, actor: str = "system") -> int:
+        """Seed the built-in review templates; safe to run on every startup.
+
+        Startup is idempotent, but a historical template version is immutable.
+        Never update ``items_json`` in place: old ``review_decisions`` must
+        remain explainable against the exact template they referenced.  A
+        changed built-in definition is registered as a new version by
+        ``create_template_version``.  Built-in version 1 is seeded once through
+        the ``uq_review_templates_version`` constraint, so repeated or
+        concurrent startup neither duplicates templates nor overwrites a
+        previously published version.
+        """
         now = _utc_now()
         with self.database.transaction() as connection:
             for template in TEMPLATES:
                 template_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"local-drama:review-template:{template['code']}:{template['version_no']}"))
-                # Startup is idempotent, but a historical template version is
-                # immutable.  Never update ``items_json`` in place: old
-                # review_decisions must remain explainable against the exact
-                # template they referenced.  A changed built-in definition is
-                # registered as a new version by ``create_template_version``.
-                # Built-in version 1 is seeded once.  User-created versions
-                # are appended explicitly through create_template_version;
-                # startup must never append a duplicate on every boot.
-                existing = connection.execute(
-                    "SELECT id FROM review_templates WHERE code=? AND version_no=?",
-                    (template["code"], template["version_no"]),
-                ).fetchone()
-                if existing is None:
-                    connection.execute(
-                        """INSERT INTO review_templates (id, code, version_no, subject_type, items_json, created_at, updated_at, created_by, revision, schema_version)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')""",
-                        (template_id, template["code"], template["version_no"], template["subject_type"], _json(template["items"]), now, now, actor),
-                    )
+                connection.execute(
+                    """INSERT INTO review_templates (id, code, version_no, subject_type, items_json, created_at, updated_at, created_by, revision, schema_version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'v2')
+                    ON CONFLICT(code, version_no) DO NOTHING""",
+                    (template_id, template["code"], template["version_no"], template["subject_type"], _json(template["items"]), now, now, actor),
+                )
         return len(TEMPLATES)
 
     def create_template_version(
