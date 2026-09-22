@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from local_drama.application.documents import DocumentImportService
 from local_drama.application.projects import ProjectService
 from local_drama.application.source_text import source_paragraphs
+from local_drama.domain.source_text import SOURCE_STRUCTURE_VERSION
 from local_drama.main import create_app
 
 
@@ -235,7 +236,10 @@ def test_reimport_refreshes_a_preview_from_an_older_structure_index(workspace, d
 
     assert refreshed["source_document_version_id"] == first["source_document_version_id"]
     assert refreshed["import_session_id"] != first["import_session_id"]
-    assert refreshed["preview"]["source_structure_version"] == 2
+    # The refreshed session must carry the current structure grammar. Read the
+    # constant instead of hardcoding a number so a deliberate structure-version
+    # bump (NP09) does not silently turn this into a stale literal.
+    assert refreshed["preview"]["source_structure_version"] == SOURCE_STRUCTURE_VERSION
     assert [chapter["title"] for chapter in refreshed["preview"]["chapters"]] == ["第一章 雨夜", "第二章 清晨"]
 
 

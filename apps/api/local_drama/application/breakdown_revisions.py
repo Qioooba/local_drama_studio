@@ -143,38 +143,94 @@ class BreakdownRevisionService:
 
     @staticmethod
     def _validated_replacement(scene_no: int, original: dict[str, Any], value: dict[str, Any]) -> dict[str, Any]:
+        """Merge the explicitly submitted fields onto a copy of the original scene.
+
+        The revision contract is PATCH-like: a field that the caller did not submit
+        keeps its original value, and unknown trusted historical fields are carried
+        through untouched. Previously this function rebuilt a small dict from a
+        handful of form fields, so editing only the title silently discarded the
+        scene's location/time/atmosphere/lighting/props and every shot's camera,
+        composition, lighting, sound, emotion and continuity.
+        """
+        # Deep copy through JSON so nested composition/camera/continuity objects are
+        # never aliased into the new revision.
+        replacement: dict[str, Any] = json.loads(json.dumps(original))
+        replacement["scene_no"] = scene_no
+
         title = str(value.get("title") or "").strip()
-        summary = str(value.get("summary") or "").strip()
-        characters_raw = value.get("characters")
-        shots = value.get("shots")
         if not title or len(title) > 200:
             raise DomainRuleError("BREAKDOWN_SCENE_TITLE_INVALID", "场次标题需为 1–200 个字符")
-        if len(summary) > 4000:
-            raise DomainRuleError("BREAKDOWN_SCENE_SUMMARY_INVALID", "场次摘要不能超过 4000 个字符")
-        if not isinstance(characters_raw, list) or len(characters_raw) > 100:
-            raise DomainRuleError("BREAKDOWN_SCENE_CHARACTERS_INVALID", "出场角色必须是至多 100 项的列表")
-        characters = [str(name).strip() for name in characters_raw if str(name).strip()]
-        if any(len(name) > 120 for name in characters):
-            raise DomainRuleError("BREAKDOWN_SCENE_CHARACTERS_INVALID", "角色名称不能超过 120 个字符")
+        replacement["title"] = title
+
+        if "summary" in value:
+            summary = str(value.get("summary") or "").strip()
+            if len(summary) > 4000:
+                raise DomainRuleError("BREAKDOWN_SCENE_SUMMARY_INVALID", "场次摘要不能超过 4000 个字符")
+            replacement["summary"] = summary
+        if "characters" in value:
+            characters_raw = value.get("characters")
+            if not isinstance(characters_raw, list) or len(characters_raw) > 100:
+                raise DomainRuleError("BREAKDOWN_SCENE_CHARACTERS_INVALID", "出场角色必须是至多 100 项的列表")
+            characters = [str(name).strip() for name in characters_raw if str(name).strip()]
+            if any(len(name) > 120 for name in characters):
+                raise DomainRuleError("BREAKDOWN_SCENE_CHARACTERS_INVALID", "角色名称不能超过 120 个字符")
+            replacement["characters"] = characters
+        for field in ("location", "time", "atmosphere", "lighting", "purpose", "continuity"):
+            if field not in value:
+                continue
+            text = str(value.get(field) or "").strip()
+            if len(text) > 2000:
+                raise DomainRuleError("BREAKDOWN_SCENE_FIELD_TOO_LONG", "场次字段长度超出限制")
+            replacement[field] = text
+        if "props" in value:
+            props_raw = value.get("props")
+            if props_raw is None:
+                replacement["props"] = []
+            elif not isinstance(props_raw, list) or len(props_raw) > 100:
+                raise DomainRuleError("BREAKDOWN_SCENE_PROPS_INVALID", "道具必须是至多 100 项的列表")
+            else:
+                replacement["props"] = [str(name).strip() for name in props_raw if str(name).strip()]
+
+        shots = value.get("shots")
         original_shots = original.get("shots")
         if not isinstance(shots, list) or not isinstance(original_shots, list) or len(shots) != len(original_shots):
             raise DomainRuleError("BREAKDOWN_SCENE_STRUCTURE_LOCKED", "修订时不能增删镜头")
         original_nos = [int(shot.get("shot_no", 0)) for shot in original_shots if isinstance(shot, dict)]
-        replacement: list[dict[str, Any]] = []
+        # Only the fields this endpoint is allowed to change may be overwritten;
+        # provenance, frozen revisions and system status stay server-authoritative.
+        editable_shot_fields = (
+            "visual", "action", "dialogue", "duration_seconds",
+            "shot_type", "camera", "lighting", "sound", "emotion", "emotion_intensity",
+            "continuity", "creative_intent", "composition", "camera_direction",
+            "camera_intensity", "camera_curve", "facial_action", "eye_line",
+            "blocking_summary", "transition_plan",
+        )
+        merged_shots: list[dict[str, Any]] = []
         for position, shot in enumerate(shots):
             if not isinstance(shot, dict) or position >= len(original_nos) or int(shot.get("shot_no", 0)) != original_nos[position]:
                 raise DomainRuleError("BREAKDOWN_SCENE_STRUCTURE_LOCKED", "修订时不能修改镜头编号或顺序")
+            base_shot = original_shots[position]
+            merged = json.loads(json.dumps(base_shot if isinstance(base_shot, dict) else {}))
+            merged["shot_no"] = original_nos[position]
             duration = validated_breakdown_shot_duration(
                 shot.get("duration_seconds"),
                 error_code="BREAKDOWN_SHOT_DURATION_INVALID",
             )
             visual = str(shot.get("visual") or "").strip()
             action = str(shot.get("action") or "").strip()
-            dialogue = shot.get("dialogue", "")
+            dialogue = shot.get("dialogue", merged.get("dialogue", ""))
             if len(visual) > 4000 or len(action) > 4000 or len(str(dialogue)) > 8000:
                 raise DomainRuleError("BREAKDOWN_SHOT_FIELD_TOO_LONG", "镜头字段长度超出限制")
-            replacement.append({"shot_no": original_nos[position], "visual": visual, "action": action, "dialogue": dialogue, "duration_seconds": duration})
-        return {"scene_no": scene_no, "title": title, "summary": summary, "characters": characters, "shots": replacement}
+            merged.update({"visual": visual, "action": action, "dialogue": dialogue, "duration_seconds": duration})
+            for field in editable_shot_fields:
+                if field in {"visual", "action", "dialogue", "duration_seconds"}:
+                    continue
+                if field not in shot:
+                    continue
+                merged[field] = shot[field]
+            merged_shots.append(merged)
+        replacement["shots"] = merged_shots
+        return replacement
 
     @staticmethod
     def _validate_duration_contract(scenes: list[Any], confidence: Any) -> None:

@@ -9,6 +9,8 @@ from local_drama.api.schemas.g3 import (
     DocumentImportCommitRequest,
     DocumentImportRequest,
     DocumentImportResponse,
+    DocumentImportSelectionRequest,
+    DocumentImportSelectionResponse,
     LatestDocumentImportResponse,
     SourceParagraphPageResponse,
     SourcePassageResponse,
@@ -39,7 +41,11 @@ def service(request: Request) -> DocumentImportService:
 async def import_script(project_id: str, payload: DocumentImportRequest, request: Request) -> dict[str, object]:
     try:
         require_server_loopback(request, action="按绝对路径导入文档到")
-        return {"import": service(request).import_document(project_id, payload.source_path)}
+        return {
+            "import": service(request).import_document(
+                project_id, payload.source_path, paragraph_layout=payload.paragraph_layout,
+            )
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 
@@ -139,13 +145,54 @@ async def get_source_document_passage(
 @router.post("/import-sessions/{session_id}:commit", operation_id="commitImportSession")
 async def commit_import_session(session_id: str, payload: DocumentImportCommitRequest, request: Request) -> dict[str, object]:
     try:
+        document_service = service(request)
+        if payload.create_new_selection:
+            if payload.source_paragraph_start is None or payload.source_paragraph_end is None:
+                raise DomainRuleError("IMPORT_BODY_RANGE_INCOMPLETE", "创建新的分析选择必须同时提供起始段和结束段")
+            selection = document_service.create_selection(
+                session_id,
+                source_paragraph_start=payload.source_paragraph_start,
+                source_paragraph_end=payload.source_paragraph_end,
+            )
+            return {"commit": {**selection, "idempotent": selection.get("reused") is True}}
         return {
-            "commit": service(request).commit(
+            "commit": document_service.commit(
                 session_id,
                 payload.expected_preview_hash,
                 source_paragraph_start=payload.source_paragraph_start,
                 source_paragraph_end=payload.source_paragraph_end,
             )
+        }
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+
+
+@router.post(
+    "/import-sessions/{session_id}:select-range",
+    status_code=201,
+    response_model=DocumentImportSelectionResponse,
+    operation_id="createImportSessionSelection",
+)
+async def create_import_session_selection(
+    session_id: str,
+    payload: DocumentImportSelectionRequest,
+    request: Request,
+) -> dict[str, object]:
+    """Authorise a new analysis range on the same immutable source version."""
+    try:
+        selection = service(request).create_selection(
+            session_id,
+            source_paragraph_start=payload.source_paragraph_start,
+            source_paragraph_end=payload.source_paragraph_end,
+        )
+        return {
+            "selection": {
+                "import_session_id": str(selection["import_session_id"]),
+                "source_document_version_id": str(selection["source_document_version_id"]),
+                "selected_range": selection["selected_range"],
+                "reused": bool(selection["reused"]),
+                "source_preserved": True,
+            }
         }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
@@ -202,7 +249,9 @@ async def revise_breakdown_draft_scene(
         revision = BreakdownRevisionService(request.app.state.database).revise_scene(
             draft_id,
             scene_no,
-            payload.model_dump(exclude={"expected_revision", "change_note"}),
+            # PATCH semantics: only fields the client actually submitted may be
+            # replaced. Unsubmitted director fields keep their original values.
+            payload.model_dump(exclude={"expected_revision", "change_note"}, exclude_unset=True),
             expected_revision=payload.expected_revision,
             change_note=payload.change_note,
         )

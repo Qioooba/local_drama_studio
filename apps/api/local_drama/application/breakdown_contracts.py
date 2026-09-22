@@ -13,6 +13,16 @@ BREAKDOWN_MIN_SHOT_SECONDS = 1.0
 BREAKDOWN_MAX_SHOT_SECONDS = 15.0
 BREAKDOWN_DURATION_TOLERANCE_RATIO = 0.2
 
+# Explicit value/unit grammar: an ASCII finite decimal (optionally signed,
+# optionally exponent) with an optional complete "s"/"秒" unit.  Nothing is
+# stripped and nothing is guessed, so "-5" stays negative and "10ms" is rejected
+# instead of being mistaken for 10 seconds.  ``re.ASCII`` keeps full-width and
+# other Unicode digits out of the accepted grammar.
+_DURATION_PATTERN = re.compile(
+    r"([+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)(?:\s*(?:s|秒))?",
+    re.IGNORECASE | re.ASCII,
+)
+
 _SHOT_TYPES = {
     "大全景": "ESTABLISHING", "远景": "ESTABLISHING", "establishing": "ESTABLISHING",
     "全景": "WIDE", "wide": "WIDE", "中景": "MEDIUM", "medium": "MEDIUM",
@@ -146,27 +156,54 @@ def director_intent_fields(
     }
 
 
+def strict_duration_seconds(value: object) -> float | None:
+    """Parse an explicit duration, preserving sign and unit semantics.
+
+    Accepted forms are a finite decimal number with an optional sign and an
+    optional ``s``/``秒`` unit (``5``, ``-5``, ``1.2s``, ``5秒``, ``1e1``,
+    ``3E-1``).  Anything else - including ``abc10xyz``, ``1.2ms``, ``NaN``,
+    ``Infinity``, ``True`` and empty strings - returns ``None`` instead of
+    being laundered into a number, so a garbage model output can never silently
+    change the value.
+    """
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else None
+    if not isinstance(value, str):
+        return None
+    match = _DURATION_PATTERN.fullmatch(value.strip())
+    if match is None:
+        return None
+    try:
+        parsed = float(match.group(1))
+    except ValueError:
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
 def validated_breakdown_shot_duration(value: Any, *, error_code: str) -> float:
-    if isinstance(value, str):
-        try:
-            cleaned = re.sub(r"[^\d.]+", "", value)
-            if cleaned:
-                value = float(cleaned)
-        except (ValueError, TypeError):
-            pass
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(float(value))
-        or not BREAKDOWN_MIN_SHOT_SECONDS <= float(value) <= BREAKDOWN_MAX_SHOT_SECONDS
-    ):
+    parsed = strict_duration_seconds(value)
+    if parsed is None:
         raise DomainRuleError(
             error_code,
-            "镜头时长必须在 1–15 秒之间",
+            "镜头时长必须是 1–15 秒之间的有限数值，可带 s/秒 单位；不接受负数、NaN 或垃圾字符串",
             {
                 "duration_seconds": value,
                 "minimum_duration_seconds": BREAKDOWN_MIN_SHOT_SECONDS,
                 "maximum_duration_seconds": BREAKDOWN_MAX_SHOT_SECONDS,
             },
         )
-    return float(value)
+    if not BREAKDOWN_MIN_SHOT_SECONDS <= parsed <= BREAKDOWN_MAX_SHOT_SECONDS:
+        raise DomainRuleError(
+            error_code,
+            "镜头时长必须在 1–15 秒之间",
+            {
+                "duration_seconds": value,
+                "parsed_duration_seconds": parsed,
+                "minimum_duration_seconds": BREAKDOWN_MIN_SHOT_SECONDS,
+                "maximum_duration_seconds": BREAKDOWN_MAX_SHOT_SECONDS,
+            },
+        )
+    return parsed

@@ -1,10 +1,24 @@
 from __future__ import annotations
 
+import json
 import sqlite3
+from pathlib import Path
 
 from local_drama.infrastructure.database.backup import online_backup
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.model_platform.domain.capabilities import CAPABILITY_DEFINITIONS
+
+_RELEASE_MIGRATION_CONTRACT = Path(__file__).resolve().parents[3] / "docs" / "release" / "migration-contract.json"
+
+
+def _declared_release_heads() -> list[str]:
+    """Read the release head authority instead of hardcoding a revision id.
+
+    A migration added by any later feature would otherwise make this schema test
+    fail for the wrong reason; the contract is the documented single source of
+    truth for the head and is validated against the alembic graph elsewhere.
+    """
+    return list(json.loads(_RELEASE_MIGRATION_CONTRACT.read_text(encoding="utf-8"))["expected_heads"])
 
 
 def test_g2_migration_is_real_wal_schema(database: Database) -> None:
@@ -30,7 +44,9 @@ def test_g2_migration_is_real_wal_schema(database: Database) -> None:
         keyframe_item_columns = {row[1] for row in connection.execute("PRAGMA table_info(shot_keyframe_generation_batch_items)")}
         quick_run_columns = {row[1] for row in connection.execute("PRAGMA table_info(quick_generation_runs)")}
         execution_snapshot_columns = {row[1] for row in connection.execute("PRAGMA table_info(mp_execution_snapshots)")}
-        assert version == "0100_production_session_waiting_user"
+        declared_heads = _declared_release_heads()
+        assert len(declared_heads) == 1, f"a migrated database has exactly one head: {declared_heads}"
+        assert version == declared_heads[0]
         seeded_capability_count = connection.execute("SELECT COUNT(*) FROM mp_capability_definitions").fetchone()[0]
         embedding_definition = connection.execute(
             "SELECT family, background_only FROM mp_capability_definitions WHERE code = 'EMBEDDING_TEXT'"
