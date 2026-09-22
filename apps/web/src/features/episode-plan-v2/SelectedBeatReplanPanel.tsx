@@ -6,6 +6,7 @@ import {
   type BeatReplanAction, type BeatReplanPlan,
 } from "./beatReplanApi";
 import { listScriptBreakdownDrafts } from "../../generated/api";
+import { newCommandId } from "../../services/commandId";
 import { queryKeys } from "../../query/queryKeys";
 import { STATUS_LABELS, optionLabel } from "../shared/optionLabels";
 
@@ -42,7 +43,7 @@ export function SelectedBeatReplanPanel({ projectId, episodeId }: { projectId: s
     return planBeatReplan(episodeId, selectedGroup.id, {
       draft_id: draftId, proposal_scene_no: sceneNo, expected_group_revision: selectedGroup.revision,
     });
-  }, onSuccess: (next) => { setPlan(next); setIdempotencyKey(crypto.randomUUID()); } });
+  }, onSuccess: (next) => { setPlan(next); setIdempotencyKey(newCommandId()); } });
   const apply = useMutation({ mutationFn: async () => {
     if (!plan || !selectedGroup) throw new Error("必须先生成并核对差异预览");
     return applyBeatReplan(episodeId, selectedGroup.id, {

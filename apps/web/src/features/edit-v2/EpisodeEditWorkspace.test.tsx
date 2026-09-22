@@ -11,7 +11,10 @@ vi.mock("../timeline-v2/TimelineExportPanel", () => ({ TimelineExportPanel: () =
 
 const fact = {
   episode_id: "e1", project_id: "p1", episode_code: "EP01", episode_title: "第一集", freshness: "CURRENT", upstream_fingerprint: "a".repeat(64),
-  latest_revision: { id: "tl-1", revision_no: 1, status: "DRAFT", revision_hash: "b".repeat(64), duration_us: 2_000_000, video_count: 2, audio_count: 1, subtitle_revision_id: "sub-1", upstream_fingerprint: "a".repeat(64), created_at: "2026-08-26T00:00:00Z", created_by: "local-user" },
+  // The workspace read contract is expected to report the audio/subtitle
+  // switches that the draft-create command accepts (FE-07); a missing field is
+  // treated as "unknown", never as a silent default.
+  latest_revision: { id: "tl-1", revision_no: 1, status: "DRAFT", revision_hash: "b".repeat(64), duration_us: 2_000_000, video_count: 2, audio_count: 1, subtitle_revision_id: "sub-1", upstream_fingerprint: "a".repeat(64), created_at: "2026-08-26T00:00:00Z", created_by: "local-user", include_dialogue: true, include_music_and_sfx: true, include_source_audio: false, include_subtitles: true },
   history: [], history_has_more: false,
   video_clips: [
     { shot_id: "s1", shot_code: "S001", media_version_id: "v1", source_name: "one.mp4", source_duration_ms: 1000, start_us: 0, end_us: 1_000_000, source_start_us: 0, transition_in: "CUT", continuity_status: "OK" },

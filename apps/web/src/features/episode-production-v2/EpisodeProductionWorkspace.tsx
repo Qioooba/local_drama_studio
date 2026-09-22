@@ -16,6 +16,7 @@ import {
 } from "../../generated/api";
 import { AssetProposalReviewPanel } from "../episode-plan-v2/AssetProposalReviewPanel";
 import { syncEpisodeCharacterPacks } from "../asset-bible-v2/identityPackClient";
+import { newCommandId } from "../../services/commandId";
 import { useEpisodeProductionQueries } from "./useEpisodeProductionQueries";
 import "./episode-production.css";
 
@@ -242,7 +243,7 @@ export function EpisodeProductionWorkspace({ projectId, episodeId }: { projectId
   const keyFor = (identity: string) => {
     const existing = retryKeys.current.get(identity);
     if (existing) return existing;
-    const created = crypto.randomUUID();
+    const created = newCommandId();
     retryKeys.current.set(identity, created);
     return created;
   };

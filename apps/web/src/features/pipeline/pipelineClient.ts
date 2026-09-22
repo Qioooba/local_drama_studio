@@ -42,15 +42,22 @@ export type PipelineDraft = {
   schema_version?: string;
   source?: { document_version_id: string; sha256: string; character_count: number };
   source_coverage?: {
-    schema_version: "pipeline.source-coverage.v1";
+    // v1 is emitted by runs created before bounded windows were introduced; v2
+    // adds the explicit set-difference proof that a FULL status requires.
+    schema_version: "pipeline.source-coverage.v1" | "pipeline.source-coverage.v2";
     source_sha256: string;
     status: "FULL" | "PARTIAL" | "NOT_STARTED";
+    coverage_complete?: boolean;
+    completed_window_count?: number;
+    total_window_count?: number;
     authorized_range: { start_paragraph: number; end_paragraph: number; paragraph_count: number; import_session_id?: string };
     covered_paragraph_count: number;
     authorized_paragraph_count: number;
-    completed_ranges: Array<{ unit_number: number; start_paragraph: number; end_paragraph: number; authorized_character_count: number; submitted_character_count: number; status: "COMPLETED" | "PARTIAL" }>;
-    unprocessed_ranges: Array<{ start_paragraph: number; end_paragraph: number; reason: string; resume_unit_number?: number; resume_character_offset_in_unit?: number; unprocessed_character_count?: number }>;
-    resume?: { start_paragraph: number; end_paragraph: number; reason: string; resume_unit_number?: number; resume_character_offset_in_unit?: number } | null;
+    completed_ranges: Array<{ unit_number: number; window_index?: number; start_paragraph: number; end_paragraph: number; authorized_character_count: number; submitted_character_count: number; input_sha256?: string; status: "COMPLETED" | "PARTIAL" }>;
+    coverage_gaps?: Array<{ start_paragraph: number; end_paragraph: number; reason: string }>;
+    completed_paragraph_intervals?: Array<{ start_paragraph: number; end_paragraph: number }>;
+    unprocessed_ranges: Array<{ start_paragraph: number; end_paragraph: number; reason: string; unit_number?: number; window_index?: number; resume_unit_number?: number; resume_window_index?: number; resume_character_offset_in_unit?: number; unprocessed_character_count?: number; unprocessed_window_count?: number }>;
+    resume?: { start_paragraph: number; end_paragraph: number; reason: string; resume_unit_number?: number; resume_window_index?: number; resume_character_offset_in_unit?: number } | null;
   };
   settings?: { visual_style: string; target_episode_duration_seconds: number; voice_preset: string };
   story_plan?: {
@@ -180,6 +187,18 @@ export type PipelineRun = {
     last_error_code?: string | null;
     last_error_detail?: string | null;
   };
+  /**
+   * Durable server-side analysis cursor. `has_more_windows` is the only
+   * trustworthy signal that the authorised manuscript still has unprocessed
+   * input windows; a PARTIAL coverage status alone cannot be continued blindly.
+   */
+  analysis_cursor?: {
+    schema_version?: "pipeline.analysis-cursor.v1";
+    completed_window_count: number;
+    next_window_index: number;
+    total_window_count: number;
+    has_more_windows: boolean;
+  };
   source_document_version_id?: string | null;
   source_label?: string;
   capability_profile_version_id?: string | null;
@@ -305,6 +324,24 @@ export async function retryPipelineRun(projectId: string, runId: string, expecte
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ expected_revision: expectedRevision }),
+  });
+}
+
+export async function continuePipelineAnalysis(
+  projectId: string,
+  runId: string,
+  expectedRevision: number,
+  expectedSourceSha256: string,
+  expectedNextWindowIndex?: number,
+): Promise<{ run: PipelineRun }> {
+  return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/pipeline/${encodeURIComponent(runId)}:continue-analysis`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      expected_revision: expectedRevision,
+      expected_source_sha256: expectedSourceSha256,
+      expected_next_window_index: expectedNextWindowIndex,
+    }),
   });
 }
 

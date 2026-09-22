@@ -1,6 +1,7 @@
 import { createStoryAssetReference, type AssetBibleItem, type StoryAssetReference } from "./api";
 import type { MultiViewBlocker, MultiViewOutput, MultiViewSettings } from "./multiviewClient";
 import { requestJson as generatedRequestJson } from "../../generated/api";
+import { newCommandId } from "../../services/commandId";
 
 export type DetailKind = "FACE_CLOSEUP" | "COSTUME_DETAIL" | "DISTINCTIVE_DETAIL";
 export type DetailPreflight = {
@@ -19,7 +20,7 @@ async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
   return generatedRequestJson<T>(`/api/v1${path}`, init);
 }
 export const preflightAssetDetail = (assetId: string, settings: MultiViewSettings): Promise<{ preflight: DetailPreflight }> => requestJson(`/story-assets/${encodeURIComponent(assetId)}/generate-detail:preflight`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
-export const submitAssetDetail = (assetId: string, settings: MultiViewSettings, planHash: string) => requestJson(`/story-assets/${encodeURIComponent(assetId)}/generate-detail`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...settings, plan_hash: planHash, idempotency_key: crypto.randomUUID() }) });
+export const submitAssetDetail = (assetId: string, settings: MultiViewSettings, planHash: string) => requestJson(`/story-assets/${encodeURIComponent(assetId)}/generate-detail`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...settings, plan_hash: planHash, idempotency_key: newCommandId() }) });
 export async function getAssetDetailHistory(assetId: string): Promise<DetailBatch[]> {
   const result = await requestJson<{ asset_detail: AssetBibleItem }>(`/story-assets/${encodeURIComponent(assetId)}/detail`, { method: "GET" });
   return result.asset_detail.detail_generations ?? [];

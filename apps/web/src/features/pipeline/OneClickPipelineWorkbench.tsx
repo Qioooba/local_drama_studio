@@ -1,8 +1,9 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { getProjectOverviewV2, uploadScriptDocument } from "../../generated/api";
 import { queryKeys } from "../../query/queryKeys";
+import { draftRegistry, type DraftHandle, type DraftDiscardResult, type DraftSaveResult } from "../drafts/draftRegistry";
 import { CapabilityPicker, effectiveCapabilityProfile, useCapabilityOptions } from "../model-config/CapabilityPicker";
 import { listAdaptationSources, type SourceVersionSummary } from "../story-adaptation/adaptationPlanClient";
 import {
@@ -52,6 +53,152 @@ function errorText(reason: unknown): string {
   return message;
 }
 
+/**
+ * Structural (not `instanceof`) access to the API error contract: the generated
+ * client module is mocked in component tests, and `ApiRequestError` carries the
+ * machine-readable fields the FE-03 alert must show.
+ */
+type ApiFailure = {
+  status: number | null;
+  code: string;
+  message: string;
+  requestId: string | null;
+  retryable: boolean;
+  suggestedAction: string | null;
+};
+
+function asApiFailure(reason: unknown): ApiFailure | null {
+  if (typeof reason !== "object" || reason === null) return null;
+  const candidate = reason as Record<string, unknown>;
+  if (candidate.name !== "ApiRequestError" && typeof candidate.code !== "string") return null;
+  return {
+    status: typeof candidate.status === "number" ? candidate.status : null,
+    code: typeof candidate.code === "string" ? candidate.code : "API_REQUEST_FAILED",
+    message: typeof candidate.message === "string" ? candidate.message : String(reason),
+    requestId: typeof candidate.requestId === "string" ? candidate.requestId : null,
+    retryable: candidate.retryable === true,
+    suggestedAction: typeof candidate.suggestedAction === "string" ? candidate.suggestedAction : null,
+  };
+}
+
+function describeActionError(reason: unknown): ApiFailure {
+  const structured = asApiFailure(reason);
+  if (structured) return structured;
+  const message = String((reason as Error)?.message ?? reason ?? "未知错误");
+  const code = message.includes("PIPELINE_ALREADY_RUNNING")
+    ? "PIPELINE_ALREADY_RUNNING"
+    : message.includes("PIPELINE_REVISION_CONFLICT")
+      ? "PIPELINE_REVISION_CONFLICT"
+      : "PIPELINE_ACTION_FAILED";
+  return { status: null, code, message, requestId: null, retryable: true, suggestedAction: null };
+}
+
+/** Persistent, keyboard/screen-reader reachable failure notice (FE-03). */
+function PipelineActionError({
+  label,
+  failure,
+  onRetry,
+  retrying,
+  retryLabel = "重试",
+  note,
+}: {
+  label: string;
+  failure: ApiFailure;
+  onRetry?: () => void;
+  retrying?: boolean;
+  retryLabel?: string;
+  note?: string | null;
+}) {
+  return (
+    <div className="pipeline-alert error pipeline-action-error" role="alert">
+      <p>
+        <strong>{label}</strong>
+        <span className="pipeline-action-error__code">（{failure.code}）</span>
+        {failure.message}
+        {failure.requestId ? ` · 请求 ID ${failure.requestId}` : ""}
+      </p>
+      {failure.status === 409 ? <p>任务版本已被其他操作更新，已刷新当前修订；请重新确认后再提交。</p> : null}
+      {note ? <p>{note}</p> : null}
+      {failure.suggestedAction ? <small>{failure.suggestedAction}</small> : null}
+      {onRetry ? (
+        <button type="button" className="pipeline-button secondary" disabled={retrying} onClick={onRetry}>
+          {retrying ? "正在重试…" : retryLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------
+ * Manuscript draft persistence (FE-01/FE-02).
+ *
+ * Pasted text and the file/parsed source selection are two independent drafts.
+ * A successful parse must never clear the pasted draft, and an in-flight parse
+ * must never overwrite the source the user selected afterwards.
+ *
+ * The pasted manuscript is not persisted server-side until the user starts AI
+ * production, so the draft is buffered per project in local storage and
+ * registered in the shared draftRegistry, which is what AppShell uses to arm
+ * navigation/tab-close protection. Restoring is explicit in the UI.
+ * ----------------------------------------------------------------------- */
+type ManuscriptDraft = { pasteText: string; activeSource: ActiveSource | null };
+type ManuscriptBaseline = { pasteText: string; activeSource: ActiveSource | null };
+
+const MANUSCRIPT_ENTITY_KEY = "原始文稿";
+const MANUSCRIPT_DRAFT_PREFIX = "local-drama:pipeline-manuscript:v1";
+
+function manuscriptStorageKey(projectId: string): string {
+  return `${MANUSCRIPT_DRAFT_PREFIX}:${projectId}`;
+}
+
+function readManuscriptDraft(projectId: string): ManuscriptDraft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(manuscriptStorageKey(projectId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ManuscriptDraft>;
+    const pasteText = typeof parsed.pasteText === "string" ? parsed.pasteText : "";
+    const source = parsed.activeSource;
+    const activeSource = source && typeof source.versionId === "string"
+      ? {
+        versionId: source.versionId,
+        name: typeof source.name === "string" ? source.name : source.versionId,
+        charCount: typeof source.charCount === "number" ? source.charCount : undefined,
+        paragraphCount: typeof source.paragraphCount === "number" ? source.paragraphCount : undefined,
+      }
+      : null;
+    if (!pasteText && !activeSource) return null;
+    return { pasteText, activeSource };
+  } catch {
+    return null;
+  }
+}
+
+function writeManuscriptDraft(projectId: string, draft: ManuscriptDraft): void {
+  window.localStorage.setItem(manuscriptStorageKey(projectId), JSON.stringify(draft));
+}
+
+function clearManuscriptDraft(projectId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(manuscriptStorageKey(projectId));
+  } catch {
+    /* optional local buffer */
+  }
+}
+
+function sameSource(left: ActiveSource | null, right: ActiveSource | null): boolean {
+  return (left?.versionId ?? null) === (right?.versionId ?? null);
+}
+
+/**
+ * Session-level buffer so an unmount/remount (route key change, project switch
+ * and back) keeps the unsaved manuscript. It is deliberately separate from the
+ * durable local buffer: content that was only typed stays dirty, while content
+ * the user explicitly kept with "保存并切换" becomes the baseline.
+ */
+const manuscriptSessionBuffer = new Map<string, ManuscriptDraft>();
+
 function kindLabel(kind: string): string {
   if (kind === "CHARACTER") return "人物";
   if (kind === "SCENE") return "场景";
@@ -94,12 +241,34 @@ export function OneClickPipelineWorkbench({
   const [selectedProfileId, setSelectedProfileId] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [discardedUploadNotice, setDiscardedUploadNotice] = useState(false);
+  const [restoredDraftNotice, setRestoredDraftNotice] = useState(false);
+  const [manuscriptVersion, setManuscriptVersion] = useState(0);
   const [configuring, setConfiguring] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [applyPreview, setApplyPreview] = useState<PipelineApplyImpact | null>(null);
+  const [applyReconfirmNote, setApplyReconfirmNote] = useState<string | null>(null);
   const [authorizeAutomaticApply, setAuthorizeAutomaticApply] = useState(true);
   const [continueToWaitingReview, setContinueToWaitingReview] = useState(false);
   const [selectedPilotEpisodeIds, setSelectedPilotEpisodeIds] = useState<string[]>([]);
+
+  // FE-01: monotonic request-intent id for every source-changing action. A parse
+  // response is applied only while it still belongs to the current intent.
+  const sourceIntentRef = useRef(0);
+  // Synchronous mirrors so the registry save/discard callbacks freeze the latest
+  // payload without reading stale closures after await.
+  const rawTextRef = useRef(rawText);
+  const activeSourceRef = useRef<ActiveSource | null>(activeSource);
+  const manuscriptVersionRef = useRef(0);
+  const manuscriptHandleRef = useRef<DraftHandle | null>(null);
+  // Baseline = the last durably buffered draft (or "nothing typed yet"). The
+  // source id passed as a prop is server state, not a local draft, so it is not
+  // part of the baseline: only the user's own selection can make this dirty.
+  const manuscriptBaselineRef = useRef<ManuscriptBaseline>({ pasteText: "", activeSource: null });
+  const saveManuscriptRef = useRef<(expectedVersion: number) => Promise<DraftSaveResult>>(async () => ({ status: "blocked", reason: "草稿尚未就绪。" }));
+  const discardManuscriptRef = useRef<(expectedVersion: number) => Promise<DraftDiscardResult>>(async () => ({ status: "blocked", reason: "草稿尚未就绪。" }));
+  rawTextRef.current = rawText;
+  activeSourceRef.current = activeSource;
 
   const capabilityOptions = useCapabilityOptions("LLM_STORY_PARSE", { projectId });
   const resolvedCapability = effectiveCapabilityProfile(capabilityOptions, selectedProfileId);
@@ -143,12 +312,143 @@ export function OneClickPipelineWorkbench({
   const latestRun = latestQuery.data?.run ?? null;
   const run = selectedRunId ? selectedRunQuery.data?.run ?? null : latestRun;
   const loadingSelectedRun = Boolean(selectedRunId) && selectedRunQuery.isPending;
-  const showConfig = configuring || (!latestQuery.isPending && !loadingSelectedRun && !run);
+  const loadingLatestRun = !selectedRunId && latestQuery.isPending;
+  // FE-04: a failed read is its own state. It must never render the
+  // brand-new-project form, and previously known data must stay visible with an
+  // explicit stale marker instead of disappearing.
+  const readFailure = selectedRunId
+    ? (selectedRunQuery.isError ? selectedRunQuery.error : null)
+    : (latestQuery.isError ? latestQuery.error : null);
+  const readFailed = Boolean(readFailure) && !run;
+  const showConfig = configuring || (!loadingLatestRun && !loadingSelectedRun && !run && !readFailed);
+  const staleRead = Boolean(readFailure) && Boolean(run);
 
   useEffect(() => {
     if (!latestRun || latestRun.state === "RUNNING") return;
     void queryClient.invalidateQueries({ queryKey: historyKey });
   }, [latestRun?.revision, latestRun?.state, projectId, queryClient]);
+
+  /* ------------------------------------------------------------------------
+   * FE-02: manuscript draft registration (project + source keyed).
+   * --------------------------------------------------------------------- */
+  const manuscriptDirty = useCallback((pasteText: string, source: ActiveSource | null): boolean => {
+    const baseline = manuscriptBaselineRef.current;
+    return pasteText !== baseline.pasteText || !sameSource(source, baseline.activeSource);
+  }, []);
+
+  const publishManuscript = useCallback((version: number, dirty: boolean) => {
+    const handle = manuscriptHandleRef.current;
+    if (!handle) return;
+    draftRegistry.update(handle, { version, dirty, entityKey: MANUSCRIPT_ENTITY_KEY });
+  }, []);
+
+  const commitManuscriptVersion = useCallback((nextRawText: string, nextSource: ActiveSource | null) => {
+    const nextVersion = manuscriptVersionRef.current + 1;
+    manuscriptVersionRef.current = nextVersion;
+    setManuscriptVersion(nextVersion);
+    // Publish synchronously with the input event, not from an effect.
+    publishManuscript(nextVersion, manuscriptDirty(nextRawText, nextSource));
+  }, [manuscriptDirty, publishManuscript]);
+
+  const changeRawText = useCallback((value: string) => {
+    rawTextRef.current = value;
+    setRawText(value);
+    setRestoredDraftNotice(false);
+    manuscriptSessionBuffer.set(projectId, { pasteText: value, activeSource: activeSourceRef.current });
+    commitManuscriptVersion(value, activeSourceRef.current);
+  }, [commitManuscriptVersion, projectId]);
+
+  const changeActiveSource = useCallback((next: ActiveSource | null) => {
+    activeSourceRef.current = next;
+    setActiveSource(next);
+    manuscriptSessionBuffer.set(projectId, { pasteText: rawTextRef.current, activeSource: next });
+    commitManuscriptVersion(rawTextRef.current, next);
+  }, [commitManuscriptVersion, projectId]);
+
+  const saveManuscriptDraft = useCallback(async (expectedVersion: number): Promise<DraftSaveResult> => {
+    if (manuscriptVersionRef.current !== expectedVersion) {
+      return { status: "blocked", reason: `“${MANUSCRIPT_ENTITY_KEY}”产生了新修改，请重新确认。` };
+    }
+    const payload: ManuscriptDraft = { pasteText: rawTextRef.current, activeSource: activeSourceRef.current };
+    try {
+      writeManuscriptDraft(projectId, payload);
+    } catch (error) {
+      return {
+        status: "blocked",
+        reason: `本机草稿缓冲不可用，无法保存“${MANUSCRIPT_ENTITY_KEY}”：${error instanceof Error ? error.message : String(error)}。请留在页面内继续编辑。`,
+      };
+    }
+    manuscriptBaselineRef.current = { pasteText: payload.pasteText, activeSource: payload.activeSource };
+    manuscriptSessionBuffer.set(projectId, { pasteText: payload.pasteText, activeSource: payload.activeSource });
+    if (manuscriptVersionRef.current === expectedVersion) publishManuscript(expectedVersion, false);
+    return { status: "saved", savedVersion: expectedVersion };
+  }, [projectId, publishManuscript]);
+
+  const discardManuscriptDraft = useCallback(async (expectedVersion: number): Promise<DraftDiscardResult> => {
+    if (manuscriptVersionRef.current !== expectedVersion) {
+      return { status: "blocked", reason: `“${MANUSCRIPT_ENTITY_KEY}”产生了新修改，请重新确认。` };
+    }
+    const baseline = manuscriptBaselineRef.current;
+    rawTextRef.current = baseline.pasteText;
+    activeSourceRef.current = baseline.activeSource;
+    setRawText(baseline.pasteText);
+    setActiveSource(baseline.activeSource);
+    manuscriptSessionBuffer.set(projectId, { pasteText: baseline.pasteText, activeSource: baseline.activeSource });
+    setRestoredDraftNotice(false);
+    publishManuscript(expectedVersion, false);
+    return { status: "discarded", discardedVersion: expectedVersion };
+  }, [projectId, publishManuscript]);
+
+  saveManuscriptRef.current = saveManuscriptDraft;
+  discardManuscriptRef.current = discardManuscriptDraft;
+
+  // Restore the unsaved session draft first, then the durable local buffer.
+  // The baseline is only the durable buffer, so a draft that was merely typed
+  // (or restored after an unmount) stays dirty and keeps navigation protection.
+  useEffect(() => {
+    const persisted = readManuscriptDraft(projectId);
+    const buffered = manuscriptSessionBuffer.get(projectId) ?? null;
+    const restored = buffered ?? persisted;
+    manuscriptBaselineRef.current = persisted
+      ? { pasteText: persisted.pasteText, activeSource: persisted.activeSource }
+      : { pasteText: "", activeSource: null };
+    if (!restored) return;
+    rawTextRef.current = restored.pasteText;
+    activeSourceRef.current = restored.activeSource;
+    setRawText(restored.pasteText);
+    setActiveSource(restored.activeSource);
+    setRestoredDraftNotice(Boolean(restored.pasteText));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  useEffect(() => {
+    const handle = draftRegistry.register({
+      ownerId: `one-click-pipeline:${projectId}`,
+      entityKey: MANUSCRIPT_ENTITY_KEY,
+      version: manuscriptVersionRef.current,
+      dirty: manuscriptDirty(rawTextRef.current, activeSourceRef.current),
+      save: (expectedVersion: number) => saveManuscriptRef.current(expectedVersion),
+      discard: (expectedVersion: number) => discardManuscriptRef.current(expectedVersion),
+    });
+    manuscriptHandleRef.current = handle;
+    // Re-publish the real dirty state right after (re)registration: the restore
+    // effect above may have populated a local draft on this same commit.
+    publishManuscript(
+      manuscriptVersionRef.current,
+      manuscriptDirty(rawTextRef.current, activeSourceRef.current),
+    );
+    return () => {
+      const live = manuscriptHandleRef.current;
+      if (live && live.token === handle.token) {
+        draftRegistry.unregister(handle);
+        manuscriptHandleRef.current = null;
+      }
+    };
+  }, [manuscriptDirty, projectId, publishManuscript]);
+
+  useEffect(() => {
+    publishManuscript(manuscriptVersion, manuscriptDirty(rawTextRef.current, activeSourceRef.current));
+  }, [manuscriptDirty, manuscriptVersion, publishManuscript]);
 
   const sourcePayload = useMemo(() => {
     const sourceId = activeSource?.versionId || sourceDocumentVersionId;
@@ -188,6 +488,16 @@ export function OneClickPipelineWorkbench({
       setSelectedRunId(null);
       setConfiguring(false);
       void queryClient.invalidateQueries({ queryKey: historyKey });
+      // The manuscript has been submitted: the local buffer is no longer an
+      // unsaved draft, but an unsuccessful launch must keep it.
+      clearManuscriptDraft(projectId);
+      manuscriptSessionBuffer.delete(projectId);
+      manuscriptBaselineRef.current = {
+        pasteText: rawTextRef.current,
+        activeSource: activeSourceRef.current,
+      };
+      setRestoredDraftNotice(false);
+      publishManuscript(manuscriptVersionRef.current, false);
     },
   });
   const cancelMutation = useMutation({
@@ -217,10 +527,23 @@ export function OneClickPipelineWorkbench({
       if (!run) throw new Error("没有可写入的 AI 分析结果");
       return applyPipelineRun(projectId, run.run_id, run.revision, PIPELINE_SECTIONS, impact.impact_sha256);
     },
+    // FE-03: on a revision conflict the stale impact hash must not be re-used;
+    // refresh the run and require a fresh confirmation of the new impact.
+    onError: (error) => {
+      const failure = describeActionError(error);
+      if (failure.status !== 409) return;
+      setApplyPreview(null);
+      setApplyReconfirmNote("任务修订已刷新：请重新查看应用影响，确认新修订的影响后再提交。");
+      void queryClient.invalidateQueries({ queryKey: latestKey });
+      if (selectedRunId) {
+        void queryClient.invalidateQueries({ queryKey: ["one-click-pipeline", projectId, "run", selectedRunId] });
+      }
+    },
     onSuccess: ({ run: nextRun }) => {
       queryClient.setQueryData(latestKey, { run: nextRun });
       setSelectedRunId(null);
       setApplyPreview(null);
+      setApplyReconfirmNote(null);
       void queryClient.invalidateQueries({ queryKey: historyKey });
       void queryClient.invalidateQueries({ queryKey: ["story-assets", projectId] });
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.overview(projectId) });
@@ -242,6 +565,7 @@ export function OneClickPipelineWorkbench({
     },
     onSuccess: (result) => {
       setApplyPreview(result.impact);
+      setApplyReconfirmNote(null);
     },
   });
 
@@ -267,11 +591,24 @@ export function OneClickPipelineWorkbench({
     },
   });
 
+  /** FE-01: any source-changing action invalidates in-flight parse responses. */
+  const beginSourceIntent = () => {
+    sourceIntentRef.current += 1;
+    return sourceIntentRef.current;
+  };
+
   const selectMode = (mode: SourceMode) => {
+    if (mode === sourceMode) return;
+    const intent = beginSourceIntent();
     setSourceMode(mode);
     setUploadError(null);
+    // The in-flight parse no longer owns this workspace; it is ignored, not
+    // applied, and the pasted/file drafts stay exactly as the user left them.
+    setDiscardedUploadNotice(intent > 1 && isUploading);
+    setIsUploading(false);
     launchMutation.reset();
   };
+
   const uploadFile = async (file?: File) => {
     if (!file) return;
     if (!/\.(txt|md|markdown|docx|pdf|epub)$/i.test(file.name)) {
@@ -282,23 +619,38 @@ export function OneClickPipelineWorkbench({
       setUploadError("文件超过 25 MB，请拆分后上传。");
       return;
     }
+    const intent = beginSourceIntent();
     setIsUploading(true);
     setUploadError(null);
+    setDiscardedUploadNotice(false);
     try {
       const result = await uploadScriptDocument(projectId, file);
-      setActiveSource({
+      // A stale response must never change the current source nor clear the
+      // pasted manuscript the user typed while this upload was running.
+      if (sourceIntentRef.current !== intent) {
+        setDiscardedUploadNotice(true);
+        return;
+      }
+      changeActiveSource({
         versionId: result.import.source_document_version_id,
         name: file.name,
         charCount: Number(result.import.preview?.character_count ?? 0),
         paragraphCount: Number(result.import.preview?.paragraph_count ?? 0),
       });
-      setRawText("");
       launchMutation.reset();
     } catch (reason) {
+      if (sourceIntentRef.current !== intent) return;
       setUploadError(`上传或解析失败：${errorText(reason)}`);
     } finally {
-      setIsUploading(false);
+      if (sourceIntentRef.current === intent) setIsUploading(false);
     }
+  };
+
+  const clearActiveSource = () => {
+    beginSourceIntent();
+    setIsUploading(false);
+    changeActiveSource(null);
+    launchMutation.reset();
   };
 
   const stageSteps = [
@@ -340,6 +692,13 @@ export function OneClickPipelineWorkbench({
         )}
       </header>
 
+      {historyQuery.isError && !historyQuery.data && (
+        <p className="pipeline-alert error" role="alert">
+          历史分析列表读取失败：{errorText(historyQuery.error)} 这不表示项目没有历史分析。
+          <button type="button" className="pipeline-button quiet" onClick={() => { void historyQuery.refetch(); }}>重新读取</button>
+        </p>
+      )}
+
       {(historyQuery.data?.runs.length ?? 0) > 0 && (
         <details className="pipeline-history">
           <summary>历史分析（{historyQuery.data!.runs.length}）</summary>
@@ -359,8 +718,37 @@ export function OneClickPipelineWorkbench({
         </details>
       )}
 
-      {loadingSelectedRun ? (
-        <div className="pipeline-state-card" aria-live="polite"><span>正在读取</span><h4>加载历史分析…</h4></div>
+      {staleRead && (
+        <div className="pipeline-alert warning" role="alert">
+          <p>读取最新任务状态失败：{errorText(readFailure)} 以下内容来自最近一次成功读取，可能已经过期。</p>
+          <button
+            type="button"
+            className="pipeline-button secondary"
+            onClick={() => { void (selectedRunId ? selectedRunQuery.refetch() : latestQuery.refetch()); }}
+          >
+            重新读取
+          </button>
+        </div>
+      )}
+
+      {(loadingSelectedRun || loadingLatestRun) ? (
+        <div className="pipeline-state-card" aria-live="polite"><span>正在读取</span><h4>{loadingSelectedRun ? "加载历史分析…" : "正在读取当前项目的一键制作状态…"}</h4></div>
+      ) : readFailed && !configuring ? (
+        <div className="pipeline-state-card error-state" role="alert">
+          <span>读取失败</span>
+          <h4>无法确认当前项目是否已有 AI 制作任务</h4>
+          <p>读取请求失败：{errorText(readFailure)} 这不表示项目还没有任务，请重试读取后再决定是否新建。</p>
+          <div className="pipeline-card-actions">
+            <button
+              type="button"
+              className="pipeline-button primary"
+              onClick={() => { void (selectedRunId ? selectedRunQuery.refetch() : latestQuery.refetch()); }}
+            >
+              重新读取
+            </button>
+            <button type="button" className="pipeline-button secondary" onClick={() => setConfiguring(true)}>仍要新建分析</button>
+          </div>
+        </div>
       ) : showConfig ? (
         <div className="story-config-main pipeline-simple-config">
           <div className="pipeline-section-heading"><span>1</span><div><strong>提供完整原稿</strong><small>AI 自动识别章节与正文范围</small></div></div>
@@ -375,7 +763,7 @@ export function OneClickPipelineWorkbench({
           {sourceMode === "upload" && (activeSource ? (
             <div className="selected-source-card">
               <div><strong>{activeSource.name}</strong><small>{activeSource.charCount || 0} 字符 · {activeSource.paragraphCount || 0} 段</small></div>
-              <button type="button" className="pipeline-button quiet" onClick={() => { setActiveSource(null); launchMutation.reset(); }}>更换</button>
+              <button type="button" className="pipeline-button quiet" onClick={clearActiveSource}>更换</button>
             </div>
           ) : (
             <label className="source-dropzone" htmlFor={fileInputId}>
@@ -384,6 +772,8 @@ export function OneClickPipelineWorkbench({
               <span>TXT、Markdown、DOCX、PDF、EPUB，最大 25 MB</span>
             </label>
           ))}
+          {isUploading ? <p className="pipeline-alert" role="status">正在解析上传的文档；期间可以切换到“粘贴正文”，解析结果只会应用到仍然有效的来源选择。</p> : null}
+          {discardedUploadNotice && !isUploading ? <p className="pipeline-alert warning" role="status">已切换来源：之前那次文档解析的结果不会再覆盖当前的原稿草稿。</p> : null}
           {sourceMode === "existing" && (
             <label className="pipeline-field">
               <span>项目原稿</span>
@@ -391,7 +781,7 @@ export function OneClickPipelineWorkbench({
                 value={activeSource?.versionId || sourceDocumentVersionId || ""}
                 onChange={(event) => {
                   const item = sourcesQuery.data?.items.find((source: SourceVersionSummary) => source.source_document_version_id === event.target.value);
-                  setActiveSource(item ? {
+                  changeActiveSource(item ? {
                     versionId: item.source_document_version_id,
                     name: item.source_name || item.title,
                     charCount: item.character_count,
@@ -405,15 +795,24 @@ export function OneClickPipelineWorkbench({
                   <option key={source.source_document_version_id} value={source.source_document_version_id}>{source.source_name || source.title}（{source.character_count} 字）</option>
                 ))}
               </select>
+              {sourcesQuery.isError ? (
+                <small className="inline-error" role="alert">
+                  项目原稿列表读取失败：{errorText(sourcesQuery.error)} 这不表示项目没有原稿。
+                  <button type="button" className="pipeline-button quiet" onClick={() => { void sourcesQuery.refetch(); }}>重新读取</button>
+                </small>
+              ) : sourcesQuery.data && sourcesQuery.data.items.length === 0 ? (
+                <small>当前项目还没有已解析的原稿版本，请先用“上传文档”导入。</small>
+              ) : null}
             </label>
           )}
           {sourceMode === "paste" && (
             <label className="pipeline-field">
               <span>正文内容</span>
-              <textarea rows={7} value={rawText} placeholder="粘贴小说正文或剧本内容" onChange={(event) => { setRawText(event.target.value); setActiveSource(null); launchMutation.reset(); }} />
+              <textarea rows={7} value={rawText} placeholder="粘贴小说正文或剧本内容" onChange={(event) => { changeRawText(event.target.value); launchMutation.reset(); }} />
               <small className={rawText.trim().length > 0 && rawText.trim().length < 20 ? "field-warning" : ""}>{rawText.trim().length.toLocaleString()} 字符</small>
             </label>
           )}
+          {restoredDraftNotice ? <p className="pipeline-alert" role="status">已恢复尚未提交的原稿草稿；它不会自动上传给 AI，“保存并切换”会把草稿留在本机以便再次打开。</p> : null}
           {uploadError && <p className="pipeline-alert error" role="alert">{uploadError}</p>}
 
           <div className="pipeline-section-heading"><span>2</span><div><strong>选择成片方向</strong><small>其余参数由项目默认值和模型能力自动决定</small></div></div>
@@ -450,7 +849,16 @@ export function OneClickPipelineWorkbench({
             </button>
             <small>{continueToWaitingReview ? "关页后会继续到整部集中待审。" : authorizeAutomaticApply ? "关页后后台仍会按上面的明确范围续接。" : "完成后停在草案，不会自动写入项目。"}</small>
           </div>
-          {launchMutation.isError && <p className="pipeline-alert error" role="alert">{errorText(launchMutation.error)}</p>}
+          {launchMutation.isError && (
+            <PipelineActionError
+              label="启动 AI 制作失败"
+              failure={describeActionError(launchMutation.error)}
+              retryLabel="重新检查并启动"
+              retrying={launchMutation.isPending}
+              onRetry={() => launchMutation.mutate()}
+              note="当前原稿、来源选择与参数均保留。"
+            />
+          )}
           {launchMutation.isError && <Link className="pipeline-text-link" to="/system/capabilities?view=resources">检查 AI 模型配置</Link>}
         </div>
       ) : run?.state === "RUNNING" ? (
@@ -464,7 +872,25 @@ export function OneClickPipelineWorkbench({
           {cancelMutation.isError && <p className="pipeline-alert error">{errorText(cancelMutation.error)}</p>}
         </div>
       ) : run?.state === "FAILED" ? (
-        <div className="pipeline-state-card error-state"><span>自动处理失败</span><h4>项目数据没有被覆盖</h4><p>{run.error_message || "可直接重试，已完成内容会尽量复用。"}</p><div className="pipeline-card-actions"><button type="button" className="pipeline-button primary" disabled={retryMutation.isPending} onClick={() => retryMutation.mutate()}>自动重试</button><button type="button" className="pipeline-button secondary" onClick={() => setConfiguring(true)}>更换原稿</button></div></div>
+        <div className="pipeline-state-card error-state">
+          <span>自动处理失败</span><h4>项目数据没有被覆盖</h4><p>{run.error_message || "可直接重试，已完成内容会尽量复用。"}</p>
+          <div className="pipeline-card-actions"><button type="button" className="pipeline-button primary" disabled={retryMutation.isPending} onClick={() => retryMutation.mutate()}>自动重试</button><button type="button" className="pipeline-button secondary" onClick={() => setConfiguring(true)}>更换原稿</button></div>
+          {retryMutation.isError && (
+            <PipelineActionError
+              label="自动重试失败"
+              failure={describeActionError(retryMutation.error)}
+              retryLabel="用最新修订再次重试"
+              retrying={retryMutation.isPending}
+              onRetry={() => {
+                void queryClient.invalidateQueries({ queryKey: latestKey });
+                if (selectedRunId) {
+                  void queryClient.invalidateQueries({ queryKey: ["one-click-pipeline", projectId, "run", selectedRunId] });
+                }
+                retryMutation.mutate();
+              }}
+            />
+          )}
+        </div>
       ) : run?.state === "CANCELLED" ? (
         <div className="pipeline-state-card"><span>任务已取消</span><h4>没有修改正式项目</h4><button type="button" className="pipeline-button primary" onClick={() => setConfiguring(true)}>重新开始</button></div>
       ) : run?.state === "SUCCEEDED" ? (
@@ -601,17 +1027,50 @@ export function OneClickPipelineWorkbench({
           ) : continuationPending ? (
             <div className="pipeline-state-card"><span>后台续接</span><h4>已按本次授权等待应用；可以安全关页</h4></div>
           ) : (
-            <div className="pipeline-next-actions">
-              {applyPreview ? (
-                <>
-                  <button type="button" className="pipeline-button primary" disabled={applyMutation.isPending || (run.quality_report.blockers?.length ?? 0) > 0} onClick={() => applyMutation.mutate(applyPreview)}>{applyMutation.isPending ? "正在继续…" : "确认以上影响并进入分集制作"}</button>
-                  <button type="button" className="pipeline-button secondary" onClick={() => setApplyPreview(null)}>取消预览</button>
-                </>
-              ) : (
-                <button type="button" className="pipeline-button primary" disabled={previewApplyMutation.isPending || (run.quality_report.blockers?.length ?? 0) > 0} onClick={() => previewApplyMutation.mutate()}>{previewApplyMutation.isPending ? "正在检查影响…" : "查看应用影响"}</button>
+            <>
+              <div className="pipeline-next-actions">
+                {applyPreview ? (
+                  <>
+                    <button type="button" className="pipeline-button primary" disabled={applyMutation.isPending || (run.quality_report.blockers?.length ?? 0) > 0} onClick={() => applyMutation.mutate(applyPreview)}>{applyMutation.isPending ? "正在继续…" : "确认以上影响并进入分集制作"}</button>
+                    <button type="button" className="pipeline-button secondary" onClick={() => setApplyPreview(null)}>取消预览</button>
+                  </>
+                ) : (
+                  <button type="button" className="pipeline-button primary" disabled={previewApplyMutation.isPending || (run.quality_report.blockers?.length ?? 0) > 0} onClick={() => { setApplyReconfirmNote(null); previewApplyMutation.mutate(); }}>{previewApplyMutation.isPending ? "正在检查影响…" : applyReconfirmNote ? "重新查看应用影响" : "查看应用影响"}</button>
+                )}
+                <button type="button" className="pipeline-button secondary" onClick={() => setConfiguring(true)}>重新分析</button>
+              </div>
+              {applyReconfirmNote ? <p className="pipeline-alert warning" role="status">{applyReconfirmNote}</p> : null}
+              {previewApplyMutation.isError && (
+                <PipelineActionError
+                  label="影响预览失败"
+                  failure={describeActionError(previewApplyMutation.error)}
+                  retryLabel="重新预览影响"
+                  retrying={previewApplyMutation.isPending}
+                  onRetry={() => previewApplyMutation.mutate()}
+                  note="当前选择与草案内容均已保留，不会因为预览失败而重写任务。"
+                />
               )}
-              <button type="button" className="pipeline-button secondary" onClick={() => setConfiguring(true)}>重新分析</button>
-            </div>
+              {applyMutation.isError && (
+                <PipelineActionError
+                  label="应用失败"
+                  failure={describeActionError(applyMutation.error)}
+                  retryLabel="刷新修订并重新预览"
+                  retrying={previewApplyMutation.isPending}
+                  onRetry={async () => {
+                    setApplyPreview(null);
+                    await queryClient.invalidateQueries({ queryKey: latestKey });
+                    if (selectedRunId) {
+                      await queryClient.invalidateQueries({ queryKey: ["one-click-pipeline", projectId, "run", selectedRunId] });
+                    }
+                    setApplyReconfirmNote("已刷新任务修订：请重新查看应用影响并再次确认。");
+                    // Re-preview with the refreshed revision so the impact hash
+                    // shown to the user belongs to the current run revision.
+                    previewApplyMutation.mutate();
+                  }}
+                  note="没有重复提交：上次应用的结果状态未知，请先重新预览确认影响哈希。"
+                />
+              )}
+            </>
           )}
         </div>
       ) : run ? (

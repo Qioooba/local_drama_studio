@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listQcEpisodes, listQcPolicies, listQcSeasons, listQcShots, putQcPolicy, QcPolicyApiError, resolveQcPolicy } from "./api";
+import { useCascadeScope } from "./cascadeScope";
 import type { QcCategory, QcOwnerType, QcPolicy, QcStage } from "./types";
 import "./qc-policy.css";
 
@@ -22,9 +23,8 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 
 export function QcPolicyManager({ projectId, initialEpisodeId = "", initialShotId = "" }: { projectId: string; initialEpisodeId?: string; initialShotId?: string }) {
   const cache = useQueryClient();
-  const [seasonId, setSeasonId] = useState("");
-  const [episodeId, setEpisodeId] = useState(initialEpisodeId);
-  const [shotId, setShotId] = useState(initialShotId);
+  const scope = useCascadeScope(initialEpisodeId, initialShotId);
+  const { seasonId, episodeId, shotId } = scope;
   const [ownerType, setOwnerType] = useState<QcOwnerType>(initialShotId ? "SHOT" : initialEpisodeId ? "EPISODE" : "PROJECT");
   const [stage, setStage] = useState<QcStage>("VIDEO");
   const [thresholds, setThresholds] = useState<Partial<Record<QcCategory, number>>>({ IDENTITY: .85, CONTINUITY: .8 });
@@ -40,10 +40,15 @@ export function QcPolicyManager({ projectId, initialEpisodeId = "", initialShotI
   const policies = useQuery({ queryKey: ["qc-policy", "items", projectId], queryFn: () => listQcPolicies(projectId), enabled: Boolean(projectId) });
   const resolution = useQuery({ queryKey: ["qc-policy", "resolution", projectId, stage, episodeId, shotId], queryFn: () => resolveQcPolicy(projectId, stage, episodeId || undefined, shotId || undefined), enabled: Boolean(projectId) });
 
-  useEffect(() => { if (!seasonId && seasons.data?.[0]) setSeasonId(seasons.data[0].id); }, [seasonId, seasons.data]);
-  useEffect(() => { if (!episodeId && episodes.data?.[0]) setEpisodeId(episodes.data[0].id); }, [episodeId, episodes.data]);
-  useEffect(() => { if (!shotId && shots.data?.[0]) setShotId(shots.data[0].id); }, [shotId, shots.data]);
+  useEffect(() => { scope.setSeasons(seasons.data); }, [scope.setSeasons, seasons.data]);
+  useEffect(() => { scope.setEpisodes(episodes.data); }, [scope.setEpisodes, episodes.data]);
+  useEffect(() => { scope.setShots(shots.data); }, [scope.setShots, shots.data]);
   const ownerId = ownerType === "PROJECT" ? projectId : ownerType === "EPISODE" ? episodeId : shotId;
+  // Clearing a scope level must not leave the write target pointing at a level that no longer exists.
+  useEffect(() => {
+    if (ownerType === "SHOT" && !shotId) setOwnerType(episodeId ? "EPISODE" : "PROJECT");
+    else if (ownerType === "EPISODE" && !episodeId) setOwnerType("PROJECT");
+  }, [episodeId, ownerType, shotId]);
   const current = useMemo(() => findPolicy(policies.data ?? [], ownerType, ownerId, stage), [ownerId, ownerType, policies.data, stage]);
   const currentKey = current ? `${current.policy_version_id}:${current.revision}` : `new:${ownerType}:${ownerId}:${stage}`;
   const loadEditor = (source: QcPolicy | undefined, nextNotice: string | null = null) => {
@@ -87,7 +92,8 @@ export function QcPolicyManager({ projectId, initialEpisodeId = "", initialShotI
 
   return <div className="qc-policy-manager">
     <section className="panel qc-context" aria-labelledby="qc-context-title"><div className="panel-heading"><div><p className="eyebrow">质量策略</p><h3 id="qc-context-title">生产范围与继承解析</h3></div><span className="status-pill neutral">项目 → 分集 → 镜头</span></div>
-      <div className="qc-context-grid"><label>季度<select value={seasonId} onChange={(e) => { setSeasonId(e.target.value); setEpisodeId(""); setShotId(""); }}><option value="">选择季度</option>{seasons.data?.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.title}</option>)}</select></label><label>分集<select value={episodeId} onChange={(e) => { setEpisodeId(e.target.value); setShotId(""); }}><option value="">仅项目级</option>{episodes.data?.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.title}</option>)}</select></label><label>镜头<select value={shotId} onChange={(e) => setShotId(e.target.value)}><option value="">仅分集级</option>{shots.data?.map((item) => <option key={item.id} value={item.id}>{item.code}</option>)}</select></label></div>
+      <div className="qc-context-grid"><label>季度<select aria-label="查看季度" value={seasonId} onChange={(e) => scope.chooseSeason(e.target.value)}><option value="">选择季度</option>{seasons.data?.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.title}</option>)}</select></label><label>分集<select aria-label="查看分集" value={episodeId} onChange={(e) => scope.chooseEpisode(e.target.value)} disabled={!seasonId} title={!seasonId ? "请先选择季度" : undefined}><option value="">仅项目级（不选择分集）</option>{episodes.data?.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.title}</option>)}</select></label><label>镜头<select aria-label="查看镜头" value={shotId} onChange={(e) => scope.chooseShot(e.target.value)} disabled={!episodeId} title={!episodeId ? "请先选择分集" : undefined}><option value="">仅分集级（不选择镜头）</option>{shots.data?.map((item) => <option key={item.id} value={item.id}>{item.code}</option>)}</select></label></div>
+      <p className="muted qc-scope-summary">当前查看范围：{OWNER_LABEL[resolution.data?.source ?? "PROJECT"]}{episodeId ? ` · 分集 ${episodes.data?.find((item) => item.id === episodeId)?.code ?? episodeId}` : " · 不含分集上下文"}{shotId ? ` · 镜头 ${shots.data?.find((item) => item.id === shotId)?.code ?? shotId}` : ""}。写入层级另由下方“写入层级”决定，两者可以不同。</p>
       <div className="qc-stage-tabs" role="tablist" aria-label="自动质检阶段">{STAGES.map(([id, label]) => <button type="button" role="tab" aria-selected={stage === id} className={stage === id ? "selected" : ""} key={id} onClick={() => setStage(id)}>{label}</button>)}</div>
     </section>
     <div className="qc-workspace">

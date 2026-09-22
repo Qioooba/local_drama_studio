@@ -1,4 +1,5 @@
 import { requestJson } from "../../generated/api";
+import { newCommandId } from "../../services/commandId";
 
 export type VisualLabNodeKind = "TEXT_REF" | "STORY_ASSET_REF" | "MEDIA_REF" | "SHOT_REF" | "GENERATION_INTENT" | "TRANSFORM_INTENT" | "COMPARE_SET" | "SEQUENCE_PREVIEW" | "OUTPUT_DRAFT" | "NOTE" | "FRAME";
 export type VisualLabPortMap = { inputs?: Record<string, string>; outputs?: Record<string, string> };
@@ -29,6 +30,6 @@ export const restoreVisualLabSnapshot = async (snapshotId: string) => {
   return requestJson<{ restored: true; snapshot_id: string; graph: VisualLabGraph }>(`/api/v1/visual-lab-snapshots/${encodeURIComponent(snapshotId)}:restore`, { method: "POST", ...json({ plan_hash: plan.plan_hash }) });
 };
 export const preflightVisualLabRun = (nodeId: string) => requestJson<{ plan: { status: string; plan_hash: string; blockers: Array<{ code: string; message: string }> } }>(`/api/v1/visual-lab-nodes/${encodeURIComponent(nodeId)}/runs:preflight`, { method: "POST" });
-export const runVisualLabNode = (nodeId: string, planHash: string) => requestJson<Record<string, unknown>>(`/api/v1/visual-lab-nodes/${encodeURIComponent(nodeId)}/runs`, { method: "POST", ...json({ plan_hash: planHash, idempotency_key: crypto.randomUUID() }) });
+export const runVisualLabNode = (nodeId: string, planHash: string) => requestJson<Record<string, unknown>>(`/api/v1/visual-lab-nodes/${encodeURIComponent(nodeId)}/runs`, { method: "POST", ...json({ plan_hash: planHash, idempotency_key: newCommandId() }) });
 export const preflightVisualLabPromotion = (nodeId: string, sourceMediaVersionId: string, targetId: string) => requestJson<{ plan: { status: string; plan_hash: string; blockers: Array<{ code: string; message: string }> } }>(`/api/v1/visual-lab-nodes/${encodeURIComponent(nodeId)}/promotions:preflight`, { method: "POST", ...json({ source_media_version_id: sourceMediaVersionId, target_type: "SHOT_CANDIDATE", target_id: targetId }) });
 export const promoteVisualLabCandidate = (nodeId: string, sourceMediaVersionId: string, targetId: string, planHash: string) => requestJson<{ promotion: { id: string; target_shot_id: string; approved: false } }>(`/api/v1/visual-lab-nodes/${encodeURIComponent(nodeId)}/promotions`, { method: "POST", ...json({ source_media_version_id: sourceMediaVersionId, target_type: "SHOT_CANDIDATE", target_id: targetId, plan_hash: planHash }) });

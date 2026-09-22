@@ -1,4 +1,5 @@
 import {
+  ApiRequestError,
   requestJson,
   type ProductionSession as GeneratedProductionSession,
   type ProductionSessionChoice as GeneratedProductionSessionChoice,
@@ -24,16 +25,55 @@ export async function planProductionSession(projectId: string, payload: PlanComm
   });
 }
 
-export async function createProductionSession(projectId: string, payload: PlanCommand & { expected_plan_hash: string }) {
+export async function createProductionSession(projectId: string, payload: PlanCommand & { expected_plan_hash: string }, idempotencyKey?: string) {
   return requestJson<{ session: ProductionSession }>(`/api/v2/projects/${encodeURIComponent(projectId)}/production-sessions`, {
-    method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey("create-production") }, body: JSON.stringify(payload),
+    method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey ?? commandKey("create-production") }, body: JSON.stringify(payload),
   });
 }
 
-export async function startProductionSession(session: ProductionSession) {
+export async function startProductionSession(session: ProductionSession, idempotencyKey?: string) {
   return requestJson<{ session: ProductionSession }>(`/api/v2/production-sessions/${encodeURIComponent(session.id)}:start`, {
-    method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey("start-production") }, body: JSON.stringify({ expected_revision: session.revision }),
+    method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey ?? commandKey("start-production") }, body: JSON.stringify({ expected_revision: session.revision }),
   });
+}
+
+/**
+ * FE-12: a created session whose `start` failed must be recoverable through its own
+ * id, not by creating another session. The backend lists START among the legal
+ * actions for READY and `:start` handles READY explicitly, so a retry first reads
+ * the original session and reports which of the three recovery cases applies.
+ */
+export type SessionStartRecovery =
+  | { state: "STARTED"; session: ProductionSession }
+  | { state: "MISSING"; sessionId: string }
+  | { state: "TERMINAL"; session: ProductionSession }
+  | { state: "NOT_STARTABLE"; session: ProductionSession }
+  | { state: "READY"; session: ProductionSession }
+  | { state: "REVISION_CHANGED"; session: ProductionSession };
+
+const TERMINAL_SESSION_STATUSES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
+
+export function classifySessionStartRecovery(session: ProductionSession): SessionStartRecovery {
+  const status = String(session.status);
+  if (TERMINAL_SESSION_STATUSES.has(status)) return { state: "TERMINAL", session };
+  if (status === "READY" || (session.allowed_actions ?? []).includes("START")) return { state: "READY", session };
+  return { state: "NOT_STARTABLE", session };
+}
+
+/**
+ * Reads the original session before deciding anything. A session that is already
+ * running is reported as STARTED, a terminal one is reported as TERMINAL, and only
+ * a session that still allows START is started again — reusing the caller's original
+ * operation key so a retry of the same user action cannot fork a second production.
+ */
+export async function resolveSessionStart(sessionId: string, idempotencyKey: string, expectedRevision?: number): Promise<SessionStartRecovery> {
+  const current = await getProductionSession(sessionId);
+  if (!current) return { state: "MISSING", sessionId };
+  const classified = classifySessionStartRecovery(current);
+  if (classified.state !== "READY") return classified;
+  if (expectedRevision !== undefined && current.revision !== expectedRevision) return { state: "REVISION_CHANGED", session: current };
+  const started = await startProductionSession(current, idempotencyKey);
+  return { state: "STARTED", session: started.session };
 }
 
 export async function controlProductionSession(session: ProductionSession, action: "pause" | "resume" | "cancel") {
@@ -52,12 +92,35 @@ export async function extendProductionSessionBudget(
   });
 }
 
-export async function listProductionSessions(projectId: string) {
-  return requestJson<{ items: ProductionSession[]; total: number }>(`/api/v2/projects/${encodeURIComponent(projectId)}/production-sessions?limit=50`);
+export async function listProductionSessions(projectId: string, page: { cursor?: number; limit?: number; status?: string } = {}) {
+  const query = new URLSearchParams({ cursor: String(page.cursor ?? 0), limit: String(page.limit ?? 50) });
+  if (page.status) query.set("status", page.status);
+  return requestJson<ProductionSessionPage>(`/api/v2/projects/${encodeURIComponent(projectId)}/production-sessions?${query.toString()}`);
 }
 
-export async function getProductionSessionReview(sessionId: string) {
-  return requestJson<ProductionReviewPage>(`/api/v2/production-sessions/${encodeURIComponent(sessionId)}/review?limit=100`);
+/** Bounded session page with the server metadata preserved for paging and totals. */
+export type ProductionSessionPage = {
+  items: ProductionSession[];
+  cursor: number;
+  limit: number;
+  total: number;
+  next_cursor: number | null;
+};
+
+/** Read one session by id. Returns null when the backend no longer has it. */
+export async function getProductionSession(sessionId: string): Promise<ProductionSession | null> {
+  try {
+    const { session } = await requestJson<{ session: ProductionSession }>(`/api/v2/production-sessions/${encodeURIComponent(sessionId)}`);
+    return session;
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+export async function getProductionSessionReview(sessionId: string, page: { cursor?: number; limit?: number } = {}) {
+  const query = new URLSearchParams({ cursor: String(page.cursor ?? 0), limit: String(page.limit ?? 100) });
+  return requestJson<ProductionReviewPage>(`/api/v2/production-sessions/${encodeURIComponent(sessionId)}/review?${query.toString()}`);
 }
 
 export async function rerollProductionChoice(session: ProductionSession, choice: ProductionChoice) {

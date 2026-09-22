@@ -17,6 +17,7 @@ import {
   type Job,
 } from "../../generated/api";
 import { requestScriptBreakdown } from "../story-workspace-v2/breakdownClient";
+import { newCommandId } from "../../services/commandId";
 import { queryKeys } from "../../query/queryKeys";
 import { CapabilityPicker, effectiveCapabilityProfile, useCapabilityOptions } from "../model-config/CapabilityPicker";
 import { LocalArtifactReference } from "../shared/LocalArtifactReference";
@@ -220,7 +221,7 @@ export function ScriptImportPanel({ projectId, onDraftReady }: { projectId: stri
         prepared.import_session_id,
         resolvedBreakdown.profileVersionId,
         effectiveEpisodeId,
-        crypto.randomUUID(),
+        newCommandId(),
         { sourceParagraphStart, sourceParagraphEnd },
       );
       submittedJobIds.current.add(submission.job.id);

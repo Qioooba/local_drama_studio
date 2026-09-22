@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { routes } from "../app/routeRegistry";
@@ -36,6 +36,7 @@ import {
   type VideoUpscaleDeliveryBatch,
   type VideoUpscalePlan,
 } from "../generated/api";
+import { newCommandId } from "../services/commandId";
 import "./project-delivery.css";
 
 type WorkspaceView = "episodes" | "queue" | "versions";
@@ -214,11 +215,23 @@ export function ProjectDeliveryPage() {
   const [reviewNotice, setReviewNotice] = useState("");
   const [acknowledgeWarnings, setAcknowledgeWarnings] = useState(false);
   const queryClient = useQueryClient();
-  const episodes = useQuery({ queryKey: ["project-delivery", projectId, "episodes", deferredSearch], queryFn: () => listProjectDeliveryEpisodes(projectId, { search: deferredSearch || undefined, limit: 50 }), enabled: Boolean(projectId), placeholderData: (previous, previousQuery) => previousQuery?.queryKey[1] === projectId ? previous : undefined });
+  const episodes = useInfiniteQuery({
+    queryKey: ["project-delivery", projectId, "episodes", deferredSearch],
+    queryFn: ({ pageParam }) => listProjectDeliveryEpisodes(projectId, { search: deferredSearch || undefined, cursor: pageParam, limit: 50 }),
+    initialPageParam: 0,
+    getNextPageParam: (page) => page.page.next_cursor ?? undefined,
+    enabled: Boolean(projectId),
+  });
+  const episodeItems = useMemo(() => {
+    const byId = new Map<string, DeliveryEpisode>();
+    for (const page of episodes.data?.pages ?? []) for (const item of page.items) byId.set(String(item.episode.id), item);
+    return [...byId.values()];
+  }, [episodes.data?.pages]);
+  const episodeTotal = episodes.data?.pages[0]?.page.total ?? null;
   const options = useQuery({ queryKey: ["project-delivery", projectId, "options"], queryFn: () => getVideoUpscaleOptions(projectId), enabled: Boolean(projectId) });
   const batches = useQuery({ queryKey: ["project-delivery", projectId, "batches"], queryFn: () => listVideoUpscaleBatches(projectId), enabled: Boolean(projectId) && view === "queue", refetchInterval: (query) => query.state.data?.items.some((batch) => batch.items.some((item) => ["QUEUED", "CLAIMED", "RUNNING", "CANCEL_REQUESTED"].includes(String(item.job_state)))) ? 2_000 : false });
   const configuration = useQuery({ queryKey: ["project", projectId, "configuration"], queryFn: () => getProjectConfiguration(projectId), enabled: Boolean(projectId) && view === "versions" });
-  const versionEpisodeId = params.get("episodeId") ?? episodes.data?.items[0]?.episode.id ?? "";
+  const versionEpisodeId = params.get("episodeId") ?? episodeItems[0]?.episode.id ?? "";
   const versions = useQuery({ queryKey: ["project-delivery", versionEpisodeId, "versions"], queryFn: () => listEpisodeDeliveryVersions(versionEpisodeId), enabled: view === "versions" && Boolean(versionEpisodeId) });
   const reviewEpisodeIds = [...(selected.size ? selected : new Set([versionEpisodeId].filter(Boolean)))].sort();
   const reviewVersions = useQuery({
@@ -293,14 +306,14 @@ export function ProjectDeliveryPage() {
     onSuccess: (data) => { setPlanId(data.plan.id); setAcknowledgeWarnings(false); },
   });
   const submit = useMutation({
-    mutationFn: () => createVideoUpscaleBatch(projectId, { plan_id: activePlan?.id, plan_hash: activePlan?.plan_hash, title: `整剧 1080p 超分 · ${new Date().toLocaleDateString()}`, acknowledged_warning_ids: warningIds }, crypto.randomUUID()),
+    mutationFn: () => createVideoUpscaleBatch(projectId, { plan_id: activePlan?.id, plan_hash: activePlan?.plan_hash, title: `整剧 1080p 超分 · ${new Date().toLocaleDateString()}`, acknowledged_warning_ids: warningIds }, newCommandId()),
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["project-delivery", projectId, "batches"] }); setParams({ view: "queue" }); },
   });
   const preview = useMutation({
     mutationFn: () => {
       const previewEpisodeId = activePlan?.items.find((item) => !item.blockers.length)?.episode_id;
       if (!activePlan?.plan_hash || !previewEpisodeId) throw new Error("预检通过后才能创建样片");
-      return createVideoUpscalePreview(projectId, { plan_id: activePlan.id, plan_hash: activePlan.plan_hash, episode_id: previewEpisodeId, start_ms: 0, duration_ms: 5_000, acknowledged_warning_ids: warningIds }, crypto.randomUUID());
+      return createVideoUpscalePreview(projectId, { plan_id: activePlan.id, plan_hash: activePlan.plan_hash, episode_id: previewEpisodeId, start_ms: 0, duration_ms: 5_000, acknowledged_warning_ids: warningIds }, newCommandId());
     },
     onSuccess: (data) => setPreviewRunId(data.run.id),
   });
@@ -365,7 +378,7 @@ export function ProjectDeliveryPage() {
   const submitDelivery = useMutation({
     mutationFn: () => {
       if (!deliveryBuildPlan) throw new Error("请先检查批量交付计划");
-      return submitVideoUpscaleDeliveryBuildBatch(projectId, { items: deliveryBuildPlan.requestItems, plan_hash: deliveryBuildPlan.plan_hash, title: `整剧 1080p 正式交付 · ${new Date().toLocaleDateString()}` }, crypto.randomUUID());
+      return submitVideoUpscaleDeliveryBuildBatch(projectId, { items: deliveryBuildPlan.requestItems, plan_hash: deliveryBuildPlan.plan_hash, title: `整剧 1080p 正式交付 · ${new Date().toLocaleDateString()}` }, newCommandId());
     },
     onSuccess: async () => {
       setDeliveryBuildPlan(null);
@@ -430,7 +443,7 @@ export function ProjectDeliveryPage() {
 
   const changeView = (next: WorkspaceView, episodeId?: string) => setParams((current) => { const value = new URLSearchParams(current); if (next === "episodes") value.delete("view"); else value.set("view", next); if (episodeId) value.set("episodeId", episodeId); return value; });
   const toggle = (id: string) => updateSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); setPlanId(null); return next; });
-  const selectPage = () => updateSelected((current) => { const next = new Set(current); const selectable = episodes.data?.items.filter((item) => item.selectable) ?? []; const all = selectable.every((item) => next.has(item.episode.id)); selectable.forEach((item) => all ? next.delete(item.episode.id) : next.add(item.episode.id)); setPlanId(null); return next; });
+  const selectPage = () => updateSelected((current) => { const next = new Set(current); const selectable = episodeItems.filter((item) => item.selectable); const all = selectable.every((item) => next.has(item.episode.id)); selectable.forEach((item) => all ? next.delete(item.episode.id) : next.add(item.episode.id)); setPlanId(null); return next; });
   const error = episodes.error ?? options.error ?? prepare.error ?? submit.error ?? preview.error ?? control.error ?? adopt.error ?? adoptSelected.error ?? prepareReviewBatch.error ?? commitReviewBatch.error ?? prepareDelivery.error ?? submitDelivery.error ?? retryDelivery.error ?? previewCleanup.error ?? cleanup.error ?? deliveryBatches.error ?? reviewVersions.error ?? reviewTemplates.error;
 
   return <main className="v2-page project-delivery-page" aria-labelledby="project-delivery-title">
@@ -440,7 +453,11 @@ export function ProjectDeliveryPage() {
     {view === "episodes" && <div className="project-delivery-layout">
       <section className="project-delivery-main">
         <div className="project-delivery-toolbar"><label>搜索分集<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="集名或编号" /></label><button type="button" className="secondary" disabled={prepare.isPending || !presetVersionId || !profileVersionId} onClick={() => prepare.mutate("ALL_ELIGIBLE")}>选择全部符合条件并检查</button><span>已选 <strong>{selected.size}</strong> 集</span></div>
-        {episodes.isLoading ? <p className="loading-state" role="status">正在读取分集成片…</p> : episodes.data?.items.length ? <EpisodeTable items={episodes.data.items} selected={selected} onToggle={toggle} onSelectPage={selectPage} onOpenVersions={(id) => changeView("versions", id)} /> : <p className="empty-state">当前项目还没有可显示的分集。</p>}
+        {episodes.isLoading ? <p className="loading-state" role="status">正在读取分集成片…</p> : episodeItems.length ? <>
+          <p className="muted" role="status" aria-live="polite">已加载 {episodeItems.length} 集{episodeTotal !== null ? ` / 共 ${episodeTotal} 集` : ""}{episodes.hasNextPage ? "（还有更多）" : "（已到末页）"}；搜索与分页都在服务器执行。</p>
+          <EpisodeTable items={episodeItems} selected={selected} onToggle={toggle} onSelectPage={selectPage} onOpenVersions={(id) => changeView("versions", id)} />
+          {episodes.hasNextPage && <button type="button" className="secondary list-more" disabled={episodes.isFetchingNextPage} onClick={() => void episodes.fetchNextPage()}>{episodes.isFetchingNextPage ? "读取中…" : `加载更多分集（已加载 ${episodeItems.length}）`}</button>}
+        </> : <p className="empty-state">当前项目还没有可显示的分集。</p>}
       </section>
       <aside className="upscale-config-panel" aria-label="本批超分设置">
         <p className="eyebrow">仅本批</p><h3>AI 超分设置</h3>
@@ -464,7 +481,7 @@ export function ProjectDeliveryPage() {
       <div className="panel-heading"><div><p className="eyebrow">逐集人工门禁 · 原子提交</p><h3 id="episode-review-batch-title">批量审核超分成片</h3></div><span className="status-pill neutral">{reviewCandidates.length}/{reviewEpisodeIds.length} 集待审核</span></div>
       <p className="muted">沿用“分集成片”页的勾选集合；未勾选时审核当前分集。每一集必须由审核人独立确认全部检查项，不提供“全部通过”快捷操作。任一集版本过期、来源变化、QC 不通过或漏项，整批不会写入任何审核记录。</p>
       {reviewVersions.isLoading || reviewTemplates.isLoading ? <p className="loading-state" role="status">正在加载逐集审核依据…</p> : reviewCandidates.length ? <div className="episode-review-grid">{reviewCandidates.map(({ page, render }, episodeIndex) => {
-        const episodeInfo = episodes.data?.items.find((item) => item.episode.id === page.episode_id)?.episode;
+        const episodeInfo = episodeItems.find((item) => item.episode.id === page.episode_id)?.episode;
         const episodeLabel = episodeInfo ? `${episodeInfo.code} · ${episodeInfo.title}` : `分集 ${page.episode_id.slice(0, 8)}`;
         const ready = reviewTemplate
           ? reviewTemplate.items.filter((item) => item.required).every((item) => reviewChecks[render.id]?.[item.id])
@@ -481,7 +498,7 @@ export function ProjectDeliveryPage() {
       {reviewBatchPlan && <p className="status-note success" role="status">计划已冻结：{reviewBatchPlan.would_create_review_count} 集的版本、文件哈希、合成根、机器 QC、模板与逐集检查结果均已记录；提交时会再次校验。</p>}
       {reviewNotice && <p className="status-note success" role="status">{reviewNotice}</p>}
     </section>}
-    {view === "versions" && <section className="project-delivery-versions"><div className="panel-heading"><div><p className="eyebrow">人工门禁</p><h3>版本与采用</h3></div><select aria-label="选择分集" value={versionEpisodeId} onChange={(event) => changeView("versions", event.target.value)}>{episodes.data?.items.map((item) => <option key={item.episode.id} value={item.episode.id}>{item.episode.code} · {item.episode.title}</option>)}</select></div>{versions.isLoading ? <p className="loading-state" role="status">正在读取成片版本…</p> : versions.data?.versions.items.map((render) => { const selectedForTarget = versions.data?.versions.selections.some((item) => item.selected_render_id === render.id); const matchedTarget = matchingDeliveryTarget(configuration.data?.configuration, render); return <article className="delivery-version-card" key={render.id}><div><span className={`status-pill ${render.render_kind === "SUPER_RESOLUTION" ? "running" : "neutral"}`}>{render.render_kind === "SUPER_RESOLUTION" ? "AI 超分" : "原合成"}</span><h4>{render.id.slice(0, 8)} · {new Date(render.created_at).toLocaleString()}</h4><p>{render.approved ? "人工已批准" : "待人工审核"} · {render.machine_qc_passed ? "机器 QC 通过" : "机器 QC 待处理"} · {render.source_current ? "来源有效" : "来源已更新"} · {matchedTarget ? `目标 ${matchedTarget.title}` : "无匹配目标"}</p></div><div className="delivery-version-actions">{render.render_kind === "SUPER_RESOLUTION" && !render.approved && <Link className="secondary" to={`${routes.postReview(projectId, versionEpisodeId)}?targetKind=EPISODE_RENDER_VERSION&targetId=${encodeURIComponent(render.id)}`}>打开人工审核</Link>}<button type="button" className="primary-action" disabled={!render.adoptable || selectedForTarget || adopt.isPending || !matchedTarget} onClick={() => adopt.mutate(render.id)}>{selectedForTarget ? "当前已采用" : matchedTarget ? "采用到匹配交付目标" : "无匹配交付目标"}</button></div></article>; })}</section>}
+    {view === "versions" && <section className="project-delivery-versions"><div className="panel-heading"><div><p className="eyebrow">人工门禁</p><h3>版本与采用</h3></div><select aria-label="选择分集" value={versionEpisodeId} onChange={(event) => changeView("versions", event.target.value)}>{episodeItems.map((item) => <option key={item.episode.id} value={item.episode.id}>{item.episode.code} · {item.episode.title}</option>)}</select></div>{versions.isLoading ? <p className="loading-state" role="status">正在读取成片版本…</p> : versions.data?.versions.items.map((render) => { const selectedForTarget = versions.data?.versions.selections.some((item) => item.selected_render_id === render.id); const matchedTarget = matchingDeliveryTarget(configuration.data?.configuration, render); return <article className="delivery-version-card" key={render.id}><div><span className={`status-pill ${render.render_kind === "SUPER_RESOLUTION" ? "running" : "neutral"}`}>{render.render_kind === "SUPER_RESOLUTION" ? "AI 超分" : "原合成"}</span><h4>{render.id.slice(0, 8)} · {new Date(render.created_at).toLocaleString()}</h4><p>{render.approved ? "人工已批准" : "待人工审核"} · {render.machine_qc_passed ? "机器 QC 通过" : "机器 QC 待处理"} · {render.source_current ? "来源有效" : "来源已更新"} · {matchedTarget ? `目标 ${matchedTarget.title}` : "无匹配目标"}</p></div><div className="delivery-version-actions">{render.render_kind === "SUPER_RESOLUTION" && !render.approved && <Link className="secondary" to={`${routes.postReview(projectId, versionEpisodeId)}?targetKind=EPISODE_RENDER_VERSION&targetId=${encodeURIComponent(render.id)}`}>打开人工审核</Link>}<button type="button" className="primary-action" disabled={!render.adoptable || selectedForTarget || adopt.isPending || !matchedTarget} onClick={() => adopt.mutate(render.id)}>{selectedForTarget ? "当前已采用" : matchedTarget ? "采用到匹配交付目标" : "无匹配交付目标"}</button></div></article>; })}</section>}
     {view === "versions" && <section className="project-delivery-versions delivery-batch-command" aria-label="批量采用与正式交付">
       <div className="panel-heading"><div><p className="eyebrow">批量交付门禁</p><h3>采用所选版本并生成正式交付包</h3></div><span className="status-pill neutral">{selected.size || (versionEpisodeId ? 1 : 0)} 集</span></div>
       <p className="muted">使用“分集成片”页的勾选集合；未勾选时只处理当前分集。系统只采用已通过机器 QC 和人工审核、且来源仍有效的超分版本。</p>

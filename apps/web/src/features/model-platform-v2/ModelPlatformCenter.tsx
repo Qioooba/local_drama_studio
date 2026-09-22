@@ -46,6 +46,7 @@ import {
   type ModelPlatformTrustedDownloadPlanInput,
   type ModelPlatformNcnnUpscaleProvisionInput,
 } from "./api";
+import { newCommandId } from "../../services/commandId";
 
 const FAMILY_TITLES: Record<string, string> = {
   TEXT: "故事与文本",
@@ -719,7 +720,7 @@ export function ModelPlatformCenter({ onOpenConnections }: { onOpenConnections: 
     },
   });
   const comfySmokeSubmission = useMutation({
-    mutationFn: ({ runtimeModelInstallationId, capabilityCode, workflowBindingId }: { runtimeModelInstallationId: string; capabilityCode: string; workflowBindingId: string }) => submitModelPlatformComfyCapabilitySmoke(runtimeModelInstallationId, capabilityCode, workflowBindingId, crypto.randomUUID()),
+    mutationFn: ({ runtimeModelInstallationId, capabilityCode, workflowBindingId }: { runtimeModelInstallationId: string; capabilityCode: string; workflowBindingId: string }) => submitModelPlatformComfyCapabilitySmoke(runtimeModelInstallationId, capabilityCode, workflowBindingId, newCommandId()),
     onSuccess: ({ smoke_job }) => {
       setScanMessage(`Comfy 真实冒烟已进入 GPU 队列（任务 ${smoke_job.job_id}）。完成后刷新本页或在任务中心查看结果。`);
     },

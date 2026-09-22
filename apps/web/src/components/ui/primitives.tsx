@@ -17,28 +17,169 @@ import "./primitives.css";
 
 export type Tone = "neutral" | "info" | "running" | "attention" | "success" | "danger";
 
-let overlayLockDepth = 0;
+/* ---------------------------------------------------------------------------
+ * Unified overlay stack (Dialog / Drawer).
+ *
+ * FE-06: every overlay used to register its own `window` keydown listener, so a
+ * single Escape was handled by the inner *and* the outer overlay and
+ * `stopPropagation` on a Drawer could not stop sibling listeners on `window`.
+ * Now one shared listener exists while the stack is non-empty and only the
+ * topmost layer reacts to Escape / Tab / backdrop dismissal. Lower layers are
+ * marked `aria-hidden` and pointer-inert instead of being torn down.
+ *
+ * FE-05: the open-time focus effect depends only on the open/close boundary.
+ * The latest close logic is read through a ref, so a parent that re-renders on
+ * every keystroke (inline `onClose`) can no longer re-run the effect and yank
+ * focus out of a controlled input.
+ * ------------------------------------------------------------------------- */
+type OverlayLayer = {
+  readonly id: number;
+  /** Latest close logic of the owning component, read at event time. */
+  close: () => void;
+  /** Latest focusable container of the owning component. */
+  getContainer: () => HTMLElement | null;
+  /** Reflects "am I the topmost layer" back into React state. */
+  setTop: (isTop: boolean) => void;
+};
+
+type RefLike<T> = { readonly current: T };
+
+const overlayLayers: OverlayLayer[] = [];
+let overlayLayerSequence = 0;
+let overlayKeydownAttached = false;
+
+/** Scroll-lock reference counting across the whole stack. */
+let overlayScrollLockDepth = 0;
 let overlayPreviousHtmlOverflow = "";
 let overlayPreviousBodyOverflow = "";
 
-function useOverlayScrollLock(open: boolean) {
+function acquireOverlayScrollLock() {
+  if (typeof document === "undefined") return;
+  if (overlayScrollLockDepth === 0) {
+    overlayPreviousHtmlOverflow = document.documentElement.style.overflow;
+    overlayPreviousBodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+  }
+  overlayScrollLockDepth += 1;
+}
+
+function releaseOverlayScrollLock() {
+  if (typeof document === "undefined") return;
+  overlayScrollLockDepth = Math.max(0, overlayScrollLockDepth - 1);
+  if (overlayScrollLockDepth === 0) {
+    document.documentElement.style.overflow = overlayPreviousHtmlOverflow;
+    document.body.style.overflow = overlayPreviousBodyOverflow;
+  }
+}
+
+function topOverlayLayer(): OverlayLayer | null {
+  return overlayLayers.length ? overlayLayers[overlayLayers.length - 1] : null;
+}
+
+function overlayFocusableElements(container: HTMLElement | null): HTMLElement[] {
+  if (!container) return [];
+  return [
+    ...container.querySelectorAll<HTMLElement>(
+      "button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])",
+    ),
+  ];
+}
+
+function handleOverlayKeydown(event: globalThis.KeyboardEvent) {
+  const top = topOverlayLayer();
+  if (!top) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    top.close();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  // Only the topmost layer traps focus. Cycling is computed explicitly so Tab
+  // can never walk into a lower (hidden) layer's controls.
+  const focusable = overlayFocusableElements(top.getContainer());
+  if (!focusable.length) {
+    event.preventDefault();
+    return;
+  }
+  const active = document.activeElement as HTMLElement | null;
+  const index = active ? focusable.indexOf(active) : -1;
+  const nextIndex = index === -1
+    ? (event.shiftKey ? focusable.length - 1 : 0)
+    : (index + (event.shiftKey ? -1 : 1) + focusable.length) % focusable.length;
+  event.preventDefault();
+  focusable[nextIndex]?.focus();
+}
+
+function syncOverlayTops() {
+  const topId = topOverlayLayer()?.id ?? null;
+  for (const layer of overlayLayers) layer.setTop(layer.id === topId);
+}
+
+function pushOverlayLayer(layer: OverlayLayer) {
+  overlayLayers.push(layer);
+  acquireOverlayScrollLock();
+  if (!overlayKeydownAttached && typeof window !== "undefined") {
+    window.addEventListener("keydown", handleOverlayKeydown);
+    overlayKeydownAttached = true;
+  }
+  syncOverlayTops();
+}
+
+function popOverlayLayer(layer: OverlayLayer) {
+  const index = overlayLayers.indexOf(layer);
+  if (index < 0) return;
+  overlayLayers.splice(index, 1);
+  if (!overlayLayers.length && overlayKeydownAttached && typeof window !== "undefined") {
+    window.removeEventListener("keydown", handleOverlayKeydown);
+    overlayKeydownAttached = false;
+  }
+  releaseOverlayScrollLock();
+  syncOverlayTops();
+}
+
+/**
+ * Registers one overlay layer for the lifetime of `open`. Returns whether this
+ * layer is currently the topmost one.
+ */
+function useOverlayLayer(
+  open: boolean,
+  closeRef: RefLike<() => void>,
+  containerRef: RefLike<HTMLElement | null>,
+  initialFocusRef?: RefLike<HTMLElement | null>,
+) {
+  const [isTop, setIsTop] = useState(true);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const wasOpenRef = useRef(false);
+  // The opener is captured while rendering the open transition: the portal (and
+  // any `autoFocus` child inside it) is committed afterwards, so effects alone
+  // would already see the overlay's own focused element.
+  if (open && !wasOpenRef.current && typeof document !== "undefined") {
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+  }
+  wasOpenRef.current = open;
+
   useEffect(() => {
-    if (!open || typeof document === "undefined") return;
-    if (overlayLockDepth === 0) {
-      overlayPreviousHtmlOverflow = document.documentElement.style.overflow;
-      overlayPreviousBodyOverflow = document.body.style.overflow;
-      document.documentElement.style.overflow = "hidden";
-      document.body.style.overflow = "hidden";
-    }
-    overlayLockDepth += 1;
-    return () => {
-      overlayLockDepth = Math.max(0, overlayLockDepth - 1);
-      if (overlayLockDepth === 0) {
-        document.documentElement.style.overflow = overlayPreviousHtmlOverflow;
-        document.body.style.overflow = overlayPreviousBodyOverflow;
-      }
+    if (!open) return;
+    const layer: OverlayLayer = {
+      id: (overlayLayerSequence += 1),
+      close: () => closeRef.current(),
+      getContainer: () => containerRef.current,
+      setTop: setIsTop,
     };
+    pushOverlayLayer(layer);
+    // Initial focus runs only on the open/close boundary: the effect does not
+    // depend on the close handler identity.
+    (initialFocusRef?.current ?? containerRef.current)?.focus?.();
+    return () => {
+      popOverlayLayer(layer);
+      const previouslyFocused = previouslyFocusedRef.current;
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+  return isTop;
 }
 
 export function StatusBadge({ children, tone = "neutral" }: { children?: ReactNode; tone?: Tone }) {
@@ -295,7 +436,7 @@ export function Dialog({
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
-  useOverlayScrollLock(open);
+  const closeHandlerRef = useRef<() => void>(() => {});
 
   const safeClose = useCallback(() => {
     if (dirtyGuard && !window.confirm("当前有未保存的改动，确定要放弃并关闭吗？")) {
@@ -303,44 +444,20 @@ export function Dialog({
     }
     onClose();
   }, [dirtyGuard, onClose]);
+  // Keep the shared listener bound to the newest close logic without letting
+  // the focus effect re-run on every parent render.
+  closeHandlerRef.current = safeClose;
 
-  useEffect(() => {
-    if (!open) return;
-    const previous = document.activeElement as HTMLElement | null;
-    closeRef.current?.focus();
-    const handleKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") safeClose();
-      if (event.key === "Tab") {
-        const focusable = [
-          ...(dialogRef.current?.querySelectorAll<HTMLElement>(
-            "button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])"
-          ) ?? []),
-        ];
-        if (!focusable.length) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => {
-      window.removeEventListener("keydown", handleKey);
-      previous?.focus();
-    };
-  }, [open, safeClose]);
+  const isTop = useOverlayLayer(open, closeHandlerRef, dialogRef, closeRef);
 
   if (!open) return null;
   return createPortal(
     <div
-      className={`ui-dialog-backdrop ui-dialog-backdrop--${size}`}
+      className={`ui-dialog-backdrop ui-dialog-backdrop--${size}${isTop ? "" : " is-inactive"}`}
       role="presentation"
-      onMouseDown={(event) => event.target === event.currentTarget && safeClose()}
+      aria-hidden={isTop ? undefined : "true"}
+      data-overlay-active={isTop ? "true" : "false"}
+      onMouseDown={(event) => event.target === event.currentTarget && isTop && safeClose()}
     >
       <section
         ref={dialogRef}
@@ -386,7 +503,7 @@ export function Drawer({
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
-  useOverlayScrollLock(open);
+  const closeHandlerRef = useRef<() => void>(() => {});
 
   const safeClose = useCallback(() => {
     if (dirtyGuard && !window.confirm("当前有未保存的改动，确定要放弃并关闭吗？")) {
@@ -394,48 +511,18 @@ export function Drawer({
     }
     onClose();
   }, [dirtyGuard, onClose]);
+  closeHandlerRef.current = safeClose;
 
-  useEffect(() => {
-    if (!open) return;
-    const previous = document.activeElement as HTMLElement | null;
-    closeRef.current?.focus();
-
-    const handleKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        safeClose();
-      }
-      if (event.key === "Tab") {
-        const focusable = [
-          ...(drawerRef.current?.querySelectorAll<HTMLElement>(
-            "button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])"
-          ) ?? []),
-        ];
-        if (!focusable.length) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => {
-      window.removeEventListener("keydown", handleKey);
-      previous?.focus();
-    };
-  }, [open, safeClose]);
+  const isTop = useOverlayLayer(open, closeHandlerRef, drawerRef, closeRef);
 
   if (!open) return null;
   return createPortal(
     <div
-      className="ui-drawer-backdrop"
+      className={`ui-drawer-backdrop${isTop ? "" : " is-inactive"}`}
       role="presentation"
-      onMouseDown={(event) => event.target === event.currentTarget && safeClose()}
+      aria-hidden={isTop ? undefined : "true"}
+      data-overlay-active={isTop ? "true" : "false"}
+      onMouseDown={(event) => event.target === event.currentTarget && isTop && safeClose()}
     >
       <aside
         ref={drawerRef}

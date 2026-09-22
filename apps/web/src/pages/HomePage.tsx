@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { routes } from "../app/routeRegistry";
 import { StudioIcon, type StudioIconName } from "../components/icons";
@@ -74,16 +74,29 @@ function SystemEntry({ icon, title, description, fact, tone = "neutral", to }: {
 export function HomePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const projects = useQuery({ queryKey: queryKeys.projects.list({ limit: 100 }), queryFn: () => listProjects({ limit: 100 }) });
+  const projects = useInfiniteQuery({
+    queryKey: queryKeys.projects.list({ scope: "home-metrics", limit: 200 }),
+    queryFn: ({ pageParam }) => listProjects({ limit: 200, cursor: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.page?.next_cursor ?? undefined,
+  });
   const profiles = useQuery({ queryKey: queryKeys.profiles.list(), queryFn: () => listProfiles() });
   const workflows = useQuery({ queryKey: queryKeys.workflows.versions(), queryFn: () => listWorkflowVersions() });
   const capacity = useQuery({ queryKey: queryKeys.capacity.scope(), queryFn: () => getCapacitySnapshot(), refetchInterval: 5_000 });
   const ready = useQuery({ queryKey: runtimeHealthQueryKeys.ready, queryFn: () => loadRuntimeHealth("ready"), refetchInterval: 30_000 });
   const dependencies = useQuery({ queryKey: runtimeHealthQueryKeys.dependencies, queryFn: () => loadRuntimeHealth("dependencies"), refetchInterval: 30_000 });
 
-  const projectItems = (projects.data?.items ?? []) as HomeProject[];
+  const projectItems = useMemo<HomeProject[]>(() => (projects.data?.pages ?? []).flatMap((page) => page.items) as HomeProject[], [projects.data?.pages]);
   const recentProjects = useMemo(() => partitionRecentProjects(projectItems, 4).recentProjects, [projectItems]);
+  // Real counts may live past the first server page, so read every remaining page
+  // before reporting a total instead of pretending the first page is the whole set.
+  const { hasNextPage: hasMoreProjects, isFetchingNextPage, fetchNextPage, data: projectData } = projects;
+  const projectPageCount = projectData?.pages.length ?? 0;
+  useEffect(() => {
+    if (hasMoreProjects && !isFetchingNextPage && projectPageCount < 5) void fetchNextPage();
+  }, [fetchNextPage, hasMoreProjects, isFetchingNextPage, projectPageCount]);
   const activeProjectCount = projectItems.filter((project) => project.status === "ACTIVE").length;
+  const projectCountFact = projects.hasNextPage ? `已加载 ${projectItems.length}，还有更多` : String(projectItems.length);
   const publishedProfileCount = (profiles.data?.items ?? []).filter((profile) => profile.status === "PUBLISHED").length;
   const publishedWorkflowCount = (workflows.data?.items ?? []).filter((workflow) => workflow.status === "PUBLISHED").length;
   const runtimePending = ready.isPending || dependencies.isPending;
@@ -112,7 +125,7 @@ export function HomePage() {
 
     <section className="home-metrics" aria-label="制作与机器概览">
       <dl>
-        <div><dt>项目</dt><dd>{projects.isPending ? "—" : projectItems.length}<small>{activeProjectCount} 个生产中</small></dd></div>
+        <div><dt>项目</dt><dd>{projects.isPending ? "—" : projectCountFact}<small>{activeProjectCount} 个生产中</small></dd></div>
         <div><dt>运行任务</dt><dd>{capacity.data?.snapshot.active_attempt_count ?? "—"}<small>{capacity.data?.snapshot.active_worker_count ?? "—"} 个 Worker</small></dd></div>
         <div><dt>排队任务</dt><dd>{capacity.data?.snapshot.queued_count ?? "—"}<small>本机持久化队列</small></dd></div>
         <div><dt>24 小时完成</dt><dd>{capacity.data?.snapshot.completed_last_24h ?? "—"}<small>已结束任务</small></dd></div>

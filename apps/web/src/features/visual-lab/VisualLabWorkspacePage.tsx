@@ -18,6 +18,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { Link, useParams } from "react-router-dom";
 import { ChevronRightIcon, StudioIcon } from "../../components/icons";
+import { Dialog } from "../../components/ui";
 import {
   createVisualLabEdge,
   createVisualLabNode,
@@ -64,6 +65,17 @@ type CreateNodeInput = { kind: VisualLabNodeKind; position?: { x: number; y: num
 function isTextInput(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable);
 }
+
+/**
+ * An input method editor reports the Enter/Escape that commits a 拼音候选 as a
+ * keydown with `isComposing` (or the legacy keyCode 229). Those must never reach
+ * the canvas shortcuts, and Escape must not close an overlay mid-composition.
+ */
+function isComposingEvent(event: KeyboardEvent): boolean {
+  return event.isComposing || event.keyCode === 229;
+}
+
+type OverlayLayer = "create" | "shortcuts" | "history" | "palette" | "search";
 
 function nodeTitle(node: VisualLabNode): string {
   return String(node.content.title || palette.find((item) => item.kind === node.node_kind)?.label || node.node_kind);
@@ -132,6 +144,25 @@ export function VisualLabWorkspacePage() {
     setNodes((current) => current.map((node) => node.selected || node.data.selectedByApp
       ? { ...node, selected: false, data: { ...node.data, selectedByApp: false } }
       : node));
+  }, []);
+
+  const searchOpenerRef = useRef<HTMLButtonElement | null>(null);
+  /**
+   * The shared Dialog owns its own Escape through the common overlay stack, so the
+   * canvas shortcut handler must know whether a dialog is currently the topmost
+   * layer instead of re-deciding from React state that has not re-rendered yet.
+   */
+  const dialogLayerRef = useRef(false);
+  const openSearch = useCallback(() => {
+    searchOpenerRef.current = document.activeElement instanceof HTMLButtonElement ? document.activeElement : searchOpenerRef.current;
+    setSearchOpen(true);
+  }, []);
+  // The search layer is intentionally non-modal, but closing it must still return
+  // focus to the control that opened it.
+  const restoreSearchFocus = useCallback((wasSearch: boolean) => {
+    if (!wasSearch) return;
+    const opener = searchOpenerRef.current;
+    if (opener?.isConnected) opener.focus();
   }, []);
 
   const checkpoint = useCallback(async (): Promise<VisualLabSnapshot | null> => {
@@ -232,7 +263,6 @@ export function VisualLabWorkspacePage() {
       setCreateKind(null);
       setReferenceId("");
       setNewTitle("");
-      setPaletteOpen(false);
       void refresh();
     },
   });
@@ -429,10 +459,39 @@ export function VisualLabWorkspacePage() {
   }, [create]);
 
   useEffect(() => {
+    // Escape is resolved against the topmost overlay BEFORE the canvas shortcut
+    // suppression for plain text inputs, so the "Esc" hint on the search box holds
+    // while the box is focused. IME composition never triggers a shortcut.
+    const closeTopOverlay = (): OverlayLayer | null => {
+      if (dialogLayerRef.current) return null;
+      if (shortcutsOpen) return "shortcuts";
+      if (historyOpen) return "history";
+      if (paletteOpen) return "palette";
+      if (searchOpen) return "search";
+      return null;
+    };
+    const closeOverlay = (layer: OverlayLayer) => {
+      if (layer === "shortcuts") setShortcutsOpen(false);
+      else if (layer === "history") setHistoryOpen(false);
+      else if (layer === "palette") setPaletteOpen(false);
+      else setSearchOpen(false);
+      restoreSearchFocus(layer === "search");
+    };
+    dialogLayerRef.current = Boolean(createKind);
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isTextInput(event.target)) return;
+      if (event.key === "Escape" && dialogLayerRef.current) return;
+      if (isComposingEvent(event)) return;
       const command = event.ctrlKey || event.metaKey;
-      if (command && event.key.toLowerCase() === "f") { event.preventDefault(); setSearchOpen(true); return; }
+      if (event.key === "Escape") {
+        // A canvas shortcut never owns Escape: the search lock would otherwise run
+        // and clear the node selection while only closing a toolbar overlay.
+        const layer = closeTopOverlay();
+        if (layer) { event.preventDefault(); closeOverlay(layer); return; }
+        clearSelection();
+        return;
+      }
+      if (isTextInput(event.target)) return;
+      if (command && event.key.toLowerCase() === "f") { event.preventDefault(); openSearch(); return; }
       if (command && event.key.toLowerCase() === "z" && event.shiftKey) { event.preventDefault(); redo(); return; }
       if (command && event.key.toLowerCase() === "z") { event.preventDefault(); undo(); return; }
       if (command && event.key.toLowerCase() === "d" && selectedIds.length) { event.preventDefault(); duplicate.mutate(selectedIds); return; }
@@ -447,12 +506,11 @@ export function VisualLabWorkspacePage() {
         return;
       }
       if ((event.key === "Delete" || event.key === "Backspace") && selectedIds.length) { event.preventDefault(); remove.mutate(selectedIds); return; }
-      if (event.key === "Escape") { setPaletteOpen(false); setHistoryOpen(false); setSearchOpen(false); setShortcutsOpen(false); clearSelection(); }
       if (event.key === "?" && !command) setShortcutsOpen((value) => !value);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [clearSelection, duplicate, labId, redo, remove, selectedIds, undo]);
+  }, [clearSelection, createKind, duplicate, historyOpen, labId, openSearch, paletteOpen, redo, remove, restoreSearchFocus, searchOpen, selectedIds, shortcutsOpen, undo]);
 
   const searchResults = useMemo(() => {
     const term = search.trim().toLocaleLowerCase();
@@ -477,7 +535,7 @@ export function VisualLabWorkspacePage() {
           <div><p className="eyebrow">Visual Lab · 无限画布</p><h2 tabIndex={-1}>{title}</h2></div>
         </div>
         <div className="visual-lab-toolbar__actions">
-          <button type="button" className="secondary" onClick={() => setSearchOpen(true)}><StudioIcon name="search" />查找</button>
+          <button type="button" className="secondary" ref={searchOpenerRef} onClick={openSearch}><StudioIcon name="search" />查找</button>
           <button type="button" className="secondary" onClick={() => setPaletteOpen((value) => !value)}>添加节点</button>
           <button type="button" className="secondary" onClick={createFrame} disabled={!selectedIds.length}>建立区域</button>
           <button type="button" className="icon-button" aria-label="撤销" title="撤销 Ctrl+Z" onClick={undo} disabled={!historyRef.current.undo.length || restore.isPending}><StudioIcon name="undo" /></button>
@@ -495,11 +553,29 @@ export function VisualLabWorkspacePage() {
 
       {historyOpen && <aside className="visual-lab-history" aria-label="画布历史"><header><div><strong>快照历史</strong><small>恢复前会自动保存当前状态</small></div><button type="button" aria-label="关闭历史" onClick={() => setHistoryOpen(false)}><StudioIcon name="close" /></button></header><button className="primary-action" type="button" onClick={() => snapshotVisualLab(labId).then(({ snapshot }) => { setFeedback(`已创建快照 #${snapshot.snapshot_no}`); void refresh(); })}>创建命名时点</button><ol>{snapshots.data?.items.map((item) => <li key={item.id}><button type="button" onClick={() => restore.mutate({ snapshot: item, direction: "HISTORY" })}><span>快照 #{item.snapshot_no}</span><small>{new Date(item.created_at).toLocaleString()}</small></button></li>)}</ol></aside>}
 
-      {searchOpen && <section className="visual-lab-search" role="dialog" aria-modal="false" aria-label="查找画布节点"><label><StudioIcon name="search" /><span className="sr-only">搜索节点</span><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="输入标题、类型或正文…" /><kbd>Esc</kbd></label>{search && <ol>{searchResults.length ? searchResults.map((item) => <li key={item.id}><button type="button" onClick={() => { focusNodes([item.id]); setSearchOpen(false); }}><strong>{nodeTitle(item)}</strong><small>{item.node_kind}</small></button></li>) : <li className="empty">没有匹配节点</li>}</ol>}</section>}
+      {searchOpen && <section className="visual-lab-search" role="dialog" aria-modal="false" aria-label="查找画布节点"><label><StudioIcon name="search" /><span className="sr-only">搜索节点</span><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="输入标题、类型或正文…" /><kbd>Esc</kbd></label><button type="button" className="icon-button visual-lab-search__close" aria-label="关闭查找" onClick={() => { setSearchOpen(false); void restoreSearchFocus(true); }}><StudioIcon name="close" /></button>{search && <ol>{searchResults.length ? searchResults.map((item) => <li key={item.id}><button type="button" onClick={() => { focusNodes([item.id]); setSearchOpen(false); void restoreSearchFocus(true); }}><strong>{nodeTitle(item)}</strong><small>{item.node_kind}</small></button></li>) : <li className="empty">没有匹配节点</li>}</ol>}</section>}
 
       {shortcutsOpen && <aside className="visual-lab-shortcuts" aria-label="画布快捷键"><header><strong>快捷键</strong><button type="button" aria-label="关闭快捷键" onClick={() => setShortcutsOpen(false)}><StudioIcon name="close" /></button></header><dl><dt><kbd>拖动空白</kbd></dt><dd>平移画布</dd><dt><kbd>滚轮</kbd></dt><dd>缩放画布</dd><dt><kbd>Shift + 拖动</kbd></dt><dd>框选节点</dd><dt><kbd>Ctrl/⌘ + C / V</kbd></dt><dd>复制 / 粘贴</dd><dt><kbd>Ctrl/⌘ + D</kbd></dt><dd>快速复制</dd><dt><kbd>Ctrl/⌘ + Z</kbd></dt><dd>撤销</dd><dt><kbd>Delete</kbd></dt><dd>删除，可撤销</dd><dt><kbd>Ctrl/⌘ + F</kbd></dt><dd>查找定位</dd></dl></aside>}
 
-      {createKind && <div className="visual-lab-modal-backdrop" role="presentation"><form className="visual-lab-modal" role="dialog" aria-modal="true" aria-labelledby="visual-lab-create-title" onSubmit={(event) => { event.preventDefault(); create.mutate({ kind: createKind }); }}><p className="eyebrow">绑定精确对象</p><h3 id="visual-lab-create-title">{palette.find((item) => item.kind === createKind)?.label}</h3><label>节点名称<input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="可选" /></label><label>{createKind === "GENERATION_INTENT" ? "Generation Intent ID" : "对象 ID"}<input autoFocus required value={referenceId} onChange={(event) => setReferenceId(event.target.value)} /></label><div><button className="secondary" type="button" onClick={() => setCreateKind(null)}>取消</button><button className="primary-action" type="submit" disabled={create.isPending}>{create.isPending ? "创建中…" : "创建节点"}</button></div>{create.error && <p role="alert">{create.error.message}</p>}</form></div>}
+      {/* The create overlay reuses the shared Dialog so it gets the common overlay
+          stack, Tab trap, Escape ownership and focus restoration instead of a
+          hand-rolled backdrop. */}
+      <Dialog
+        open={Boolean(createKind)}
+        title={palette.find((item) => item.kind === createKind)?.label ?? "添加创作对象"}
+        onClose={() => setCreateKind(null)}
+        footer={<>
+          <button className="secondary" type="button" onClick={() => setCreateKind(null)}>取消</button>
+          <button className="primary-action" type="submit" form="visual-lab-create-form" disabled={create.isPending}>{create.isPending ? "创建中…" : "创建节点"}</button>
+        </>}
+      >
+        <form id="visual-lab-create-form" className="visual-lab-create" onSubmit={(event) => { event.preventDefault(); if (createKind) create.mutate({ kind: createKind }); }}>
+          <p className="eyebrow">绑定精确对象</p>
+          <label>节点名称<input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="可选" /></label>
+          <label>{createKind === "GENERATION_INTENT" ? "Generation Intent ID" : "对象 ID"}<input autoFocus required value={referenceId} onChange={(event) => setReferenceId(event.target.value)} /></label>
+          {create.error && <p className="field-error" role="alert">{create.error.message}</p>}
+        </form>
+      </Dialog>
 
       <section ref={canvasRef} className="visual-lab-canvas" aria-label={`${title} 无限创作画布`} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDrop={handleDrop}>
         <ReactFlow

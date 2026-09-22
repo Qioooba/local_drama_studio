@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { getProjectOverviewV2, getStoryboardWorkspace } from "../generated/api";
 import { routes } from "../app/routeRegistry";
@@ -14,12 +14,14 @@ import {
   listProductionSessions,
   planProductionSession,
   rerollProductionChoice,
+  resolveSessionStart,
   retryProductionSessionItem,
   startProductionSession,
   type PlanCommand,
   type ProductionPlan,
   type ProductionSession,
 } from "../features/production-sessions/client";
+import { operationIdempotencyKey } from "../services/commandId";
 import "../features/production-sessions/production-factory.css";
 
 const statusLabel: Record<string, string> = {
@@ -43,16 +45,28 @@ export function ProductionFactoryPage() {
   const [searchParams] = useSearchParams();
   const requestedEpisodeId = searchParams.get("episode")?.trim() || "";
   const overview = useQuery({ queryKey: ["production-factory-overview", projectId], queryFn: () => getProjectOverviewV2(projectId), enabled: Boolean(projectId) });
-  const sessions = useQuery({
-    queryKey: ["production-sessions", projectId], queryFn: () => listProductionSessions(projectId), enabled: Boolean(projectId),
-    refetchInterval: (query) => query.state.data?.items.some((item) => item.status === "RUNNING") ? 5000 : false,
+  const sessions = useInfiniteQuery({
+    queryKey: ["production-sessions", projectId],
+    queryFn: ({ pageParam }) => listProductionSessions(projectId, { cursor: pageParam, limit: 50 }),
+    initialPageParam: 0,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    enabled: Boolean(projectId),
+    refetchInterval: (query) => query.state.data?.pages.some((page) => page.items.some((item) => item.status === "RUNNING")) ? 5000 : false,
   });
+  const sessionItems = useMemo(() => (sessions.data?.pages ?? []).flatMap((page) => page.items), [sessions.data?.pages]);
+  const sessionTotal = sessions.data?.pages[0]?.total ?? null;
   const [selectedSessionId, setSelectedSessionId] = useState("");
-  const selectedSession = sessions.data?.items.find((item) => item.id === selectedSessionId) ?? sessions.data?.items[0] ?? null;
-  const review = useQuery({
-    queryKey: ["production-session-review", selectedSession?.id], queryFn: () => getProductionSessionReview(selectedSession!.id), enabled: Boolean(selectedSession),
-    refetchInterval: (query) => selectedSession?.status === "RUNNING" || query.state.data?.items.some((item) => (item.asset_inputs ?? []).some((input) => input.review_status !== "CONFIRMED")) ? 5000 : false,
+  const selectedSession = sessionItems.find((item) => item.id === selectedSessionId) ?? sessionItems[0] ?? null;
+  const review = useInfiniteQuery({
+    queryKey: ["production-session-review", selectedSession?.id],
+    queryFn: ({ pageParam }) => getProductionSessionReview(selectedSession!.id, { cursor: pageParam, limit: 100 }),
+    initialPageParam: 0,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    enabled: Boolean(selectedSession),
+    refetchInterval: (query) => (selectedSession?.status === "RUNNING" || query.state.data?.pages.some((page) => page.items.some((item) => (item.asset_inputs ?? []).some((input) => input.review_status !== "CONFIRMED")))) ? 5000 : false,
   });
+  const reviewItems = useMemo(() => (review.data?.pages ?? []).flatMap((page) => page.items), [review.data?.pages]);
+  const reviewTotal = review.data?.pages[0]?.total ?? null;
   const episodes = useMemo(() => (overview.data?.seasons ?? []).flatMap((season) => season.episodes), [overview.data]);
   const [scope, setScope] = useState<"SINGLE_EPISODE" | "WHOLE_DRAMA">(requestedEpisodeId ? "SINGLE_EPISODE" : "WHOLE_DRAMA");
   const [episodeId, setEpisodeId] = useState(requestedEpisodeId);
@@ -68,6 +82,9 @@ export function ProductionFactoryPage() {
   const [gpuQueue, setGpuQueue] = useState(8);
   const [dispatchShots, setDispatchShots] = useState(4);
   const [plan, setPlan] = useState<ProductionPlan | null>(null);
+  /** Session that `create` already persisted, kept even when `start` failed. */
+  const [createdSession, setCreatedSession] = useState<ProductionSession | null>(null);
+  const [startState, setStartState] = useState("");
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -100,7 +117,7 @@ export function ProductionFactoryPage() {
     max_queued_gpu_jobs: gpuQueue,
     dispatch_shots_per_tick: dispatchShots,
   });
-  const resetFeedback = () => { setError(""); setMessage(""); };
+  const resetFeedback = () => { setError(""); setMessage(""); setStartState(""); };
   const refresh = async (sessionId?: string) => {
     const result = await sessions.refetch();
     if (sessionId) setSelectedSessionId(sessionId);
@@ -112,18 +129,50 @@ export function ProductionFactoryPage() {
     try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setBusy(""); }
   };
+  /** Operation-scoped key: `create` and its retry share one key, a new plan starts a new one. */
+  const sessionOperationKey = (operation: string, payload: unknown) => operationIdempotencyKey(`production-session:${operation}:${projectId}`, payload);
 
   const planNow = () => runAction("plan", async () => {
     if (scope === "SINGLE_EPISODE" && !episodeId) throw new Error("请先选择一集");
     const result = await planProductionSession(projectId, command());
-    setPlan(result.plan); setMessage("预检完成：这里只计算范围与资源，不会启动生成。");
+    setPlan(result.plan); setCreatedSession(null); setMessage("预检完成：这里只计算范围与资源，不会启动生成。");
   });
   const createAndStart = () => runAction("start", async () => {
     if (!plan) throw new Error("请先重新预检");
-    const created = await createProductionSession(projectId, { ...command(), expected_plan_hash: plan.plan_hash });
-    const started = await startProductionSession(created.session);
-    setPlan(null); setSelectedSessionId(started.session.id); setMessage("生产会话已启动。关闭页面或重启应用后，Worker 仍会从持久状态继续。");
+    const payload = { ...command(), expected_plan_hash: plan.plan_hash };
+    const createKey = sessionOperationKey("create", payload);
+    const created = await createProductionSession(projectId, payload, createKey);
+    // Cache the session before starting: a later `start` failure must not hide it.
+    setCreatedSession(created.session);
+    setSelectedSessionId(created.session.id);
+    setPlan(null);
+    await refresh(created.session.id);
+    const started = await startProductionSession(created.session, sessionOperationKey("start", { session_id: created.session.id, expected_revision: created.session.revision }));
+    setCreatedSession(null);
+    setSelectedSessionId(started.session.id);
+    setStartState("");
+    setMessage("生产会话已启动。关闭页面或重启应用后，Worker 仍会从持久状态继续。");
     await refresh(started.session.id);
+  });
+  /**
+   * FE-12 retry: read the original session first and only then act, so an already
+   * running session is never started twice and a terminal one is reported instead.
+   */
+  const retryStart = (session: ProductionSession) => runAction("start-retry", async () => {
+    const key = sessionOperationKey("start", { session_id: session.id, expected_revision: session.revision });
+    const outcome = await resolveSessionStart(session.id, key, session.revision);
+    if (outcome.state === "STARTED") {
+      setCreatedSession(null);
+      setSelectedSessionId(outcome.session.id);
+      setStartState(`会话已启动（状态 ${outcome.session.status}）。`);
+      await refresh(outcome.session.id);
+      return;
+    }
+    if (outcome.state === "MISSING") throw new Error("这条生产会话已经不存在，请重新预检并创建。");
+    if (outcome.state === "TERMINAL") { setCreatedSession(null); setSelectedSessionId(outcome.session.id); throw new Error(`会话已处于终态 ${outcome.session.status}，不能再次启动。`); }
+    if (outcome.state === "REVISION_CHANGED") { setCreatedSession(outcome.session); await refresh(outcome.session.id); throw new Error(`会话修订已变化（${session.revision} → ${outcome.session.revision}），请确认后再次启动此会话。`); }
+    setCreatedSession(outcome.session);
+    throw new Error(`会话当前状态为 ${outcome.session.status}，没有可用的 START 动作。`);
   });
   const control = (action: "pause" | "resume" | "cancel") => selectedSession && runAction(action, async () => {
     const result = await controlProductionSession(selectedSession, action);
@@ -209,6 +258,16 @@ export function ProductionFactoryPage() {
       <div className="factory-actions"><button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => void planNow()}>{busy === "plan" ? "正在预检…" : "预检生产计划"}</button>{plan && <button type="button" className="primary-action" disabled={Boolean(busy)} onClick={() => void createAndStart()}>{busy === "start" ? "正在启动…" : plan.scope_type === "WHOLE_DRAMA" ? "一键生成整部" : "一键生成本集"}</button>}</div>
       {plan && <><div className="factory-plan-summary"><div><strong>{plan.episode_count}</strong><span>分集</span></div><div><strong>{plan.total_shot_count}</strong><span>已有镜头</span></div><div><strong>{plan.estimated_candidate_count}</strong><span>预计画面候选</span></div></div>{plan.warnings.length > 0 && <ul className="muted">{plan.warnings.map((warning, index) => <li key={String(warning.code ?? index)}>{String(warning.message ?? warning.code)}</li>)}</ul>}</>}
       {message && <p className="review-success" role="status">{message}</p>}{error && <p className="inline-error" role="alert">{error}</p>}
+      {createdSession && <div className="factory-session-recovery" role="alert">
+        <p><strong>会话 {createdSession.id}</strong> 已创建并保存在本机（状态 {createdSession.status}）。启动没有成功，可以直接启动这条原始会话；重新预检会另建一条会话。</p>
+        <div className="factory-actions">
+          {(createdSession.allowed_actions ?? []).includes("START") && <button type="button" className="primary-action" disabled={Boolean(busy)} onClick={() => void retryStart(createdSession)}>{busy === "start-retry" ? "正在启动原会话…" : "启动此会话"}</button>}
+          {createdSession.allowed_actions.includes("PAUSE") && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => { setSelectedSessionId(createdSession.id); void control("pause"); }}>暂停该会话</button>}
+          {createdSession.allowed_actions.includes("RESUME") && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => { setSelectedSessionId(createdSession.id); void control("resume"); }}>继续该会话</button>}
+          <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => setCreatedSession(null)}>稍后处理</button>
+        </div>
+      </div>}
+      {startState && <p className="review-success" role="status">{startState}</p>}
     </section>
 
     <section className="panel" aria-labelledby="factory-keyframes-title">
@@ -223,18 +282,24 @@ export function ProductionFactoryPage() {
 
     <section className="panel" aria-labelledby="factory-sessions-title">
       <div className="panel-heading"><div><p className="eyebrow">持续运行</p><h3 id="factory-sessions-title">最近生产会话</h3></div><button type="button" className="secondary" onClick={() => void refresh()}>刷新</button></div>
-      {sessions.isPending ? <p role="status">正在读取会话…</p> : sessions.data?.items.length ? <div className="factory-session-list">{sessions.data.items.map((session) => <button key={session.id} type="button" className={`factory-session-row ${selectedSession?.id === session.id ? "is-active" : ""}`} onClick={() => setSelectedSessionId(session.id)}><strong>{session.scope_type === "WHOLE_DRAMA" ? "整部生产" : "单集生产"} · {session.production_mode}</strong><span className="status-pill">{statusLabel[session.status] ?? session.status}</span><small className="muted">{session.current_stage} · {new Date(session.updated_at).toLocaleString()}</small></button>)}</div> : <p className="empty-state">还没有生产会话。</p>}
+      {sessions.isPending ? <p role="status">正在读取会话…</p> : sessionItems.length ? <>
+        <p className="muted" role="status" aria-live="polite">已加载 {sessionItems.length} 条会话{sessionTotal !== null ? ` / 共 ${sessionTotal} 条` : ""}{sessions.hasNextPage ? "（还有更多）" : "（已到末页）"}</p>
+        <div className="factory-session-list">{sessionItems.map((session) => <button key={session.id} type="button" className={`factory-session-row ${selectedSession?.id === session.id ? "is-active" : ""}`} onClick={() => setSelectedSessionId(session.id)}><strong>{session.scope_type === "WHOLE_DRAMA" ? "整部生产" : "单集生产"} · {session.production_mode}</strong><span className="status-pill">{statusLabel[session.status] ?? session.status}</span><small className="muted">{session.current_stage} · {new Date(session.updated_at).toLocaleString()}</small></button>)}</div>
+        {sessions.hasNextPage && <button type="button" className="secondary list-more" disabled={sessions.isFetchingNextPage} onClick={() => void sessions.fetchNextPage()}>{sessions.isFetchingNextPage ? "读取中…" : `加载更早会话（已加载 ${sessionItems.length}）`}</button>}
+      </> : <p className="empty-state">还没有生产会话。</p>}
       {selectedSession && <><div className="factory-progress"><div><strong>{selectedSession.counters.completed ?? 0}</strong><span>已确认</span></div><div><strong>{selectedSession.counters.running ?? 0}</strong><span>运行中</span></div><div><strong>{selectedSession.counters.pending ?? 0}</strong><span>待调度</span></div><div><strong>{reviewWaiting}</strong><span>待审核</span></div><div><strong>{stageWaiting}</strong><span>阶段等待</span></div><div><strong>{(selectedSession.counters.blocked ?? 0) + (selectedSession.counters.failed ?? 0)}</strong><span>需处理</span></div></div>
         <p className="muted">预算：任务 {selectedSession.budget?.usage?.new_jobs ?? 0}/{selectedSession.budget?.limits?.max_new_jobs ?? "—"}，尝试 {selectedSession.budget?.usage?.attempts_total ?? 0}/{selectedSession.budget?.limits?.max_attempts_total ?? "—"}，GPU 队列 {selectedSession.budget?.usage?.global_queued_gpu_jobs ?? 0}/{selectedSession.budget?.limits?.max_queued_gpu_jobs ?? "—"}</p>
         {selectedSession.budget?.resource_wait && <p className="muted" role="status">{selectedSession.budget.resource_wait.message}</p>}
         {Boolean(selectedSession.budget?.hard_blockers?.length) && <ul className="factory-blockers">{selectedSession.budget?.hard_blockers?.map((blocker) => <li key={blocker.code}>{blocker.message}（{blocker.usage}/{blocker.limit}）</li>)}</ul>}
-        <div className="factory-actions">{selectedSession.allowed_actions.includes("PAUSE") && <button type="button" onClick={() => void control("pause")}>暂停</button>}{selectedSession.allowed_actions.includes("RESUME") && <button type="button" onClick={() => void control("resume")}>继续</button>}{Boolean(selectedSession.budget?.hard_blockers?.length) && <button type="button" className="primary-action" disabled={Boolean(busy)} onClick={() => void extendBudget()}>{busy === "extend-budget" ? "正在扩展…" : "提高已耗尽预算并继续"}</button>}{selectedSession.allowed_actions.includes("CANCEL") && <button type="button" className="danger" onClick={() => void control("cancel")}>取消</button>}</div></>}
+        <div className="factory-actions">{selectedSession.allowed_actions.includes("START") && <button type="button" className="primary-action" disabled={Boolean(busy)} onClick={() => void retryStart(selectedSession)}>{busy === "start-retry" ? "正在启动…" : "启动此会话"}</button>}{selectedSession.allowed_actions.includes("PAUSE") && <button type="button" onClick={() => void control("pause")}>暂停</button>}{selectedSession.allowed_actions.includes("RESUME") && <button type="button" onClick={() => void control("resume")}>继续</button>}{Boolean(selectedSession.budget?.hard_blockers?.length) && <button type="button" className="primary-action" disabled={Boolean(busy)} onClick={() => void extendBudget()}>{busy === "extend-budget" ? "正在扩展…" : "提高已耗尽预算并继续"}</button>}{selectedSession.allowed_actions.includes("CANCEL") && <button type="button" className="danger" onClick={() => void control("cancel")}>取消</button>}</div></>}
     </section>
 
     {selectedSession && <section className="panel" aria-labelledby="factory-review-title">
       <div className="panel-heading"><div><p className="eyebrow">集中审核</p><h3 id="factory-review-title">逐集检查预览与机器临时选择</h3></div><span className="status-pill neutral">不会自动批准</span></div>
-      {review.data?.items.some((item) => (item.asset_inputs ?? []).some((input) => input.review_status !== "CONFIRMED")) && <><p className="muted">机器已用临时资产继续生产。请先核对下列身份建议；接受当前建议后，本页会自动解除资产审核阻塞。</p><AssetProposalReviewPanel projectId={projectId} /></>}
-      {review.isPending ? <p role="status">正在汇总待审证据…</p> : <div className="factory-review-list">{review.data?.items.map((item) => {
+      {reviewItems.some((item) => (item.asset_inputs ?? []).some((input) => input.review_status !== "CONFIRMED")) && <><p className="muted">机器已用临时资产继续生产。请先核对下列身份建议；接受当前建议后，本页会自动解除资产审核阻塞。</p><AssetProposalReviewPanel projectId={projectId} /></>}
+      {review.isPending ? <p role="status">正在汇总待审证据…</p> : <>
+        <p className="muted" role="status" aria-live="polite">已加载 {reviewItems.length} 集待审证据{reviewTotal !== null ? ` / 共 ${reviewTotal} 集` : ""}{review.hasNextPage ? "（还有更多）" : "（已到末页）"}</p>
+        <div className="factory-review-list">{reviewItems.map((item) => {
         const choiceApprovalsReady = item.choices.length > 0 && item.choices.every((choice) => Boolean(choice.available_human_approval_id));
         const renderApprovalReady = Boolean(item.preview_render?.human_approval_current);
         const approvalsReady = choiceApprovalsReady && renderApprovalReady;
@@ -254,7 +319,9 @@ export function ProductionFactoryPage() {
           {item.repair_plan.prerequisites.length > 0 && <ul className="factory-blockers">{item.repair_plan.prerequisites.map((step) => <li key={step.action}>{step.message}</li>)}</ul>}
           <div className="factory-actions"><Link className="secondary v2-inline-link" to={routes.postReview(projectId, item.episode_id)}>打开正式审核</Link>{isConfirmed && <Link className="secondary v2-inline-link" to={routes.delivery(projectId, item.episode_id)}>进入本集交付</Link>}{item.review_status === "BLOCKED" && item.repair_plan.can_retry_now && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => void runAction(`retry-${item.episode_id}`, async () => { await retryProductionSessionItem(selectedSession, item); setMessage(`${item.episode_code} 已按最小返工计划进入队列。`); await refresh(selectedSession.id); })}>{busy === `retry-${item.episode_id}` ? "重试中…" : item.repair_plan.recommended_strategy === "RECOMPOSE_ONLY" ? "只重建预览" : item.repair_plan.recommended_strategy === "FULL_EPISODE" ? "补齐本集缺口" : "从失败阶段继续"}</button>}<button type="button" className="primary-action" disabled={isConfirmed || !canConfirm || Boolean(busy)} title={isConfirmed ? undefined : approvalHint} onClick={() => void runAction(`confirm-${item.episode_id}`, async () => { await confirmProductionEpisode(selectedSession, item); setMessage(`${item.episode_code} 已确认。`); await refresh(selectedSession.id); })}>{isConfirmed ? "本集已确认" : busy === `confirm-${item.episode_id}` ? "确认中…" : approvalsReady ? "确认本集并锁定" : "等待正式审核批准"}</button></div>
         </article>;
-      })}</div>}
+      })}</div>
+        {review.hasNextPage && <button type="button" className="secondary list-more" disabled={review.isFetchingNextPage} onClick={() => void review.fetchNextPage()}>{review.isFetchingNextPage ? "读取中…" : `加载更多待审证据（已加载 ${reviewItems.length}）`}</button>}
+      </>}
     </section>}
   </div>;
 }

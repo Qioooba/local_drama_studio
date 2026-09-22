@@ -16,6 +16,7 @@ import {
   type ShotDialogueProjection,
 } from "../../generated/api";
 import { mediaContentUrl } from "../shared/mediaPlaybackPolicy";
+import { newCommandId } from "../../services/commandId";
 
 type DirectorSoundInspectorProps = {
   projectId: string;
@@ -77,7 +78,7 @@ export function DirectorSoundInspector({ projectId, shotId, shotCode, shotRevisi
       return createShotLipsyncJob(shotId, {
         video_media_version_id: lipsyncVideoId,
         audio_media_version_id: lipsyncAudioId,
-        idempotency_key: `lipsync:${shotId}:${crypto.randomUUID()}`,
+        idempotency_key: `lipsync:${shotId}:${newCommandId()}`,
       });
     },
     onSuccess: async () => {
@@ -124,7 +125,7 @@ export function DirectorSoundInspector({ projectId, shotId, shotCode, shotRevisi
   const commandKey = (identity: string) => {
     const existing = commandKeys.current.get(identity);
     if (existing) return existing;
-    const next = `shot-audio:${crypto.randomUUID()}`;
+    const next = `shot-audio:${newCommandId()}`;
     commandKeys.current.set(identity, next);
     return next;
   };

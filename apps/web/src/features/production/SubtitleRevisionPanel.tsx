@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createSubtitleRevision, getEpisodeTTSSubtitleDraftPlan, getProjectConfiguration, listScriptBreakdownDrafts, listSubtitleStyleTemplates, saveSubtitleStyleTemplate, type TTSSubtitleDraftPlan } from "../../generated/api";
+import { draftRegistry, type DraftDiscardResult, type DraftHandle, type DraftSaveResult } from "../drafts/draftRegistry";
 import { resolutionFromPlan } from "../shared/effectiveDefaults";
 
 type CueDraft = { start_us: number; end_us: number; text: string; style?: Record<string, unknown> };
@@ -23,7 +24,15 @@ function cueValidationIssue(cues: CueDraft[]) {
   return null;
 }
 
-export function SubtitleRevisionPanel({ episodeId, projectId = "", defaultSourceDocumentVersionId = "", autoDeriveTTS = false, onCreated }: { episodeId: string; projectId?: string; defaultSourceDocumentVersionId?: string; autoDeriveTTS?: boolean; onCreated?: () => void }) {
+type SubtitleDraftSnapshot = { format: string; cues: CueDraft[]; style: SubtitleStyle };
+
+function subtitleSignature(snapshot: SubtitleDraftSnapshot): string {
+  return JSON.stringify([snapshot.format, snapshot.cues, snapshot.style]);
+}
+
+const SUBTITLE_ENTITY_KEY = "本集字幕修订";
+
+export function SubtitleRevisionPanel({ episodeId, projectId = "", defaultSourceDocumentVersionId = "", autoDeriveTTS = false, onCreated, onDirtyChange }: { episodeId: string; projectId?: string; defaultSourceDocumentVersionId?: string; autoDeriveTTS?: boolean; onCreated?: () => void; onDirtyChange?: (dirty: boolean) => void }) {
   const [format, setFormat] = useState("SRT");
   const [sourceDocumentVersionId, setSourceDocumentVersionId] = useState(defaultSourceDocumentVersionId);
   const [cues, setCues] = useState<CueDraft[]>(defaultCues);
@@ -42,11 +51,44 @@ export function SubtitleRevisionPanel({ episodeId, projectId = "", defaultSource
   const [ttsPlanPending, setTTSPlanPending] = useState(false);
   const [overwriteArmed, setOverwriteArmed] = useState(false);
   const autoDeriveStarted = useRef(false);
+  /* FE-02: this local draft registers in the shared draftRegistry, so leaving
+   * the page (or the subtitle drawer) is protected like the manuscript and the
+   * timeline. The baseline is the last durable state: the initial defaults or
+   * the latest successfully created revision. */
+  const baselineRef = useRef<SubtitleDraftSnapshot>({ format, cues, style });
+  const draftHandleRef = useRef<DraftHandle | null>(null);
+  const versionRef = useRef(0);
+  const [draftVersion, setDraftVersion] = useState(0);
+  const signatureRef = useRef(subtitleSignature({ format, cues, style }));
+  const lastErrorRef = useRef<string | null>(null);
+  // Project defaults (style template / subtitle mode) load asynchronously; their
+  // arrival is not a user edit, so the baseline is aligned once when they settle.
+  const [defaultsSettled, setDefaultsSettled] = useState(!projectId);
+  const settledAbsorbedRef = useRef(false);
+  const saveSubtitleDraftRef = useRef<(expectedVersion: number) => Promise<DraftSaveResult>>(async () => ({ status: "blocked", reason: "字幕草稿尚未就绪。" }));
+  const discardSubtitleDraftRef = useRef<(expectedVersion: number) => Promise<DraftDiscardResult>>(async () => ({ status: "blocked", reason: "字幕草稿尚未就绪。" }));
+  const currentSignature = subtitleSignature({ format, cues, style });
+  const draftDirty = currentSignature !== subtitleSignature(baselineRef.current);
+
+  const publishSubtitleDraft = useCallback((version: number, dirty: boolean) => {
+    const handle = draftHandleRef.current;
+    if (!handle) return;
+    draftRegistry.update(handle, { version, dirty, entityKey: SUBTITLE_ENTITY_KEY });
+  }, []);
+
+  /**
+   * Dirty is always re-derived from the live values and the current baseline at
+   * publish time: the state rendered a moment ago may predate a baseline
+   * alignment (project defaults arriving, a successful submit or a discard).
+   */
+  const draftDirtyNow = () => subtitleSignature({ format, cues, style }) !== subtitleSignature(baselineRef.current);
 
   useEffect(() => {
     if (!projectId) return;
+    let cancelled = false;
     void Promise.all([listSubtitleStyleTemplates(projectId), getProjectConfiguration(projectId)])
       .then(([result, configuration]) => {
+        if (cancelled) return;
         setTemplates(result.items.map((item) => ({ id: item.id, code: item.code, title: item.title })));
         const current = result.items[0];
         if (current) {
@@ -60,7 +102,9 @@ export function SubtitleRevisionPanel({ episodeId, projectId = "", defaultSource
         const subtitleMode = String(configuration.configuration.production_plan?.plan?.subtitle_mode ?? "");
         if (["BURN_IN", "BOTH"].includes(subtitleMode)) setFormat("ASS");
       })
-      .catch(() => setTemplates([]));
+      .catch(() => { if (!cancelled) setTemplates([]); })
+      .finally(() => { if (!cancelled) setDefaultsSettled(true); });
+    return () => { cancelled = true; };
   }, [projectId]);
 
   useEffect(() => {
@@ -178,8 +222,9 @@ export function SubtitleRevisionPanel({ episodeId, projectId = "", defaultSource
   };
 
   const cueIssue = cueValidationIssue(cues);
-  const submit = async () => {
-    setPending(true); setError(null); setSuccess(null);
+  /** Returns whether a new immutable revision was actually created. */
+  const submit = async (): Promise<boolean> => {
+    setPending(true); setError(null); setSuccess(null); lastErrorRef.current = null;
     try {
       if (!sourceDocumentVersionId.trim()) throw new Error("必须先选择已解析的源剧本文档版本");
       if (cueIssue) throw new Error(cueIssue);
@@ -191,10 +236,107 @@ export function SubtitleRevisionPanel({ episodeId, projectId = "", defaultSource
       });
       const result = await createSubtitleRevision(episodeId, { format, cues: normalizedCues, style, authority: { text_authority: "SCRIPT", source_document_version_id: sourceDocumentVersionId.trim() } });
       setSuccess(`已创建字幕 revision v${result.subtitle.revision_no} · ${result.subtitle.format} · ${result.subtitle.cues.length} 条；样式 ${style.font}/${style.size}px`);
+      // The submitted payload is now the baseline: the local draft is durable.
+      baselineRef.current = { format, cues, style };
+      publishSubtitleDraft(versionRef.current, false);
       onCreated?.();
-    } catch (caught) { setError(`字幕 revision 创建失败：${caught instanceof Error ? caught.message : String(caught)}`); }
-    finally { setPending(false); }
+      return true;
+    } catch (caught) {
+      const message = `字幕 revision 创建失败：${caught instanceof Error ? caught.message : String(caught)}`;
+      lastErrorRef.current = message;
+      setError(message);
+      return false;
+    } finally { setPending(false); }
   };
+
+  const saveSubtitleDraft = useCallback(async (expectedVersion: number): Promise<DraftSaveResult> => {
+    if (versionRef.current !== expectedVersion) {
+      return { status: "blocked", reason: `“${SUBTITLE_ENTITY_KEY}”产生了新修改，请重新确认。` };
+    }
+    if (!draftDirty) {
+      publishSubtitleDraft(expectedVersion, false);
+      return { status: "saved", savedVersion: expectedVersion };
+    }
+    const created = await submit();
+    if (!created) {
+      return { status: "blocked", reason: lastErrorRef.current ?? "字幕 revision 未能创建，请处理页面中的错误后重试。" };
+    }
+    return { status: "saved", savedVersion: expectedVersion };
+  }, [draftDirty, publishSubtitleDraft, submit]);
+
+  const discardSubtitleDraft = useCallback(async (expectedVersion: number): Promise<DraftDiscardResult> => {
+    if (versionRef.current !== expectedVersion) {
+      return { status: "blocked", reason: `“${SUBTITLE_ENTITY_KEY}”产生了新修改，请重新确认。` };
+    }
+    const baseline = baselineRef.current;
+    setFormat(baseline.format);
+    setCues(baseline.cues);
+    setStyle(baseline.style);
+    // Keep the change detector in sync so discard does not look like a new edit
+    // to the navigation coordinator.
+    signatureRef.current = subtitleSignature(baseline);
+    setError(null);
+    setSuccess(null);
+    setOverwriteArmed(false);
+    publishSubtitleDraft(expectedVersion, false);
+    return { status: "discarded", discardedVersion: expectedVersion };
+  }, [publishSubtitleDraft]);
+
+  saveSubtitleDraftRef.current = saveSubtitleDraft;
+  discardSubtitleDraftRef.current = discardSubtitleDraft;
+
+  // Bump the local editable-payload version only when submittable content
+  // changes. The first render after the project defaults settle re-aligns the
+  // baseline (loading defaults is not an edit) unless cues were already typed.
+  useEffect(() => {
+    if (defaultsSettled && !settledAbsorbedRef.current) {
+      settledAbsorbedRef.current = true;
+      const cuesUntouched = cues.length === 1 && !cues[0].text.trim();
+      if (cuesUntouched) {
+        baselineRef.current = { format, cues, style };
+        signatureRef.current = currentSignature;
+        publishSubtitleDraft(versionRef.current, false);
+        return;
+      }
+    }
+    if (signatureRef.current === currentSignature) return;
+    signatureRef.current = currentSignature;
+    versionRef.current += 1;
+    setDraftVersion(versionRef.current);
+  }, [cues, currentSignature, defaultsSettled, format, publishSubtitleDraft, style]);
+
+  useEffect(() => {
+    onDirtyChange?.(draftDirtyNow());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSignature, onDirtyChange]);
+
+  useEffect(() => {
+    const handle = draftRegistry.register({
+      ownerId: `subtitle-revision:${episodeId}`,
+      entityKey: SUBTITLE_ENTITY_KEY,
+      version: versionRef.current,
+      dirty: draftDirtyNow(),
+      save: (expectedVersion: number) => saveSubtitleDraftRef.current(expectedVersion),
+      discard: (expectedVersion: number) => discardSubtitleDraftRef.current(expectedVersion),
+    });
+    draftHandleRef.current = handle;
+    publishSubtitleDraft(versionRef.current, draftDirtyNow());
+    return () => {
+      const live = draftHandleRef.current;
+      if (live && live.token === handle.token) {
+        draftRegistry.unregister(handle);
+        draftHandleRef.current = null;
+      }
+    };
+    // `draftDirty` is published by the effect below; re-registering on every
+    // dirty flip would withdraw the owner from the navigation guard mid-edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [episodeId, publishSubtitleDraft]);
+
+  useEffect(() => {
+    publishSubtitleDraft(draftVersion, draftDirtyNow());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSignature, draftVersion, publishSubtitleDraft]);
   return <section className="panel subtitle-revision-panel" aria-labelledby="subtitle-revision-title">
     <div className="panel-heading"><div><p className="eyebrow">字幕修订</p><h3 id="subtitle-revision-title">字幕生成、校对与格式导出</h3></div><span className="status-pill neutral">剧本权威</span></div>
     <p className="muted">字幕文本必须来自已解析的剧本文档版本；ASR 只能作为对齐辅助。每次保存都是不可变 revision，不覆盖历史。</p>
@@ -251,7 +393,7 @@ export function SubtitleRevisionPanel({ episodeId, projectId = "", defaultSource
       </div>}
       <p className="muted">ASS 输出包含 [V4+ Styles] 样式块；SRT 忽略样式，但样式对象会随每个 cue 持久化到 subtitle_cues.style_json。</p>
     </div>}
-    <div className="action-row"><button className="primary-action" type="button" onClick={() => void submit()} disabled={pending || !sourceDocumentVersionId || Boolean(cueIssue)} title={!sourceDocumentVersionId ? sourceDocumentsState === "loading" ? "正在读取可用的源剧本文档" : "请先选择已解析的源剧本文档" : cueIssue ?? undefined}>{pending ? "校验并保存中…" : "创建字幕 revision"}</button><span className="muted">{!sourceDocumentVersionId ? "需要先选择源剧本文档" : cueIssue ?? "提交时还会检查阅读速度和服务端契约"}</span></div>
+    <div className="action-row"><button className="primary-action" type="button" onClick={() => void submit()} disabled={pending || !sourceDocumentVersionId || Boolean(cueIssue)} title={!sourceDocumentVersionId ? sourceDocumentsState === "loading" ? "正在读取可用的源剧本文档" : "请先选择已解析的源剧本文档" : cueIssue ?? undefined}>{pending ? "校验并保存中…" : "创建字幕 revision"}</button><span className="muted">{!sourceDocumentVersionId ? "需要先选择源剧本文档" : cueIssue ?? (draftDirty ? "存在未保存字幕草稿；离开页面前会提示保存或放弃。" : "提交时还会检查阅读速度和服务端契约")}</span></div>
     {error && <p className="inline-error" role="alert">{error}</p>}{success && <p className="review-success" role="status">{success}</p>}
   </section>;
 }

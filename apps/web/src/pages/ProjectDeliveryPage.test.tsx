@@ -219,4 +219,36 @@ describe("ProjectDeliveryPage", () => {
     await waitFor(() => expect(commitEpisodeRenderReviewBatch).toHaveBeenCalledWith("secure-review-plan-token-value", "a".repeat(64)));
     expect(await screen.findByText(/已原子批准 2 集超分成片/)).toBeTruthy();
   });
+
+  it("pages through 51 delivery episodes, reports the server total, and keeps the selection across pages", async () => {
+    const many = Array.from({ length: 51 }, (_, index) => ({
+      ...episode,
+      episode: { ...episode.episode, id: `episode-${index + 1}`, code: `EP${String(index + 1).padStart(2, "0")}`, title: `第 ${index + 1} 集` },
+    }));
+    vi.mocked(listProjectDeliveryEpisodes).mockImplementation(async (_projectId: string, options: { cursor?: number } = {}) => {
+      const cursor = options.cursor ?? 0;
+      const items = many.slice(cursor, cursor + 50);
+      const next = cursor + 50 < many.length ? cursor + 50 : null;
+      return { project_id: "project-1", items, page: { cursor, limit: 50, total: many.length, next_cursor: next } } as never;
+    });
+
+    renderPage();
+    await screen.findByText(/已加载 50 集 \/ 共 51 集（还有更多）/);
+    // Cross-page selection: page-1 selection must survive loading page 2.
+    fireEvent.click(screen.getByRole("checkbox", { name: /第 1 集/ }));
+    expect(screen.getByText(/已选/).textContent).toContain("1");
+
+    fireEvent.click(screen.getByRole("button", { name: /加载更多分集/ }));
+    await waitFor(() => expect(listProjectDeliveryEpisodes).toHaveBeenCalledWith("project-1", expect.objectContaining({ cursor: 50 })));
+    expect(await screen.findByText(/已加载 51 集 \/ 共 51 集（已到末页）/)).toBeTruthy();
+    expect(screen.getByText(/已选/).textContent).toContain("1");
+    expect(screen.queryByRole("button", { name: /加载更多分集/ })).toBeNull();
+  });
+
+  it("search is sent to the server for the whole delivery set", async () => {
+    renderPage();
+    await screen.findByText(/已加载 1 集/);
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索分集" }), { target: { value: "第八十一集" } });
+    await waitFor(() => expect(listProjectDeliveryEpisodes).toHaveBeenLastCalledWith("project-1", expect.objectContaining({ search: "第八十一集", cursor: 0 })));
+  });
 });

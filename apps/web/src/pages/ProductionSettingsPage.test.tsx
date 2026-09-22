@@ -3,10 +3,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getProjectConfiguration, listProjects } from "../generated/api";
+import { getProject, getProjectConfiguration, listProjects } from "../generated/api";
 import { ProductionSettingsPage } from "./ProductionSettingsPage";
 
-vi.mock("../generated/api", () => ({ getProjectConfiguration: vi.fn(), listProjects: vi.fn(), listWorkspaceAssetAuthorizations: vi.fn().mockResolvedValue({ items: [] }), reviewInbox: vi.fn().mockResolvedValue({ items: [] }) }));
+vi.mock("../generated/api", () => ({ getProject: vi.fn(), getProjectConfiguration: vi.fn(), listProjects: vi.fn(), listWorkspaceAssetAuthorizations: vi.fn().mockResolvedValue({ items: [] }), reviewInbox: vi.fn().mockResolvedValue({ items: [] }) }));
 vi.mock("../features/production-settings-v2/ProductionSettingsOverview", () => ({ ProductionSettingsOverview: ({ projectId }: { projectId: string }) => <div>ProductionSettingsOverview {projectId}</div> }));
 vi.mock("../features/production-settings-v2/MediaDerivativeMaintenancePanel", () => ({ MediaDerivativeMaintenancePanel: () => <div>MediaDerivativeMaintenancePanel</div> }));
 vi.mock("../features/status/ReadinessPanels", () => ({ ProjectConfigurationSnapshot: ({ projectId }: { projectId?: string }) => <div>Delivery target authority {projectId}</div> }));
@@ -26,7 +26,7 @@ function renderSection(section: string) {
 }
 
 describe("ProductionSettingsPage routed sections", () => {
-  beforeEach(() => { vi.clearAllMocks(); vi.mocked(listProjects).mockResolvedValue({ items: [{ id: "project-1", code: "P1", title: "Project One", status: "ACTIVE" }] } as never); vi.mocked(getProjectConfiguration).mockResolvedValue({ configuration } as never); });
+  beforeEach(() => { vi.clearAllMocks(); vi.mocked(getProject).mockResolvedValue({ project: { id: "project-1", code: "P1", title: "Project One", status: "ACTIVE", revision: 1 } } as never); vi.mocked(getProjectConfiguration).mockResolvedValue({ configuration } as never); });
   afterEach(() => cleanup());
 
   it("loads each owner by URL without nested settings tabs", async () => {
@@ -55,6 +55,13 @@ describe("ProductionSettingsPage routed sections", () => {
     expect(await screen.findByText("MediaDerivativeMaintenancePanel")).toBeTruthy();
     expect(screen.getByText("ProjectPackageAction")).toBeTruthy();
     expect(await screen.findByText("ProjectTemplateCopyAction")).toBeTruthy();
+  });
+
+  it("reads the current project by id so a project outside the first list page still keeps its actions", async () => {
+    renderSection("data");
+    await screen.findByText("ProjectTemplateCopyAction");
+    expect(getProject).toHaveBeenCalledWith("project-1");
+    expect(listProjects).not.toHaveBeenCalled();
   });
 
   it("explains local account scope and keeps production dimensions project/episode scoped", async () => {

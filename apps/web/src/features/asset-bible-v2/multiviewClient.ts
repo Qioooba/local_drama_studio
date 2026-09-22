@@ -1,5 +1,6 @@
 import { createStoryAssetReference, type AssetBibleItem, type StoryAssetReference } from "./api";
 import { getJob, promoteJobArtifactToMedia, requestJson as generatedRequestJson } from "../../generated/api";
+import { newCommandId } from "../../services/commandId";
 
 export type MultiViewKind = "FRONT" | "LEFT" | "RIGHT" | "BACK" | "TOP" | "BOTTOM";
 export type MultiViewPromptBundle = {
@@ -107,7 +108,7 @@ export function submitAssetMultiView(assetId: string, settings: MultiViewSetting
   return requestJson(`/story-assets/${encodeURIComponent(assetId)}/generate-multiview`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...settings, plan_hash: planHash, idempotency_key: crypto.randomUUID() }),
+    body: JSON.stringify({ ...settings, plan_hash: planHash, idempotency_key: newCommandId() }),
   });
 }
 

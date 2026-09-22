@@ -288,6 +288,12 @@
 .pipeline-alert.warning { background: color-mix(in srgb, #e8ad4e 12%, transparent); color: #f2c979; }
 .pipeline-alert.error { background: color-mix(in srgb, #e56666 12%, transparent); color: #ff9e9e; }
 
+/* FE-03: persistent per-action failure block (code, message, request id, retry) */
+.pipeline-action-error { display: grid; gap: .35rem; justify-items: start; }
+.pipeline-action-error p { margin: 0; }
+.pipeline-action-error__code { opacity: .85; font-variant-numeric: tabular-nums; }
+.pipeline-action-error button { margin-top: .2rem; }
+
 .pipeline-running-card { display: grid; gap: 1rem; }
 .running-summary > strong { color: #b9b1ff; font-size: 1.7rem; }
 .running-summary > div > span { color: #b9b1ff; font-size: .78rem; font-weight: 750; }

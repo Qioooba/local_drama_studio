@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSubtitleRevision, getEpisodeTTSSubtitleDraftPlan, listScriptBreakdownDrafts, listSubtitleStyleTemplates } from "../../generated/api";
+import { draftRegistry } from "../drafts/draftRegistry";
 import { SubtitleRevisionPanel } from "./SubtitleRevisionPanel";
 
 vi.mock("../../generated/api", () => ({
@@ -73,5 +74,73 @@ describe("SubtitleRevisionPanel source authority", () => {
     expect(screen.getByText("TTS 草稿部分齐全")).toBeTruthy();
     expect(screen.getByText("DLG-002：尚未采用 TTS 候选")).toBeTruthy();
     expect(createSubtitleRevision).not.toHaveBeenCalled();
+  });
+});
+
+describe("SubtitleRevisionPanel draft protection (FE-02)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    draftRegistry.clear();
+    vi.mocked(listSubtitleStyleTemplates).mockResolvedValue({ items: [] });
+    vi.mocked(listScriptBreakdownDrafts).mockResolvedValue({
+      items: [{
+        id: "draft-1", project_id: "project-1", source_document_version_id: "source-secret-1", import_session_id: "import-1",
+        status: "READY", revision: 1, source_document_code: "EP03_SCRIPT", source_document_title: "第三集剧本", draft: {}, confidence: {},
+        model_draft_sha256: "a".repeat(64), effective_draft_revision_id: null, effective_draft_revision_no: 0, human_edited: false,
+        profile_version_id: null, evidence_status: "COMPLETE", application_status: "APPLIED", automatic_apply: false,
+        requires_human_action: true, created_at: "2026-08-20T00:00:00Z",
+      }], automatic_apply: false, requires_human_action: true,
+    });
+  });
+
+  afterEach(() => {
+    draftRegistry.clear();
+  });
+
+  it("registers a dirty subtitle draft and restores it on discard", async () => {
+    render(<SubtitleRevisionPanel episodeId="episode-3" projectId="project-1" />);
+    await screen.findByRole("option", { name: "第三集剧本 · EP03_SCRIPT · 已应用" });
+    expect(draftRegistry.get("subtitle-revision:episode-3")?.dirty).toBe(false);
+
+    fireEvent.change(screen.getByLabelText("字幕 1 文本"), { target: { value: "你好" } });
+    const owner = draftRegistry.get("subtitle-revision:episode-3")!;
+    expect(owner.dirty).toBe(true);
+    expect(owner.entityKey).toBe("本集字幕修订");
+
+    let discarded: unknown;
+    await act(async () => { discarded = await owner.discard!(owner.version); });
+    expect(discarded).toMatchObject({ status: "discarded" });
+    expect((screen.getByLabelText("字幕 1 文本") as HTMLTextAreaElement).value).toBe("");
+    expect(draftRegistry.get("subtitle-revision:episode-3")?.dirty).toBe(false);
+    expect(createSubtitleRevision).not.toHaveBeenCalled();
+  });
+
+  it("creates the immutable revision through the shared save action", async () => {
+    vi.mocked(createSubtitleRevision).mockResolvedValue({ subtitle: { revision_no: 3, format: "SRT", cues: [{ id: "cue-1" }] } } as unknown as Awaited<ReturnType<typeof createSubtitleRevision>>);
+    render(<SubtitleRevisionPanel episodeId="episode-3" projectId="project-1" />);
+    await screen.findByRole("option", { name: "第三集剧本 · EP03_SCRIPT · 已应用" });
+    fireEvent.change(screen.getByLabelText("字幕 1 文本"), { target: { value: "你好" } });
+
+    const owner = draftRegistry.get("subtitle-revision:episode-3")!;
+    let saved: unknown;
+    await act(async () => { saved = await owner.save!(owner.version); });
+    expect(saved).toMatchObject({ status: "saved" });
+    expect(createSubtitleRevision).toHaveBeenCalledTimes(1);
+    expect(draftRegistry.get("subtitle-revision:episode-3")?.dirty).toBe(false);
+  });
+
+  it("blocks the shared save with a reason instead of leaving silently", async () => {
+    render(<SubtitleRevisionPanel episodeId="episode-3" projectId="project-1" />);
+    await screen.findByRole("option", { name: "第三集剧本 · EP03_SCRIPT · 已应用" });
+    fireEvent.change(screen.getByLabelText("字幕 1 文本"), { target: { value: "你好" } });
+    fireEvent.change(screen.getByLabelText("字幕 1 结束（微秒）"), { target: { value: "0" } });
+
+    const owner = draftRegistry.get("subtitle-revision:episode-3")!;
+    let saved: unknown;
+    await act(async () => { saved = await owner.save!(owner.version); });
+    expect(saved).toMatchObject({ status: "blocked" });
+    expect(createSubtitleRevision).not.toHaveBeenCalled();
+    expect(draftRegistry.get("subtitle-revision:episode-3")?.dirty).toBe(true);
+    expect(screen.getByRole("alert").textContent).toContain("字幕 revision 创建失败");
   });
 });

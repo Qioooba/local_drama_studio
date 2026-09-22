@@ -13,7 +13,7 @@ import { BrandKitPanel } from "../features/shared/BrandKitPanel";
 import { OutboxDeliveryPanel } from "../features/shared/OutboxDeliveryPanel";
 import { WorkspaceAssetAuthorizationPanel } from "../features/shared/WorkspaceAssetAuthorizationPanel";
 import { ProjectConfigurationSnapshot } from "../features/status/ReadinessPanels";
-import { getProjectConfiguration, listProjects, listWorkspaceAssetAuthorizations, reviewInbox } from "../generated/api";
+import { getProject, getProjectConfiguration, listWorkspaceAssetAuthorizations, reviewInbox } from "../generated/api";
 import { queryKeys } from "../query/queryKeys";
 import "./system-workspaces.css";
 
@@ -42,7 +42,13 @@ export function ProductionSettingsPage() {
   const needsDelivery = section === "delivery";
   const needsData = section === "data";
 
-  const project = useQuery({ queryKey: queryKeys.projects.detail(projectId), queryFn: async () => (await listProjects({ limit: 100 })).items.find((item) => item.id === projectId) ?? null, enabled: Boolean(projectId) && needsData });
+  // Read the current project by id: scanning a fixed first page would silently drop
+  // the template-copy action for any valid project outside it.
+  const project = useQuery({
+    queryKey: queryKeys.projects.detail(projectId),
+    queryFn: () => getProject(projectId).then((response) => response.project),
+    enabled: Boolean(projectId) && needsData,
+  });
   const inbox = useQuery({ queryKey: ["operations", projectId, "review-inbox"], queryFn: () => reviewInbox(projectId), enabled: Boolean(projectId) && needsRights });
   const authorizations = useQuery({ queryKey: ["operations", projectId, "authorizations"], queryFn: () => listWorkspaceAssetAuthorizations(projectId), enabled: Boolean(projectId) && needsRights });
   const configuration = useQuery({ queryKey: ["operations", projectId, "configuration"], queryFn: () => getProjectConfiguration(projectId), enabled: Boolean(projectId) && needsDelivery });

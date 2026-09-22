@@ -1,6 +1,7 @@
 import { createStoryAssetReference, type AssetBibleItem, type StoryAssetReference } from "./api";
 import type { MultiViewBlocker, MultiViewOutput, MultiViewSettings } from "./multiviewClient";
 import { requestJson as generatedRequestJson } from "../../generated/api";
+import { newCommandId } from "../../services/commandId";
 
 export type ExpressionKind = "NEUTRAL" | "HAPPY" | "SAD" | "ANGRY" | "SURPRISED" | "FEARFUL" | "DISGUSTED" | "DETERMINED" | "CRYING";
 export type ExpressionPreflight = {
@@ -25,7 +26,7 @@ export function preflightAssetExpression(assetId: string, settings: MultiViewSet
   return requestJson(`/story-assets/${encodeURIComponent(assetId)}/generate-expression:preflight`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
 }
 export function submitAssetExpression(assetId: string, settings: MultiViewSettings, planHash: string) {
-  return requestJson(`/story-assets/${encodeURIComponent(assetId)}/generate-expression`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...settings, plan_hash: planHash, idempotency_key: crypto.randomUUID() }) });
+  return requestJson(`/story-assets/${encodeURIComponent(assetId)}/generate-expression`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...settings, plan_hash: planHash, idempotency_key: newCommandId() }) });
 }
 export async function getAssetExpressionHistory(assetId: string): Promise<ExpressionBatch[]> {
   const result = await requestJson<{ asset_detail: AssetBibleItem }>(`/story-assets/${encodeURIComponent(assetId)}/detail`, { method: "GET" });
