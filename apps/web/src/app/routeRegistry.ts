@@ -1,4 +1,4 @@
-export type RouteScope = "GLOBAL" | "PROJECT" | "EPISODE";
+export type RouteScope = "GLOBAL" | "PROJECT" | "EPISODE" | "EXPLAINER";
 
 export interface RouteMetadata {
   id: string;
@@ -15,6 +15,32 @@ export interface RouteContext {
   projectId: string | null;
   episodeId: string | null;
   shotId: string | null;
+  /**
+   * Explainer workspace page key (overview/script/assets/storyboard/audio/review).
+   * Present only for EXPLAINER-scope routes; the explainer domain is deliberately
+   * not modelled as an episode so the shell never queries an episode catalog.
+   */
+  explainerPage?: string | null;
+}
+
+/**
+ * Pages inside the explainer workspace.  Their order is the documented
+ * production order from the design spec and is also the visible tab order.
+ */
+export const EXPLAINER_PAGES = ["overview", "script", "assets", "storyboard", "audio", "review"] as const;
+export type ExplainerPage = (typeof EXPLAINER_PAGES)[number];
+
+export const EXPLAINER_PAGE_LABELS: Record<ExplainerPage, string> = {
+  overview: "总览与生产",
+  script: "资料与解说稿",
+  assets: "人物与风格",
+  storyboard: "分镜与画面",
+  audio: "声音与字幕",
+  review: "审片与导出",
+};
+
+export function isExplainerPage(value: string | undefined | null): value is ExplainerPage {
+  return Boolean(value) && (EXPLAINER_PAGES as readonly string[]).includes(value as string);
 }
 
 const encode = (value: string) => encodeURIComponent(value.trim());
@@ -24,6 +50,10 @@ export const routes = {
   home: () => "/",
   projects: () => "/projects",
   quickCreate: () => "/quick-create",
+  explainers: () => "/explainers",
+  explainerNew: () => "/explainers/new",
+  explainerOverview: (projectId: string) => `/explainers/${encode(projectId)}/overview`,
+  explainerPage: (projectId: string, page: ExplainerPage) => `/explainers/${encode(projectId)}/${page}`,
   adaptationPlans: (projectId: string) => "/projects/" + encode(projectId) + "/story/plans",
   adaptationPlan: (projectId: string, planId: string) => "/projects/" + encode(projectId) + "/story/plans/" + encode(planId),
   projectHome: (projectId: string) => `/projects/${encode(projectId)}`,
@@ -53,6 +83,14 @@ export const ROUTE_REGISTRY: Record<string, RouteMetadata> = {
   home: { id: "home", scope: "GLOBAL", title: "工作台", pathPattern: "/" },
   projects: { id: "projects", scope: "GLOBAL", title: "项目", pathPattern: "/projects" },
   quickCreate: { id: "quickCreate", scope: "GLOBAL", title: "快速生成", pathPattern: "/quick-create" },
+  explainers: { id: "explainers", scope: "GLOBAL", title: "解说工厂", pathPattern: "/explainers" },
+  explainerNew: { id: "explainerNew", scope: "GLOBAL", title: "新建解说", pathPattern: "/explainers/new", parentRouteId: "explainers" },
+  explainerOverview: { id: "explainerOverview", scope: "EXPLAINER", title: "总览与生产", pathPattern: "/explainers/:projectId/overview", parentRouteId: "explainers" },
+  explainerScript: { id: "explainerScript", scope: "EXPLAINER", title: "资料与解说稿", pathPattern: "/explainers/:projectId/script", parentRouteId: "explainerOverview" },
+  explainerAssets: { id: "explainerAssets", scope: "EXPLAINER", title: "人物与风格", pathPattern: "/explainers/:projectId/assets", parentRouteId: "explainerOverview" },
+  explainerStoryboard: { id: "explainerStoryboard", scope: "EXPLAINER", title: "分镜与画面", pathPattern: "/explainers/:projectId/storyboard", parentRouteId: "explainerOverview" },
+  explainerAudio: { id: "explainerAudio", scope: "EXPLAINER", title: "声音与字幕", pathPattern: "/explainers/:projectId/audio", parentRouteId: "explainerOverview" },
+  explainerReview: { id: "explainerReview", scope: "EXPLAINER", title: "审片与导出", pathPattern: "/explainers/:projectId/review", parentRouteId: "explainerOverview" },
   adaptationPlans: { id: "adaptationPlans", scope: "PROJECT", title: "改编规划", pathPattern: "/projects/:projectId/story/plans", parentRouteId: "story" },
   adaptationPlan: { id: "adaptationPlan", scope: "PROJECT", title: "改编规划", pathPattern: "/projects/:projectId/story/plans/:planId", parentRouteId: "adaptationPlans" },
   projectHome: { id: "projectHome", scope: "PROJECT", title: "首页", pathPattern: "/projects/:projectId", parentRouteId: "projects" },
@@ -77,45 +115,57 @@ export const ROUTE_REGISTRY: Record<string, RouteMetadata> = {
   systemWorkflows: { id: "systemWorkflows", scope: "GLOBAL", title: "系统 / 工作流", pathPattern: "/system/workflows" },
 };
 
-const empty = (): RouteContext => ({ routeId: null, scope: null, projectId: null, episodeId: null, shotId: null });
+const empty = (): RouteContext => ({ routeId: null, scope: null, projectId: null, episodeId: null, shotId: null, explainerPage: null });
 function decode(value?: string): string | null { try { return value ? decodeURIComponent(value) : null; } catch { return null; } }
 
 export function parseRouteContext(pathname: string): RouteContext {
   const clean = pathname.split("?")[0].replace(/\/+$/, "") || "/";
-  if (clean === "/") return { routeId: "home", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null };
-  if (clean === "/projects") return { routeId: "projects", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null };
-  if (clean === "/quick-create") return { routeId: "quickCreate", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null };
+  if (clean === "/") return { routeId: "home", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null, explainerPage: null };
+  if (clean === "/projects") return { routeId: "projects", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null, explainerPage: null };
+  if (clean === "/quick-create") return { routeId: "quickCreate", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null, explainerPage: null };
+  if (clean === "/explainers") return { routeId: "explainers", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null, explainerPage: null };
+  if (clean === "/explainers/new") return { routeId: "explainerNew", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null, explainerPage: null };
+  // The explainer domain has no season/episode context: it is its own scope so
+  // the shell never resolves an episode catalog for an explainer project.
+  const explainer = clean.match(/^\/explainers\/([^/]+)\/(overview|script|assets|storyboard|audio|review)$/);
+  if (explainer) {
+    const projectId = decode(explainer[1]);
+    const page = explainer[2] as ExplainerPage;
+    if (!projectId) return empty();
+    const routeId = `explainer${page[0].toUpperCase()}${page.slice(1)}`;
+    return { routeId, scope: "EXPLAINER", projectId, episodeId: null, shotId: null, explainerPage: page };
+  }
   const system = clean.match(/^\/system\/(capabilities|jobs|diagnostics|workflows)$/);
-  if (system) return { routeId: `system${system[1][0].toUpperCase()}${system[1].slice(1)}`, scope: "GLOBAL", projectId: null, episodeId: null, shotId: null };
+  if (system) return { routeId: `system${system[1][0].toUpperCase()}${system[1].slice(1)}`, scope: "GLOBAL", projectId: null, episodeId: null, shotId: null, explainerPage: null };
   const episode = clean.match(/^\/projects\/([^/]+)\/episodes\/([^/]+)\/(plan|studio|production|delivery|post\/(review|audio|edit))(?:\/([^/]+))?$/);
   if (episode) {
     const projectId = decode(episode[1]); const episodeId = decode(episode[2]); const shotId = episode[3] === "studio" ? decode(episode[5]) : null;
     if (!projectId || !episodeId || (episode[5] && !shotId)) return empty();
     const routeId = episode[3] === "plan" ? "episodePlan" : episode[3] === "studio" ? (shotId ? "shotStudioShot" : "shotStudio") : episode[3] === "production" ? "episodeProduction" : episode[3] === "delivery" ? "delivery" : episode[4] === "review" ? "postReview" : episode[4] === "audio" ? "postAudio" : "postEdit";
-    return { routeId, scope: "EPISODE", projectId, episodeId, shotId };
+    return { routeId, scope: "EPISODE", projectId, episodeId, shotId, explainerPage: null };
   }
   const lab = clean.match(/^\/projects\/([^/]+)\/labs(?:\/([^/]+))?$/);
-  if (lab) { const projectId = decode(lab[1]); if (!projectId) return empty(); return { routeId: lab[2] ? "visualLab" : "visualLabs", scope: "PROJECT", projectId, episodeId: null, shotId: null }; }
+  if (lab) { const projectId = decode(lab[1]); if (!projectId) return empty(); return { routeId: lab[2] ? "visualLab" : "visualLabs", scope: "PROJECT", projectId, episodeId: null, shotId: null, explainerPage: null }; }
   const adaptationPlan = clean.match(/^\/projects\/([^/]+)\/story\/plans(?:\/([^/]+))?$/);
   if (adaptationPlan) {
     const projectId = decode(adaptationPlan[1]);
     if (!projectId) return empty();
-    return { routeId: adaptationPlan[2] ? "adaptationPlan" : "adaptationPlans", scope: "PROJECT", projectId, episodeId: null, shotId: null };
+    return { routeId: adaptationPlan[2] ? "adaptationPlan" : "adaptationPlans", scope: "PROJECT", projectId, episodeId: null, shotId: null, explainerPage: null };
   }
   const projectDelivery = clean.match(/^\/projects\/([^/]+)\/delivery$/);
   if (projectDelivery) {
     const projectId = decode(projectDelivery[1]);
     if (!projectId) return empty();
-    return { routeId: "projectDelivery", scope: "PROJECT", projectId, episodeId: null, shotId: null };
+    return { routeId: "projectDelivery", scope: "PROJECT", projectId, episodeId: null, shotId: null, explainerPage: null };
   }
   const productionFactory = clean.match(/^\/projects\/([^/]+)\/factory$/);
   if (productionFactory) {
     const projectId = decode(productionFactory[1]);
     if (!projectId) return empty();
-    return { routeId: "productionFactory", scope: "PROJECT", projectId, episodeId: null, shotId: null };
+    return { routeId: "productionFactory", scope: "PROJECT", projectId, episodeId: null, shotId: null, explainerPage: null };
   }
   const project = clean.match(/^\/projects\/([^/]+)(?:\/(story|assets|settings)(?:\/([^/]+))?)?$/);
-  if (project) { const projectId = decode(project[1]); if (!projectId) return empty(); return { routeId: project[2] === "story" ? "story" : project[2] === "assets" ? "assets" : project[2] === "settings" ? "settings" : "projectHome", scope: "PROJECT", projectId, episodeId: null, shotId: null }; }
+  if (project) { const projectId = decode(project[1]); if (!projectId) return empty(); return { routeId: project[2] === "story" ? "story" : project[2] === "assets" ? "assets" : project[2] === "settings" ? "settings" : "projectHome", scope: "PROJECT", projectId, episodeId: null, shotId: null, explainerPage: null }; }
   return empty();
 }
 
@@ -130,7 +180,17 @@ export function buildBreadcrumbs({ pathname, projectTitle, seasonTitle, episodeT
   if (context.routeId === "quickCreate") return [{ label: "快速生成", isCurrent: true }];
   if (context.routeId === "home") return [{ label: "工作台", isCurrent: true }];
   const items: BreadcrumbItem[] = [{ label: "工作台", to: routes.home() }];
+  if (context.routeId === "explainers") return [{ label: "解说工厂", isCurrent: true }];
+  if (context.routeId === "explainerNew") return [{ label: "解说工厂", to: routes.explainers() }, { label: "新建解说", isCurrent: true }];
   if (context.routeId === "projects") return [...items, { label: "项目", isCurrent: true }];
+  // The explainer workspace breadcrumb never mentions a season or an episode.
+  if (context.scope === "EXPLAINER" && context.projectId) {
+    const root: BreadcrumbItem = { label: "解说工厂", to: routes.explainers() };
+    const title: BreadcrumbItem = { label: projectTitle || "解说作品" };
+    if (context.routeId === "explainerOverview") return [root, { ...title, isCurrent: true }];
+    const pageLabel = context.explainerPage ? EXPLAINER_PAGE_LABELS[context.explainerPage as ExplainerPage] : "总览与生产";
+    return [root, { ...title, to: routes.explainerOverview(context.projectId) }, { label: pageLabel, isCurrent: true }];
+  }
   if (context.projectId) {
     items.push({ label: "项目", to: routes.projects() });
     if (context.routeId === "projectHome") return [...items, { label: projectTitle || "首页", isCurrent: true }];

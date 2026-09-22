@@ -90,4 +90,30 @@ export const queryKeys = {
       ["adaptation-planning", "project", projectId, "preflight", { sourceVersionId, targetDurationMs }] as const,
     workspace: (planId: string) => ["adaptation-planning", "workspace", planId] as const,
   },
+  /**
+   * Explainer factory keys.  The shape is the documented
+   * `["explainers", projectId, resource, editionId?, revision?]` contract, so a
+   * language or edition switch cancels superseded responses instead of leaving a
+   * stale payload on screen.
+   */
+  explainers: {
+    all: ["explainers"] as const,
+    lists: () => ["explainers", "list"] as const,
+    list: (value: KeyFilters = {}) => ["explainers", "list", filters(value)] as const,
+    workspace: (projectId: string) => ["explainers", projectId, "workspace"] as const,
+    script: (projectId: string, revision?: ScopeId) => ["explainers", projectId, "script", scopeId(revision)] as const,
+    segments: (projectId: string, revision?: ScopeId) => ["explainers", projectId, "segments", scopeId(revision)] as const,
+    assets: (projectId: string) => ["explainers", projectId, "assets"] as const,
+    beats: (projectId: string, editionId?: ScopeId) => ["explainers", projectId, "beats", scopeId(editionId)] as const,
+    beatCandidates: (projectId: string, beatId: string) => ["explainers", projectId, "beat", beatId, "candidates"] as const,
+    beatImpact: (projectId: string, beatId: string) => ["explainers", projectId, "beat", beatId, "impact"] as const,
+    editions: (projectId: string) => ["explainers", projectId, "editions"] as const,
+    narration: (editionId: string, locale?: ScopeId) => ["explainers", "edition", editionId, "narration", scopeId(locale)] as const,
+    subtitles: (editionId: string, locale?: ScopeId, format?: string) =>
+      ["explainers", "edition", editionId, "subtitles", scopeId(locale), format ?? "JSON"] as const,
+    qc: (editionId: string, renderId?: ScopeId) => ["explainers", "edition", editionId, "qc", scopeId(renderId)] as const,
+    run: (runId: string) => ["explainers", "run", runId] as const,
+    schedules: (value: KeyFilters = {}) => ["explainers", "schedules", filters(value)] as const,
+    schedule: (scheduleId: string) => ["explainers", "schedule", scheduleId] as const,
+  },
 } as const;

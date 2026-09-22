@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useBlocker, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { BreadcrumbSeparatorIcon, StudioIcon, StudioMarkIcon, type StudioIconName } from "../components/icons";
@@ -120,14 +120,32 @@ export function AppShell() {
     },
   ], [sidebarCollapsed]);
 
-  const projects = useQuery({ queryKey: queryKeys.projects.list({ limit: 100 }), queryFn: () => listProjects({ limit: 100 }) });
+  const projects = useInfiniteQuery({
+    queryKey: queryKeys.projects.list({ scope: "shell-switcher", limit: 200 }),
+    queryFn: ({ pageParam }) => listProjects({ limit: 200, cursor: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.page?.next_cursor ?? undefined,
+  });
+  const { hasNextPage: hasMoreProjects, isFetchingNextPage: isLoadingNextProjects, fetchNextPage: loadNextProjectPage, data: projectPages } = projects;
+  const projectPageCount = projectPages?.pages.length ?? 0;
+  // The global switcher must reach every project, so keep reading pages. Bounded to
+  // avoid an unbounded request storm on very large local libraries.
+  useEffect(() => {
+    if (hasMoreProjects && !isLoadingNextProjects && projectPageCount < 25) void loadNextProjectPage();
+  }, [hasMoreProjects, isLoadingNextProjects, loadNextProjectPage, projectPageCount]);
+  const projectItems = useMemo(() => (projectPages?.pages ?? []).flatMap((page) => page.items), [projectPages?.pages]);
+  // Explainer workspaces reuse the app shell but are a different content type:
+  // they have no season, no episode and no whole-drama delivery surface, so the
+  // episode catalog must not be queried and the episode switcher must not render
+  // (design §5.1 / UI-05).
+  const isExplainerWorkspace = routeContext.scope === "EXPLAINER";
   const episodeCatalog = useQuery({
     queryKey: queryKeys.seasons.catalog(projectId ?? ""),
     queryFn: () => getProjectEpisodeCatalog(projectId!),
-    enabled: Boolean(projectId),
+    enabled: Boolean(projectId) && !isExplainerWorkspace,
   });
-  const seasons = episodeCatalog.data?.catalog.seasons ?? [];
-  const selectedProject = projects.data?.items.find((project) => project.id === projectId);
+  const seasons = isExplainerWorkspace ? [] : episodeCatalog.data?.catalog.seasons ?? [];
+  const selectedProject = projectItems.find((project) => project.id === projectId);
   const selectedSeason = seasons.find((season) => season.episodes.some((episode) => episode.id === episodeId));
   const selectedEpisode = selectedSeason?.episodes.find((episode) => episode.id === episodeId);
   const episodePrefix = projectId && episodeId ? `/projects/${encodeURIComponent(projectId)}/episodes/${encodeURIComponent(episodeId)}` : null;
@@ -274,9 +292,9 @@ export function AppShell() {
         onProjectChange={(nextProjectId) => navigate(nextProjectId ? routes.projectHome(nextProjectId) : routes.projects())}
         onToggleMobileNav={() => setMobileNavOpen((open) => !open)}
         projectId={projectId}
-        projects={projects.data?.items ?? []}
+        projects={projectItems}
         seasons={seasons}
-        showEpisodeSwitcher={!episodeId}
+        showEpisodeSwitcher={!episodeId && !isExplainerWorkspace}
       />
     </header>
     <div
@@ -302,15 +320,26 @@ export function AppShell() {
           <span className="nav-title">工作区</span>
           <StudioNavLink icon="home" to={routes.home()} end>全局工作台</StudioNavLink>
           <StudioNavLink icon="sparkles" to={routes.quickCreate()} end>快速生成</StudioNavLink>
-          <StudioNavLink icon="grid" to={routes.projects()} end>全部项目</StudioNavLink>
-          {projectId ? <>
+          <StudioNavLink icon="grid" to={routes.explainers()} end>解说工厂</StudioNavLink>
+          <StudioNavLink icon="clapperboard" to={routes.projects()} end>全部项目</StudioNavLink>
+          {isExplainerWorkspace && projectId ? <>
+            <span className="nav-title nav-section">当前解说</span>
+            <div className="sidebar-project">
+              {selectedProject?.title ?? "解说作品"}
+              <div style={{ marginTop: 8 }}><span className="badge blue">解说作品</span></div>
+            </div>
+            <StudioNavLink icon="clapperboard" to={routes.explainerOverview(projectId)}>返回当前作品</StudioNavLink>
+          </> : null}
+          {projectId && !isExplainerWorkspace ? <>
             <span className="nav-title nav-section">当前项目</span>
             <StudioNavLink icon="clapperboard" to={routes.projectHome(projectId)} end>项目首页</StudioNavLink>
             <StudioNavLink icon="book" to={routes.story(projectId)}>AI 制作</StudioNavLink>
             <StudioNavLink icon="assets" to={routes.assets(projectId)}>核心资产</StudioNavLink>
             <StudioNavLink icon="export" to={routes.projectDelivery(projectId)}>整剧交付</StudioNavLink>
-          </> : <p className="sidebar-context-hint">选择项目后显示 AI 制作、核心资产与本集制作流程。</p>}
-          {projectId && !episodePrefix && <p className="sidebar-context-hint">从上方“分集”进入某一集，生成、修镜、后期和交付会始终显示在内容区顶部。</p>}
+          </> : null}
+          {!projectId ? <p className="sidebar-context-hint">选择项目后显示 AI 制作、核心资产与本集制作流程。</p> : null}
+          {projectId && !episodePrefix && !isExplainerWorkspace && <p className="sidebar-context-hint">从上方“分集”进入某一集，生成、修镜、后期和交付会始终显示在内容区顶部。</p>}
+          {isExplainerWorkspace ? <p className="sidebar-context-hint">解说作品不显示季、集或短剧对白入口。</p> : null}
           <details className="sidebar-system" open={advancedNavigationActive || undefined}>
             <summary>高级设置与系统</summary>
             <div className="sidebar-system-links">
