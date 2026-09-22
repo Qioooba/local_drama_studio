@@ -1,0 +1,127 @@
+{
+  "schema_version": "localdrama.g0-contract.v1",
+  "description": "Portable, in-repo G0 gate contract. This file is the versioned specification the default `scripts/g0_validate.py` run validates; it deliberately references nothing outside the repository so `scripts/check.ps1` works from any clean checkout.",
+  "api_contract_version_source": {
+    "path": "apps/api/local_drama/api/contract_version.py",
+    "constant": "API_CONTRACT_VERSION"
+  },
+  "api_contract_version": "localdrama.api.2026-08-29.3",
+  "required_components": [
+    {
+      "code": "API_PACKAGE",
+      "path": "apps/api/local_drama",
+      "kind": "directory",
+      "reason": "FastAPI application package"
+    },
+    {
+      "code": "API_APP_FACTORY",
+      "path": "apps/api/local_drama/main.py",
+      "kind": "file",
+      "markers": ["def create_app(", "FastAPI("],
+      "reason": "application factory the release smoke must be able to construct"
+    },
+    {
+      "code": "HEALTH_ROUTES",
+      "path": "apps/api/local_drama/api/routes/health.py",
+      "kind": "file",
+      "markers": ["/health/live", "/health/ready", "/system/contract"],
+      "reason": "health and contract payloads asserted by the release smoke"
+    },
+    {
+      "code": "MIGRATIONS",
+      "path": "apps/api/alembic/versions",
+      "kind": "directory",
+      "reason": "alembic revision graph"
+    },
+    {
+      "code": "RELEASE_MIGRATION_CONTRACT",
+      "path": "docs/release/migration-contract.json",
+      "kind": "file",
+      "markers": ["expected_heads"],
+      "reason": "release head authority"
+    },
+    {
+      "code": "API_TESTS",
+      "path": "apps/api/tests",
+      "kind": "directory",
+      "reason": "unit/integration test suite"
+    },
+    {
+      "code": "RUNTIME_LOCK",
+      "path": "apps/api/requirements-runtime.lock",
+      "kind": "file",
+      "reason": "shipped runtime dependency lock"
+    },
+    {
+      "code": "DEV_LOCK",
+      "path": "apps/api/requirements.lock",
+      "kind": "file",
+      "reason": "developer dependency lock"
+    },
+    {
+      "code": "DEPENDENCY_LOCK_GUARD",
+      "path": "scripts/check_dependency_locks.py",
+      "kind": "file",
+      "reason": "lock/pyproject drift guard"
+    }
+  ],
+  "generated_artifacts": [
+    {
+      "code": "OPENAPI_SNAPSHOT",
+      "path": "docs/openapi/openapi.json",
+      "generator": "scripts/generate_client.py",
+      "format": "openapi",
+      "must_contain": ["/api/v1/health/live", "/api/v1/health/ready", "/api/v1/system/contract"]
+    },
+    {
+      "code": "TYPESCRIPT_CLIENT",
+      "path": "apps/web/src/generated/api.ts",
+      "generator": "scripts/generate_client.py",
+      "format": "typescript",
+      "must_contain": ["API_CONTRACT_VERSION"]
+    }
+  ],
+  "required_schema_versions": [
+    {
+      "code": "MIGRATION_CONTRACT",
+      "path": "docs/release/migration-contract.json",
+      "field": "schema_version",
+      "value": "localdrama.release-migration-contract.v1"
+    },
+    {
+      "code": "CONFIG_SCHEMA",
+      "path": "contracts/config.schema.json",
+      "field": "$id",
+      "value": "https://localdramastudio.local/schemas/config.v2.json"
+    }
+  ],
+  "migration_heads": {
+    "source": "docs/release/migration-contract.json",
+    "expected_heads": ["0102_explainer_factory_foundation"]
+  },
+  "quality_gates": [
+    {
+      "code": "PYTEST_COLLECTION_ROOT",
+      "path": "pytest.ini",
+      "section": "pytest",
+      "key": "testpaths",
+      "value": "apps/api/tests"
+    },
+    {
+      "code": "PYTEST_MARKER_COMFYUI",
+      "path": "apps/api/pyproject.toml",
+      "section": "tool.pytest.ini_options",
+      "key": "markers",
+      "contains": "comfyui"
+    }
+  ],
+  "external_blueprint_audit": {
+    "status_when_unconfigured": "NOT_CONFIGURED",
+    "blueprint_directory": "LocalDramaStudio_Blueprint_v2",
+    "manifest": "model_manifest.json",
+    "uat_reference": "docs/gpt6/LocalDramaStudio_深度测试报告_2026-09-22.md appendix on blueprint validation, and scripts/local_adapter_transport_windows_uat.py for the licensed local UAT path",
+    "in_scope_documents": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17],
+    "master_inventory": {"requirements_document": "01_产品需求与验收范围.md", "tests_document": "10_测试策略_用例矩阵与发布检查.md", "fr": 86, "nfr": 15, "tc": 85},
+    "migration_document": "11_老屋灯火迁移_试运行与上线.md"
+  }
+}

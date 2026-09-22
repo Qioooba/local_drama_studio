@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable
 from email.parser import Parser
 from pathlib import Path
@@ -137,6 +138,154 @@ def _verify_wheelhouse(root: Path) -> None:
             raise ValueError(f"wheelhouse file failed verification: {name}")
 
 
+_SMOKE_SCRIPT = '''"""Release smoke: prove the private runtime can actually start the product.
+
+Run by ``packaging/common/build_release.py`` inside the packaged private Python
+with ``PYTHONPATH`` pointing at ``payload/app``.  A bare ``import local_drama``
+does not exercise the submodule graph, so this script imports the real private
+application module (``local_drama.main``), migrates a throwaway SQLite instance,
+constructs the app and reads the health and contract payloads.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import sys
+from pathlib import Path
+
+payload = Path(sys.argv[1]).resolve()
+instance = Path(sys.argv[2]).resolve()
+instance.mkdir(parents=True, exist_ok=True)
+
+# Dependency proof the previous, too-shallow import check claimed to give:
+# importing the application module pulls in every route and service module,
+# including the ``pypdf``-backed document parser.
+from local_drama.bootstrap.resource_locator import ResourceLocator  # noqa: E402
+from local_drama.config import Settings  # noqa: E402
+from local_drama.entrypoints.maintenance import upgrade_database  # noqa: E402
+from local_drama.main import create_app  # noqa: E402
+
+manifest = instance / "model_manifest.json"
+manifest.write_text(
+    json.dumps(
+        {
+            "manifest_version": "release-smoke/v1",
+            "manifest_type": "canonical_model_inventory",
+            "read_only_inventory": True,
+            "canonical_model_root": {"path": str(instance / "models")},
+            "runtime": {"comfyui_api": {"base_url": "http://127.0.0.1:8188", "port_8188_listening": False}},
+            "h3_capabilities": {},
+            "models": {"partitions": {}},
+            "authoritative_current_state": {"worker_policy": "cpu_only", "route_status": {}, "forbidden_assets": []},
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    + "\\n",
+    encoding="utf-8",
+)
+config = instance / "config" / "config.json"
+config.parent.mkdir(parents=True, exist_ok=True)
+config.write_text(
+    json.dumps(
+        {
+            "schema_version": 3,
+            "instance_id": "release-smoke",
+            "environment": "smoke",
+            "network": {"mode": "LOCAL_ONLY", "host": "127.0.0.1", "port": 3210},
+            "storage": {
+                "data_root": "${INSTANCE_ROOT}/data",
+                "projects_root": "${INSTANCE_ROOT}/projects",
+                "work_root": "${INSTANCE_ROOT}/work",
+                "cache_root": "${INSTANCE_ROOT}/cache",
+                "logs_root": "${INSTANCE_ROOT}/logs",
+                "backups_root": "${INSTANCE_ROOT}/backups",
+            },
+            "model_manifest": str(manifest),
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    + "\\n",
+    encoding="utf-8",
+)
+
+settings = Settings.from_env()
+locator = ResourceLocator(
+    release_root=payload,
+    instance_root=instance,
+    config_path=config,
+    source_repo_root=payload,
+    packaged=True,
+)
+migration = upgrade_database(settings, locator)
+if migration.get("status") != "PASS":
+    raise SystemExit(f"release smoke: migration failed: {json.dumps(migration, ensure_ascii=False)[:800]}")
+with sqlite3.connect(settings.database_path) as connection:
+    head = connection.execute("SELECT version_num FROM alembic_version LIMIT 1").fetchone()
+if head is None:
+    raise SystemExit("release smoke: migrated instance records no alembic version")
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+app = create_app(settings)
+with TestClient(app) as client:
+    contract_response = client.get("/api/v1/system/contract")
+    ready_response = client.get("/api/v1/health/ready")
+if contract_response.status_code != 200 or ready_response.status_code != 200:
+    raise SystemExit(f"release smoke: health/contract returned {contract_response.status_code}/{ready_response.status_code}")
+contract = contract_response.json()
+if not contract.get("api_contract_version"):
+    raise SystemExit("release smoke: /system/contract did not report an api_contract_version")
+print(
+    json.dumps(
+        {
+            "smoke": "PASS",
+            "alembic_head": str(head[0]),
+            "api_contract_version": contract["api_contract_version"],
+            "health_ready": ready_response.json().get("status"),
+        },
+        ensure_ascii=False,
+    )
+)
+'''
+
+
+def _smoke_verify_private_runtime(runtime_python: Path, payload: Path) -> None:
+    """Prove the packaged private runtime can migrate and serve the real app.
+
+    This replaces a shallow ``import alembic, fastapi, local_drama, sqlalchemy,
+    uvicorn`` check that passed even when a required runtime dependency (for
+    example ``pypdf``, imported by the document parser) was missing from the
+    lock files.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="local-drama-release-smoke-") as temporary:
+        workspace = Path(temporary)
+        script = workspace / "release_smoke.py"
+        script.write_text(_SMOKE_SCRIPT, encoding="utf-8")
+        instance = workspace / "instance"
+        environment = dict(os.environ)
+        environment["PYTHONPATH"] = str(payload / "app")
+        environment["LOCAL_DRAMA_PACKAGED"] = "1"
+        environment["LOCAL_DRAMA_RELEASE_ROOT"] = str(payload)
+        environment["LOCAL_DRAMA_INSTANCE_ROOT"] = str(instance)
+        environment["LOCAL_DRAMA_COMFY_ACCESS"] = "disabled"
+        try:
+            subprocess.run(
+                [str(runtime_python), str(script), str(payload), str(instance)],
+                cwd=payload,
+                env=environment,
+                check=True,
+            )
+        except subprocess.CalledProcessError as error:
+            raise RuntimeError(
+                "release smoke failed: the packaged private runtime could not import local_drama.main, "
+                f"migrate a fresh instance and serve health/contract (exit code {error.returncode})"
+            ) from error
+
+
 def _write_sbom(payload: Path, identity: dict[str, object], platform: str) -> None:
     packages: list[dict[str, object]] = [
         {
@@ -232,12 +381,6 @@ def build(args: argparse.Namespace) -> Path:
     validation_environment = dict(os.environ)
     validation_environment["PYTHONPATH"] = str(payload / "app")
     subprocess.run(
-        [str(runtime_python), "-c", "import alembic, fastapi, local_drama, sqlalchemy, uvicorn"],
-        cwd=payload,
-        env=validation_environment,
-        check=True,
-    )
-    subprocess.run(
         [
             str(runtime_python),
             "-m",
@@ -258,7 +401,11 @@ def build(args: argparse.Namespace) -> Path:
     _copytree(REPOSITORY_ROOT / "apps" / "api" / "alembic", payload / "migrations")
     _copytree(REPOSITORY_ROOT / "contracts", payload / "contracts")
     shutil.copy2(REPOSITORY_ROOT / "scripts" / "model_platform_release_gate.py", payload / "app" / "model_platform_release_gate.py")
+    # The private runtime resolves its release resources (migrations,
+    # version.json) relative to the payload, so this copy must precede the
+    # smoke verification below.
     shutil.copy2(REPOSITORY_ROOT / "release" / "version.json", payload / "version.json")
+    _smoke_verify_private_runtime(runtime_python, payload)
     if args.ffmpeg_runtime:
         ffmpeg_runtime = Path(args.ffmpeg_runtime).resolve()
         executable = "ffmpeg.exe" if args.platform.startswith("windows") else "ffmpeg"

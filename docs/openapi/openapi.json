@@ -80,6 +80,7 @@
           "health"
         ],
         "summary": "Ready",
+        "description": "Report business readiness, not merely process liveness.\n\nA database that cannot serve business requests (absent, unreadable,\nmissing core tables/columns, or not at the release migration head) turns\ninto an application-level readiness blocker with HTTP 503 and a structured\nreason.  ``/health/live`` keeps meaning only \"the process is alive\".",
         "operationId": "healthReady",
         "responses": {
           "200": {
@@ -2182,6 +2183,23 @@
               ],
               "title": "Status"
             }
+          },
+          {
+            "name": "product_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 24
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Product Kind"
+            }
           }
         ],
         "responses": {
@@ -2214,6 +2232,7 @@
           "projects"
         ],
         "summary": "Create Project",
+        "description": "Create one project.\n\nThe declared ``Idempotency-Key`` header is honoured: the request digest is\npersisted next to the created project id, so the same key with the same\npayload returns the original project and the same key with a different\npayload is rejected with a stable 409.  A duplicate ``code`` (or a project\ndirectory that already exists) is a 409, never a 500.",
         "operationId": "createProject",
         "parameters": [
           {
@@ -8321,6 +8340,59 @@
         }
       }
     },
+    "/api/v1/import-sessions/{session_id}:select-range": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Create Import Session Selection",
+        "description": "Authorise a new analysis range on the same immutable source version.",
+        "operationId": "createImportSessionSelection",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentImportSelectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentImportSelectionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/import-sessions/{session_id}:request-breakdown": {
       "post": {
         "tags": [
@@ -9407,6 +9479,22 @@
             "schema": {
               "type": "string",
               "title": "Artifact Id"
+            }
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Range"
             }
           }
         ],
@@ -12279,6 +12367,68 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Retrypipelinerun"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/pipeline/{run_id}:continue-analysis": {
+      "post": {
+        "tags": [
+          "pipeline"
+        ],
+        "summary": "Continue Pipeline Analysis",
+        "description": "Process the next bounded batch of the same authorised manuscript range.",
+        "operationId": "continuePipelineAnalysis",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContinuePipelineAnalysisRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineRunResponse"
                 }
               }
             }
@@ -19862,6 +20012,99 @@
         ],
         "summary": "Download Delivery",
         "operationId": "downloadDeliveryPackage",
+        "parameters": [
+          {
+            "name": "package_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Package Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/delivery-packages/{package_id}/files/{file_id}/download": {
+      "get": {
+        "tags": [
+          "timeline",
+          "delivery"
+        ],
+        "summary": "Download Delivery File",
+        "description": "Download ONE registered delivery file (MP4, SRT/ASS/VTT or manifest).\n\nMED-08: the delivery page previously offered only the MP4, so a package built\nwith SIDECAR/BOTH subtitles left those files unreachable from a remote\nbrowser.  The caller names a server-owned ``delivery_files`` row, never a\npath.",
+        "operationId": "downloadDeliveryPackageFile",
+        "parameters": [
+          {
+            "name": "package_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Package Id"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/delivery-packages/{package_id}/archive:download": {
+      "get": {
+        "tags": [
+          "timeline",
+          "delivery"
+        ],
+        "summary": "Download Delivery Archive",
+        "description": "Download the complete delivery package as one verified ZIP.",
+        "operationId": "downloadDeliveryPackageArchive",
         "parameters": [
           {
             "name": "package_id",
@@ -31750,6 +31993,2071 @@
           }
         }
       }
+    },
+    "/api/v2/explainers": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "List Explainers",
+        "description": "List explainer workspaces with an explicit type filter.\n\nExplainer workspaces are never counted into drama episode numbers, and the\nresponse states the product kind of every row (design §5.1).",
+        "operationId": "listExplainers",
+        "parameters": [
+          {
+            "name": "project_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 24,
+              "default": "EXPLAINER",
+              "title": "Project Kind"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Create Explainer",
+        "description": "Create the EXPLAINER project together with its video and input references.\n\nProject and video are created in one transaction so a failure never leaves an\norphan project behind (design §14).",
+        "operationId": "createExplainer",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Get Explainer Overview",
+        "operationId": "getExplainerOverview",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/sources:import": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Import Explainer Source",
+        "description": "Import one source document through the shared bounded upload path.\n\nThe body is streamed with the same guards the existing importer uses: the\nclient path comes from an ``X-File-Name`` header (never from a client path),\nthe suffix is checked against an allowlist, and the byte budget is enforced\nwhile streaming.  The decoded text becomes an immutable source with its own\nhash and spans — an \"uploaded\" badge never means \"fact-checked\" (design §5.2).",
+        "operationId": "importExplainerSource",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "title",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 300,
+              "default": "",
+              "title": "Title"
+            }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
+            }
+          },
+          {
+            "name": "source_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "default": "DOCUMENT_IMPORT",
+              "title": "Source Kind"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/research-runs": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Start Explainer Research Run",
+        "description": "Register controlled web research or pure offline source registration.\n\n``OFFLINE_IMPORT`` performs zero outbound requests.  ``WEB_RESEARCH`` only\nopens the research process's controlled egress; it never unlocks model egress\n(design §15).",
+        "operationId": "startExplainerResearchRun",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerResearchRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/claims/{claim_id}": {
+      "patch": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Patch Explainer Claim",
+        "description": "Revise a claim's status/statement and invalidate its dependents.",
+        "operationId": "patchExplainerClaim",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "claim_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Claim Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerClaimPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/script": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Get Explainer Script",
+        "operationId": "getExplainerScript",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "locale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Locale"
+            }
+          },
+          {
+            "name": "revision_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Revision Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/script-revisions": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Create Explainer Script Revision",
+        "operationId": "createExplainerScriptRevision",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerScriptRevisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/segments": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "List Explainer Segments",
+        "operationId": "listExplainerSegments",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "script_revision_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Script Revision Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/segments/{segment_id}": {
+      "patch": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Patch Explainer Segment",
+        "operationId": "patchExplainerSegment",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "segment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Segment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerSegmentPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/script:freeze": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Freeze Explainer Script",
+        "operationId": "freezeExplainerScript",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "script_revision_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 36,
+              "title": "Script Revision Id"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120,
+              "default": "local-user",
+              "title": "Actor"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/plans:preflight": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Preflight Explainer Plan",
+        "description": "Freeze the input/policy/capability/budget snapshot and compute a plan hash.",
+        "operationId": "preflightExplainerPlan",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerPreflightRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/runs": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Start Explainer Run",
+        "operationId": "startExplainerRun",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-runs/{run_id}": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Get Explainer Run",
+        "operationId": "getExplainerRun",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-runs/{run_id}:pause": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Pause Explainer Run",
+        "operationId": "pauseExplainerRun",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerRunControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-runs/{run_id}:resume": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Resume Explainer Run",
+        "operationId": "resumeExplainerRun",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerRunControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-runs/{run_id}:cancel": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Cancel Explainer Run",
+        "operationId": "cancelExplainerRun",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerRunControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/repairs": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Plan Explainer Repairs",
+        "operationId": "planExplainerRepairs",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerRepairRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/beats": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "List Explainer Beats",
+        "operationId": "listExplainerBeats",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "edition_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Edition Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/assets": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "List Explainer Assets",
+        "operationId": "listExplainerAssets",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/editions": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "List Explainer Editions",
+        "operationId": "listExplainerEditions",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Create Explainer Edition",
+        "description": "Add a language/aspect edition that reuses semantics and compatible media.",
+        "operationId": "createExplainerEdition",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerEditionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-editions/{edition_id}/narration": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Get Explainer Narration",
+        "operationId": "getExplainerNarration",
+        "parameters": [
+          {
+            "name": "edition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Edition Id"
+            }
+          },
+          {
+            "name": "locale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Locale"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-editions/{edition_id}/narration:resynthesize": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Resynthesize Explainer Narration",
+        "description": "Queue a single-segment re-read; neighbours are re-checked at the join.\n\nThis endpoint records the intent and returns ``202``.  The actual synthesis\nruns in the ``NARRATION_TTS`` worker handler, so the HTTP request never waits\nfor the GPU.",
+        "operationId": "resynthesizeExplainerNarration",
+        "parameters": [
+          {
+            "name": "edition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Edition Id"
+            }
+          },
+          {
+            "name": "canonical_segment_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "title": "Canonical Segment Id"
+            }
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "default": "LOCAL_RE_READ",
+              "title": "Reason"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-editions/{edition_id}/subtitles": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Get Explainer Subtitles",
+        "operationId": "getExplainerSubtitles",
+        "parameters": [
+          {
+            "name": "edition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Edition Id"
+            }
+          },
+          {
+            "name": "locale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Locale"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 8,
+              "default": "JSON",
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-editions/{edition_id}/renders": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Start Explainer Render",
+        "description": "Freeze the composition manifest, then schedule segmented rendering.",
+        "operationId": "startExplainerRender",
+        "parameters": [
+          {
+            "name": "edition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Edition Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerRenderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-editions/{edition_id}/qc": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Get Explainer Qc",
+        "description": "Return coverage and issues with the three check layers reported separately.",
+        "operationId": "getExplainerQcCoverage",
+        "parameters": [
+          {
+            "name": "edition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Edition Id"
+            }
+          },
+          {
+            "name": "render_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Render Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-editions/{edition_id}/decisions": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Record Explainer Decision",
+        "description": "Record a real human decision, or request a re-run of the frozen policy.\n\n``POLICY_ACCEPTED`` is not an accepted value here: machine acceptance is\ncreated only by the internal ``EXPLAINER_POLICY_EVALUATE`` processor.",
+        "operationId": "recordExplainerDecision",
+        "parameters": [
+          {
+            "name": "edition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Edition Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-editions/{edition_id}/exports": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Start Explainer Export",
+        "description": "Freeze the exact revision into a publication package.\n\nRequesting ``GLOBAL`` export does not mean every asset is already licensed for\nglobal distribution: the preflight still decides (design §19).",
+        "operationId": "startExplainerExport",
+        "parameters": [
+          {
+            "name": "edition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Edition Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerExportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/beats/{beat_id}/selections": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Select Explainer Beat Candidate",
+        "description": "Adopt a candidate for one beat.\n\nA machine adoption is recorded as ``POLICY_ACCEPTED`` scope but never as a\nhuman approval, and a human-locked beat can only be replaced by a human\ndecision (`lock=True` plus an actor).",
+        "operationId": "selectExplainerBeatCandidate",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "beat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Beat Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerSelectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/beats/{beat_id}/candidates": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "List Explainer Beat Candidates",
+        "operationId": "listExplainerBeatCandidates",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "beat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Beat Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/beats/{beat_id}/impact": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Get Explainer Beat Impact",
+        "description": "Show what changing this beat would invalidate before the user commits.",
+        "operationId": "getExplainerBeatImpact",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "beat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Beat Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-schedules": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "List Explainer Schedules",
+        "operationId": "listExplainerSchedules",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 36
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Create Explainer Schedule",
+        "operationId": "createExplainerSchedule",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerScheduleCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-schedules/{schedule_id}": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Get Explainer Schedule",
+        "operationId": "getExplainerSchedule",
+        "parameters": [
+          {
+            "name": "schedule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Schedule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Patch Explainer Schedule",
+        "operationId": "patchExplainerSchedule",
+        "parameters": [
+          {
+            "name": "schedule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Schedule Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerSchedulePatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/publication-packages/{package_id}/attempts": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Attempt Explainer Publication",
+        "description": "Attempt an authorized upload, or record a manual publication handoff.\n\nWith no authorization the adapter is never called and the package is marked\n``NEEDS_MANUAL_PUBLISH`` with a complete handoff record.",
+        "operationId": "attemptExplainerPublication",
+        "parameters": [
+          {
+            "name": "package_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Package Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicationAttemptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -34769,17 +37077,30 @@
             "title": "Title"
           },
           "summary": {
-            "type": "string",
-            "maxLength": 4000,
-            "title": "Summary",
-            "default": ""
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
           },
           "characters": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "maxItems": 100,
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Characters"
           },
           "shots": {
@@ -34790,6 +37111,93 @@
             "maxItems": 500,
             "minItems": 1,
             "title": "Shots"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 400
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time"
+          },
+          "atmosphere": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 400
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Atmosphere"
+          },
+          "lighting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 400
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lighting"
+          },
+          "props": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Props"
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purpose"
+          },
+          "continuity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuity"
           }
         },
         "type": "object",
@@ -34829,6 +37237,200 @@
             "maximum": 3600.0,
             "exclusiveMinimum": 0.0,
             "title": "Duration Seconds"
+          },
+          "shot_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Type"
+          },
+          "camera": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 400
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera"
+          },
+          "lighting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 400
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lighting"
+          },
+          "sound": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sound"
+          },
+          "emotion": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emotion"
+          },
+          "emotion_intensity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emotion Intensity"
+          },
+          "continuity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuity"
+          },
+          "creative_intent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creative Intent"
+          },
+          "composition": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Composition"
+          },
+          "camera_direction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Direction"
+          },
+          "camera_intensity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Intensity"
+          },
+          "camera_curve": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Curve"
+          },
+          "facial_action": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Facial Action"
+          },
+          "eye_line": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eye Line"
+          },
+          "blocking_summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocking Summary"
+          },
+          "transition_plan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Plan"
           }
         },
         "type": "object",
@@ -36769,6 +39371,40 @@
           "export"
         ],
         "title": "ContactSheetExportEnvelope"
+      },
+      "ContinuePipelineAnalysisRequest": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "expected_source_sha256": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Expected Source Sha256"
+          },
+          "expected_next_window_index": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Next Window Index"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "expected_source_sha256"
+        ],
+        "title": "ContinuePipelineAnalysisRequest",
+        "description": "Resume the next bounded batch of an already authorised manuscript range."
       },
       "ContinuityReferenceFact": {
         "properties": {
@@ -39467,6 +42103,11 @@
               }
             ],
             "title": "Source Paragraph End"
+          },
+          "create_new_selection": {
+            "type": "boolean",
+            "title": "Create New Selection",
+            "default": false
           }
         },
         "type": "object",
@@ -39526,6 +42167,85 @@
             "type": "boolean",
             "const": true,
             "title": "Requires Llm Confirmation"
+          },
+          "source_structure_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Structure Version"
+          },
+          "source_parser_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Parser Version"
+          },
+          "paragraph_layout": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "AUTO",
+                  "BLANK_LINE",
+                  "NEWLINE"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paragraph Layout"
+          },
+          "paragraph_layout_recommended": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "NEWLINE"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paragraph Layout Recommended"
+          },
+          "paragraph_layout_options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "BLANK_LINE",
+                    "NEWLINE"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paragraph Layout Options"
+          },
+          "chapter_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Count"
           }
         },
         "type": "object",
@@ -39546,6 +42266,16 @@
             "type": "string",
             "minLength": 1,
             "title": "Source Path"
+          },
+          "paragraph_layout": {
+            "type": "string",
+            "enum": [
+              "AUTO",
+              "BLANK_LINE",
+              "NEWLINE"
+            ],
+            "title": "Paragraph Layout",
+            "default": "AUTO"
           }
         },
         "type": "object",
@@ -39677,6 +42407,75 @@
           "selection_mode"
         ],
         "title": "DocumentImportSelectedRange"
+      },
+      "DocumentImportSelectionRequest": {
+        "properties": {
+          "source_paragraph_start": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Source Paragraph Start"
+          },
+          "source_paragraph_end": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Source Paragraph End"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_paragraph_start",
+          "source_paragraph_end"
+        ],
+        "title": "DocumentImportSelectionRequest",
+        "description": "Authorise a new analysis range over an existing immutable source version."
+      },
+      "DocumentImportSelectionResponse": {
+        "properties": {
+          "selection": {
+            "$ref": "#/components/schemas/DocumentImportSelectionResult"
+          }
+        },
+        "type": "object",
+        "required": [
+          "selection"
+        ],
+        "title": "DocumentImportSelectionResponse"
+      },
+      "DocumentImportSelectionResult": {
+        "properties": {
+          "import_session_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Import Session Id"
+          },
+          "source_document_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Source Document Version Id"
+          },
+          "selected_range": {
+            "$ref": "#/components/schemas/DocumentImportSelectedRange"
+          },
+          "reused": {
+            "type": "boolean",
+            "title": "Reused"
+          },
+          "source_preserved": {
+            "type": "boolean",
+            "const": true,
+            "title": "Source Preserved"
+          }
+        },
+        "type": "object",
+        "required": [
+          "import_session_id",
+          "source_document_version_id",
+          "selected_range",
+          "reused",
+          "source_preserved"
+        ],
+        "title": "DocumentImportSelectionResult",
+        "description": "New authorised analysis range derived from an existing import session."
       },
       "EditAudioClipFact": {
         "properties": {
@@ -39892,6 +42691,50 @@
               }
             ],
             "title": "Upstream Fingerprint"
+          },
+          "include_dialogue": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include Dialogue"
+          },
+          "include_music_and_sfx": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include Music And Sfx"
+          },
+          "include_source_audio": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include Source Audio"
+          },
+          "include_subtitles": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include Subtitles"
           },
           "created_at": {
             "type": "string",
@@ -43416,6 +46259,1569 @@
         ],
         "title": "ExperimentPlanRequest"
       },
+      "ExplainerChapterRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "audience_question": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Audience Question",
+            "default": ""
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 8000,
+            "title": "Summary",
+            "default": ""
+          },
+          "claim_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 256,
+            "title": "Claim Codes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "title"
+        ],
+        "title": "ExplainerChapterRequest"
+      },
+      "ExplainerClaimPatchRequest": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "SUPPORTED",
+                  "DISPUTED",
+                  "UNVERIFIED",
+                  "EXCLUDED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "statement": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statement"
+          },
+          "importance": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "CORE",
+                  "KEY",
+                  "SUPPORTING"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          },
+          "confidence_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Reason"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision"
+        ],
+        "title": "ExplainerClaimPatchRequest"
+      },
+      "ExplainerCreateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "topic": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Topic",
+            "default": ""
+          },
+          "content_kind": {
+            "type": "string",
+            "enum": [
+              "FACTUAL_EXPLAINER",
+              "ORIGINAL_FICTION"
+            ],
+            "title": "Content Kind",
+            "default": "FACTUAL_EXPLAINER"
+          },
+          "project_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Code"
+          },
+          "input_kind": {
+            "type": "string",
+            "enum": [
+              "TOPIC",
+              "PASTED_SCRIPT",
+              "DOCUMENT_IMPORT",
+              "REFERENCE_LINKS"
+            ],
+            "title": "Input Kind",
+            "default": "TOPIC"
+          },
+          "input_payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Input Payload"
+          },
+          "source_refs": {
+            "items": {
+              "$ref": "#/components/schemas/SourceRefModel"
+            },
+            "type": "array",
+            "title": "Source Refs"
+          },
+          "reference_urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Reference Urls"
+          },
+          "pasted_text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pasted Text"
+          },
+          "duration_mode": {
+            "type": "string",
+            "enum": [
+              "TARGET",
+              "FIXED"
+            ],
+            "title": "Duration Mode",
+            "default": "TARGET"
+          },
+          "target_seconds": {
+            "type": "integer",
+            "maximum": 7200.0,
+            "minimum": 30.0,
+            "title": "Target Seconds",
+            "default": 300
+          },
+          "tolerance_percent": {
+            "type": "number",
+            "maximum": 25.0,
+            "minimum": 0.0,
+            "title": "Tolerance Percent",
+            "default": 5.0
+          },
+          "source_locale": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 2,
+            "title": "Source Locale",
+            "default": "zh-CN"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainerOutputRequest"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Outputs"
+          },
+          "automation_mode": {
+            "type": "string",
+            "enum": [
+              "AUTO_WITH_EXCEPTIONS",
+              "REVIEW_BEFORE_RENDER",
+              "MANUAL_REVIEW"
+            ],
+            "title": "Automation Mode",
+            "default": "AUTO_WITH_EXCEPTIONS"
+          },
+          "inference_mode": {
+            "type": "string",
+            "enum": [
+              "LOCAL_ONLY",
+              "ALLOW_CONFIGURED_CLOUD"
+            ],
+            "title": "Inference Mode",
+            "default": "LOCAL_ONLY"
+          },
+          "research_mode": {
+            "type": "string",
+            "enum": [
+              "OFFLINE_IMPORT",
+              "WEB_RESEARCH"
+            ],
+            "title": "Research Mode",
+            "default": "OFFLINE_IMPORT"
+          },
+          "allowed_domains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Allowed Domains"
+          },
+          "channel_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Profile Id"
+          },
+          "channel_profile_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Profile Version Id"
+          },
+          "aspect_ratio": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aspect Ratio"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 16384.0,
+                "minimum": 64.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 16384.0,
+                "minimum": 64.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "primary_language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Language"
+          },
+          "subtitle_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 24
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtitle Mode"
+          },
+          "subtitle_language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtitle Language"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "outputs"
+        ],
+        "title": "ExplainerCreateRequest",
+        "description": "``POST /explainers`` — create the EXPLAINER project, the video and inputs."
+      },
+      "ExplainerDecisionRequest": {
+        "properties": {
+          "decision_kind": {
+            "type": "string",
+            "enum": [
+              "HUMAN_APPROVED",
+              "REJECTED",
+              "CHANGES_REQUESTED",
+              "PUBLICATION_AUTHORIZED"
+            ],
+            "title": "Decision Kind"
+          },
+          "subject_kind": {
+            "type": "string",
+            "enum": [
+              "COMPOSITION_RENDER",
+              "COMPOSITION_REVISION",
+              "NARRATION_ALIGNMENT",
+              "SUBTITLE_REVISION",
+              "VISUAL_BEAT",
+              "EDITION",
+              "SCRIPT_REVISION"
+            ],
+            "title": "Subject Kind",
+            "default": "COMPOSITION_RENDER"
+          },
+          "subject_revision_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Subject Revision Id"
+          },
+          "subject_hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Subject Hash"
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor"
+          },
+          "reviewed_intervals": {
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Reviewed Intervals"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Note",
+            "default": ""
+          },
+          "rerun_policy": {
+            "type": "boolean",
+            "title": "Rerun Policy",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision_kind",
+          "subject_revision_id",
+          "subject_hash",
+          "actor"
+        ],
+        "title": "ExplainerDecisionRequest",
+        "description": "Human decision, or an explicit request to re-run the frozen policy.\n\n``decision_kind`` may never be ``POLICY_ACCEPTED`` from HTTP: machine\nacceptance is created only by the internal policy processor (design §14)."
+      },
+      "ExplainerEditionRequest": {
+        "properties": {
+          "edition_key": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 3,
+            "title": "Edition Key"
+          },
+          "voice_locale": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 2,
+            "title": "Voice Locale"
+          },
+          "subtitle_locales": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Subtitle Locales"
+          },
+          "subtitle_mode": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "BURNED",
+              "SOFT",
+              "BILINGUAL_BURNED"
+            ],
+            "title": "Subtitle Mode",
+            "default": "NONE"
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "16:9",
+              "9:16",
+              "3:4",
+              "1:1"
+            ],
+            "title": "Aspect Ratio",
+            "default": "16:9"
+          },
+          "fps": {
+            "$ref": "#/components/schemas/RationalModel"
+          },
+          "duration_policy": {
+            "type": "string",
+            "enum": [
+              "USE_SOURCE_TARGET",
+              "NATURAL_NARRATION",
+              "FIXED_FRAMES"
+            ],
+            "title": "Duration Policy",
+            "default": "NATURAL_NARRATION"
+          },
+          "target_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 7200.0,
+                "minimum": 30.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Seconds"
+          },
+          "tolerance_percent": {
+            "type": "number",
+            "maximum": 25.0,
+            "minimum": 0.0,
+            "title": "Tolerance Percent",
+            "default": 5.0
+          },
+          "allow_soft_subtitle_fallback": {
+            "type": "boolean",
+            "title": "Allow Soft Subtitle Fallback",
+            "default": false
+          },
+          "reuse_compatible_media": {
+            "type": "boolean",
+            "title": "Reuse Compatible Media",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "edition_key",
+          "voice_locale"
+        ],
+        "title": "ExplainerEditionRequest"
+      },
+      "ExplainerExportRequest": {
+        "properties": {
+          "render_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Render Id"
+          },
+          "edition_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edition Id"
+          },
+          "platform_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform Code"
+          },
+          "intended_territories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Intended Territories"
+          },
+          "include_stems": {
+            "type": "boolean",
+            "title": "Include Stems",
+            "default": true
+          },
+          "include_subtitles": {
+            "type": "boolean",
+            "title": "Include Subtitles",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExplainerExportRequest"
+      },
+      "ExplainerOutputRequest": {
+        "properties": {
+          "edition_key": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 3,
+            "title": "Edition Key"
+          },
+          "voice_locale": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 2,
+            "title": "Voice Locale"
+          },
+          "subtitle_locales": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Subtitle Locales"
+          },
+          "subtitle_mode": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "BURNED",
+              "SOFT",
+              "BILINGUAL_BURNED"
+            ],
+            "title": "Subtitle Mode",
+            "default": "NONE"
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "16:9",
+              "9:16",
+              "3:4",
+              "1:1"
+            ],
+            "title": "Aspect Ratio",
+            "default": "16:9"
+          },
+          "fps": {
+            "$ref": "#/components/schemas/RationalModel"
+          },
+          "duration_policy": {
+            "type": "string",
+            "enum": [
+              "USE_SOURCE_TARGET",
+              "NATURAL_NARRATION",
+              "FIXED_FRAMES"
+            ],
+            "title": "Duration Policy",
+            "default": "NATURAL_NARRATION"
+          },
+          "allow_soft_subtitle_fallback": {
+            "type": "boolean",
+            "title": "Allow Soft Subtitle Fallback",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "edition_key",
+          "voice_locale"
+        ],
+        "title": "ExplainerOutputRequest",
+        "description": "One output edition: voice language, subtitle languages, aspect, frame rate."
+      },
+      "ExplainerPreflightRequest": {
+        "properties": {
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainerOutputRequest"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Outputs"
+          },
+          "budget": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Budget"
+          },
+          "fallback_policy": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Fallback Policy"
+          },
+          "parent_plan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Plan Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExplainerPreflightRequest"
+      },
+      "ExplainerRenderRequest": {
+        "properties": {
+          "composition_revision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Composition Revision Id"
+          },
+          "freeze": {
+            "type": "boolean",
+            "title": "Freeze",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "default": false
+          },
+          "budget": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Budget"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExplainerRenderRequest"
+      },
+      "ExplainerRepairRequest": {
+        "properties": {
+          "issue_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Issue Ids"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "budget": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Budget"
+          },
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "issue_ids",
+          "expected_revision"
+        ],
+        "title": "ExplainerRepairRequest"
+      },
+      "ExplainerResearchRunRequest": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "OFFLINE_IMPORT",
+              "WEB_RESEARCH"
+            ],
+            "title": "Mode",
+            "default": "OFFLINE_IMPORT"
+          },
+          "topic": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Topic",
+            "default": ""
+          },
+          "allowed_domains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Allowed Domains"
+          },
+          "max_external_requests": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Max External Requests",
+            "default": 0
+          },
+          "reference_urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Reference Urls"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExplainerResearchRunRequest"
+      },
+      "ExplainerRunControlRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Reason",
+            "default": ""
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor",
+            "default": "local-user"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExplainerRunControlRequest"
+      },
+      "ExplainerRunRequest": {
+        "properties": {
+          "plan_hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Plan Hash"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainerOutputRequest"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Outputs"
+          },
+          "budget": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Budget"
+          },
+          "fallback_policy": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Fallback Policy"
+          },
+          "start_workflow": {
+            "type": "boolean",
+            "title": "Start Workflow",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "plan_hash"
+        ],
+        "title": "ExplainerRunRequest"
+      },
+      "ExplainerScheduleCreateRequest": {
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "channel_profile_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Channel Profile Id"
+          },
+          "channel_profile_version_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Channel Profile Version Id"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 2,
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "timezone": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 2,
+            "title": "Timezone",
+            "default": "Asia/Shanghai"
+          },
+          "rule": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Rule"
+          },
+          "topic_scope": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Topic Scope",
+            "default": ""
+          },
+          "source_allowlist": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Source Allowlist"
+          },
+          "daily_budget": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Daily Budget"
+          },
+          "max_concurrent_runs": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Max Concurrent Runs",
+            "default": 1
+          },
+          "duplicate_window_hours": {
+            "type": "integer",
+            "maximum": 8760.0,
+            "minimum": 0.0,
+            "title": "Duplicate Window Hours",
+            "default": 72
+          },
+          "insufficient_topic_policy": {
+            "type": "string",
+            "enum": [
+              "SKIP_WITH_REASON",
+              "WAIT_FOR_INPUT",
+              "FAIL"
+            ],
+            "title": "Insufficient Topic Policy",
+            "default": "SKIP_WITH_REASON"
+          },
+          "closed_window": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Closed Window"
+          },
+          "failure_notification": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Failure Notification"
+          },
+          "durations": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Durations"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainerOutputRequest"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Outputs"
+          },
+          "automation_mode": {
+            "type": "string",
+            "enum": [
+              "AUTO_WITH_EXCEPTIONS",
+              "REVIEW_BEFORE_RENDER",
+              "MANUAL_REVIEW"
+            ],
+            "title": "Automation Mode",
+            "default": "AUTO_WITH_EXCEPTIONS"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "channel_profile_id",
+          "channel_profile_version_id",
+          "code",
+          "title"
+        ],
+        "title": "ExplainerScheduleCreateRequest"
+      },
+      "ExplainerSchedulePatchRequest": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ACTIVE",
+                  "PAUSED",
+                  "ARCHIVED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "rule": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule"
+          },
+          "topic_scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic Scope"
+          },
+          "source_allowlist": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Allowlist"
+          },
+          "daily_budget": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Budget"
+          },
+          "max_concurrent_runs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 8.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Concurrent Runs"
+          },
+          "duplicate_window_hours": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 8760.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duplicate Window Hours"
+          },
+          "insufficient_topic_policy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "SKIP_WITH_REASON",
+                  "WAIT_FOR_INPUT",
+                  "FAIL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Insufficient Topic Policy"
+          },
+          "closed_window": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed Window"
+          },
+          "failure_notification": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Notification"
+          },
+          "durations": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durations"
+          },
+          "outputs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ExplainerOutputRequest"
+                },
+                "type": "array",
+                "maxItems": 8
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outputs"
+          },
+          "automation_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "AUTO_WITH_EXCEPTIONS",
+                  "REVIEW_BEFORE_RENDER",
+                  "MANUAL_REVIEW"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Automation Mode"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision"
+        ],
+        "title": "ExplainerSchedulePatchRequest"
+      },
+      "ExplainerScriptRevisionRequest": {
+        "properties": {
+          "locale": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 2,
+            "title": "Locale",
+            "default": "zh-CN"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 300,
+            "title": "Title",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "IN_REVIEW",
+              "FROZEN"
+            ],
+            "title": "Status",
+            "default": "DRAFT"
+          },
+          "source_script_revision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Script Revision Id"
+          },
+          "terminology": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Terminology"
+          },
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainerChapterRequest"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Chapters"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainerSegmentRequest"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Segments"
+          },
+          "parent_plan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Plan Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExplainerScriptRevisionRequest"
+      },
+      "ExplainerSegmentPatchRequest": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "expected_script_revision_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Expected Script Revision Id"
+          },
+          "display_text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 8000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Text"
+          },
+          "spoken_text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 8000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spoken Text"
+          },
+          "pronunciation_map": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "array",
+                "maxItems": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pronunciation Map"
+          },
+          "allow_locked": {
+            "type": "boolean",
+            "title": "Allow Locked",
+            "default": false
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "expected_script_revision_id"
+        ],
+        "title": "ExplainerSegmentPatchRequest"
+      },
+      "ExplainerSegmentRequest": {
+        "properties": {
+          "canonical_segment_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Canonical Segment Id"
+          },
+          "display_text": {
+            "type": "string",
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Display Text"
+          },
+          "spoken_text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 8000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spoken Text"
+          },
+          "statement_type": {
+            "type": "string",
+            "enum": [
+              "FACT",
+              "ORIGINAL_EXPLANATION",
+              "TRANSITION",
+              "FICTION",
+              "QUESTION"
+            ],
+            "title": "Statement Type",
+            "default": "FACT"
+          },
+          "claim_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Claim Codes"
+          },
+          "pronunciation_map": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "maxItems": 256,
+            "title": "Pronunciation Map"
+          },
+          "speaker": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker"
+          },
+          "emotion": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emotion"
+          },
+          "pause_after_ms": {
+            "type": "integer",
+            "maximum": 60000.0,
+            "minimum": 0.0,
+            "title": "Pause After Ms",
+            "default": 0
+          },
+          "target_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3600000.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Duration Ms"
+          },
+          "content_locked_by_human": {
+            "type": "boolean",
+            "title": "Content Locked By Human",
+            "default": false
+          },
+          "chapter_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "canonical_segment_id",
+          "display_text"
+        ],
+        "title": "ExplainerSegmentRequest"
+      },
+      "ExplainerSelectionRequest": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "candidate_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Candidate Id"
+          },
+          "edition_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edition Id"
+          },
+          "lock": {
+            "type": "boolean",
+            "title": "Lock",
+            "default": false
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "candidate_id"
+        ],
+        "title": "ExplainerSelectionRequest"
+      },
       "FrameAnchor": {
         "properties": {
           "id": {
@@ -44996,6 +49402,22 @@
             },
             "type": "object",
             "title": "Checks"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons",
+            "default": []
+          },
+          "initialization": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Initialization",
+            "default": {}
           }
         },
         "type": "object",
@@ -47431,6 +51853,21 @@
         },
         "type": "object",
         "title": "PipelineProductionAuthorization"
+      },
+      "PipelineRunResponse": {
+        "properties": {
+          "run": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Run"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run"
+        ],
+        "title": "PipelineRunResponse",
+        "description": "Envelope for a single story-planning run.\n\n``run`` is the canonical pipeline run projection. It is intentionally typed as\na free-form object here: this endpoint returns the same projection the other\nrun commands return, and pinning a partial field list would silently drop\nfields the frontend already relies on (``draft``, ``analysis_cursor``,\n``apply_continuation``, ...). The explicit envelope still gives the operation a\ndeclared response contract instead of an untyped body."
       },
       "PostAudioSummary": {
         "properties": {
@@ -50869,6 +55306,52 @@
         ],
         "title": "ProviderSecretRequest"
       },
+      "PublicationAttemptRequest": {
+        "properties": {
+          "adapter_code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Adapter Code"
+          },
+          "platform_code": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Platform Code"
+          },
+          "account_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Ref"
+          },
+          "authorized": {
+            "type": "boolean",
+            "title": "Authorized",
+            "default": false
+          },
+          "handoff_note": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Handoff Note",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "adapter_code",
+          "platform_code"
+        ],
+        "title": "PublicationAttemptRequest"
+      },
       "QcPolicyPutRequest": {
         "properties": {
           "owner_type": {
@@ -51339,6 +55822,29 @@
           "denominator"
         ],
         "title": "Rational"
+      },
+      "RationalModel": {
+        "properties": {
+          "num": {
+            "type": "integer",
+            "maximum": 120000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Num"
+          },
+          "den": {
+            "type": "integer",
+            "maximum": 1001.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Den"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "num",
+          "den"
+        ],
+        "title": "RationalModel"
       },
       "RenderEpisodeRequest": {
         "properties": {
@@ -56507,6 +61013,28 @@
         ],
         "title": "SourceRangeFact"
       },
+      "SourceRefModel": {
+        "properties": {
+          "reference": {
+            "type": "string",
+            "maxLength": 400,
+            "minLength": 1,
+            "title": "Reference"
+          },
+          "role": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Role",
+            "default": "RESEARCH_SOURCE"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reference"
+        ],
+        "title": "SourceRefModel"
+      },
       "StageProjectPackageRequest": {
         "properties": {
           "inbox_name": {
@@ -58856,6 +63384,16 @@
             },
             "type": "array",
             "title": "Items"
+          },
+          "version_signature": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimelineVersionSignature"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true,
@@ -59334,6 +63872,40 @@
           "latest_frozen"
         ],
         "title": "TimelineStatusTimelineSummary"
+      },
+      "TimelineVersionSignature": {
+        "properties": {
+          "signature": {
+            "type": "string",
+            "title": "Signature"
+          },
+          "duration_us": {
+            "type": "integer",
+            "title": "Duration Us"
+          },
+          "has_dialogue": {
+            "type": "boolean",
+            "title": "Has Dialogue"
+          },
+          "audio_tracks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Audio Tracks"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "signature",
+          "duration_us",
+          "has_dialogue",
+          "audio_tracks"
+        ],
+        "title": "TimelineVersionSignature",
+        "description": "What a freeze/dirty decision must depend on, as one explicit signature."
       },
       "TimelineWriteFact": {
         "properties": {

@@ -129,19 +129,36 @@ def _egress_guard() -> Iterator[tuple[list[str], list[str]]]:
 
 @contextmanager
 def _hostile_proxy_environment() -> Iterator[None]:
+    """Install hostile proxy variables plus the loopback Comfy toggle.
+
+    Every key this context touches is restored exactly, including the ones it
+    *creates*: ``LOCAL_DRAMA_COMFY_ACCESS`` did not exist in the restore set, so
+    a UAT run left Comfy access ``enabled`` for every later test in the same
+    process.  Both the original value and whether the key existed at all are
+    saved, and the restore runs from ``finally`` so an exception in the body
+    cannot leak either.
+    """
+
     keys = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
-    original = {key: os.environ.get(key) for key in keys}
+    comfy_access_key = "LOCAL_DRAMA_COMFY_ACCESS"
+    watched = (*keys, comfy_access_key)
+    existed = {key: key in os.environ for key in watched}
+    original = {key: os.environ.get(key) for key in watched}
     try:
         for key in keys:
             os.environ[key] = "http://203.0.113.66:3128"
-        os.environ["LOCAL_DRAMA_COMFY_ACCESS"] = "enabled"
+        # The UAT's own ephemeral loopback server is the only endpoint it may
+        # reach; this stays unchanged.
+        os.environ[comfy_access_key] = "enabled"
         yield
     finally:
-        for key, value in original.items():
-            if value is None:
-                os.environ.pop(key, None)
+        for key in watched:
+            if existed[key]:
+                value = original[key]
+                if value is not None:
+                    os.environ[key] = value
             else:
-                os.environ[key] = value
+                os.environ.pop(key, None)
 
 
 def _check(code: str, passed: bool, **details: Any) -> dict[str, Any]:

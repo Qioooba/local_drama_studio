@@ -1,4 +1,9 @@
-param([switch]$IncludeComfyUI)
+param(
+  [switch]$IncludeComfyUI,
+  [switch]$IncludeBlueprintAudit,
+  [string]$BlueprintRoot = '',
+  [string]$ModelManifest = ''
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -13,8 +18,20 @@ Push-Location $repoRoot
 try {
   $python = Join-Path $repoRoot '.venv/Scripts/python.exe'
   if (-not (Test-Path -LiteralPath $python)) { $python = (Get-Command python).Source }
-  & $python scripts/g0_validate.py
-  Assert-NativeSuccess 'blueprint validation'
+  & $python scripts/check_dependency_locks.py
+  Assert-NativeSuccess 'dependency lock validation'
+  if ($IncludeBlueprintAudit) {
+    # Opt-in: the external blueprint and the real machine model manifest live
+    # OUTSIDE this repository.  Never required by the default, portable gate.
+    $blueprintArgs = @()
+    if ($BlueprintRoot) { $blueprintArgs += @('--blueprint-root', $BlueprintRoot) }
+    if ($ModelManifest) { $blueprintArgs += @('--manifest', $ModelManifest) }
+    & $python scripts/g0_validate.py @blueprintArgs
+    Assert-NativeSuccess 'in-repo contract validation with external blueprint audit'
+  } else {
+    & $python scripts/g0_validate.py
+    Assert-NativeSuccess 'in-repo contract validation'
+  }
   & $python -m compileall -q apps/api scripts
   Assert-NativeSuccess 'Python compileall'
   & $python scripts/generate_client.py

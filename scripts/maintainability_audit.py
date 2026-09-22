@@ -40,7 +40,18 @@ UI_WARNING_LINES = 700
 
 
 def _relative(path: Path) -> str:
-    return path.relative_to(ROOT).as_posix()
+    """Render a path for the report, tolerating outputs outside the repo.
+
+    ``--output`` may be an absolute path anywhere on the machine.  Returning the
+    absolute path in that case keeps the report printable (and the gate exit
+    code meaningful) instead of raising ``ValueError`` after the file was
+    already written.
+    """
+
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
 
 
 def _python_files(root: Path) -> Iterable[Path]:

@@ -2,6 +2,14 @@
 
 The committed manifest is an allow-list: existing entries may be removed, but
 new entries fail the guard until they have an owner and removal slice.
+
+One exemption is deliberate and narrow.  A worker-side *port factory* has to name
+the concrete service it wires — that is its whole job — so a call is not counted
+when it sits directly inside a function whose name starts with ``build_`` or
+``make_``.  The exemption is scoped to the enclosing function, not to a file, so
+business logic in the same module (for example
+``ExplainerScheduleExecutor.tick``) is still reported if it constructs a service
+itself.  Callers are expected to name such functions ``build_*``/``make_*``.
 """
 
 from __future__ import annotations
@@ -14,6 +22,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 API_ROOT = ROOT / "apps" / "api" / "local_drama"
 MANIFEST_PATH = ROOT / "docs" / "architecture" / "legacy-debt-manifest.json"
+
+#: A call is exempt only when its nearest enclosing function is a factory.  The
+#: ``client_factory`` case is the same concept for a model client: the adapter that
+#: resolves the configured endpoint has to name the concrete LLM service.
+_FACTORY_PREFIXES = ("build_", "make_", "client_factory")
 
 
 def _relative(path: Path) -> str:
@@ -29,6 +42,23 @@ def _returns_raw_response(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return False
 
 
+def _factory_scopes(tree: ast.AST) -> dict[int, str]:
+    """Map each node's nearest enclosing function name, innermost wins."""
+
+    owners: dict[int, str] = {}
+
+    def walk(node: ast.AST, current: str | None) -> None:
+        for child in ast.iter_child_nodes(node):
+            name = current
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                name = child.name
+            owners[id(child)] = name or ""
+            walk(child, name)
+
+    walk(tree, None)
+    return owners
+
+
 def audit() -> dict[str, Any]:
     concrete_database: list[dict[str, Any]] = []
     service_construction: list[dict[str, Any]] = []
@@ -36,10 +66,14 @@ def audit() -> dict[str, Any]:
 
     for path in sorted((API_ROOT / "application").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        scopes = _factory_scopes(tree)
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module == "local_drama.infrastructure.database.sqlite" and any(alias.name == "Database" for alias in node.names):
                 concrete_database.append({"id": f"{_relative(path)}:{node.lineno}", "file": _relative(path), "line": node.lineno, "owner": "legacy-application", "remove_by_slice": 8})
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id.endswith("Service") and node.func.id != path.stem.title().replace("_", ""):
+                scope = scopes.get(id(node), "")
+                if scope.startswith(_FACTORY_PREFIXES):
+                    continue
                 service_construction.append({"id": f"{_relative(path)}:{node.lineno}:{node.func.id}", "file": _relative(path), "line": node.lineno, "service": node.func.id, "owner": "legacy-application", "remove_by_slice": 8})
 
     for path in sorted((API_ROOT / "api" / "routes").rglob("*.py")):

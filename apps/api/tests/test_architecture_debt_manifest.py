@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 
 from scripts.audit_architecture_debt import MANIFEST_PATH, audit
@@ -18,6 +19,44 @@ def test_legacy_architecture_debt_does_not_grow() -> None:
         allowed = {signature(entry) for entry in baseline["categories"][category]}
         introduced = {signature(entry) for entry in current_entries} - allowed
         assert not introduced, f"new {category} debt must use a port/response schema: {sorted(introduced)}"
+
+
+def test_the_port_factory_exemption_stays_narrow() -> None:
+    """Only a named factory may wire a concrete service, not ordinary business logic.
+
+    The exemption exists because a worker-side port factory has to name the service
+    it binds; if it ever covered arbitrary methods the guard would stop protecting
+    the application layer, so this asserts the scoping rule directly.
+    """
+
+    from scripts.audit_architecture_debt import _FACTORY_PREFIXES, _factory_scopes
+
+    source = (
+        "class Executor:\n"
+        "    def tick(self):\n"
+        "        return RealService(self.database)\n"
+        "\n"
+        "def build_ports(database):\n"
+        "    return RealService(database)\n"
+        "\n"
+        "def business(database):\n"
+        "    return RealService(database)\n"
+    )
+    tree = ast.parse(source)
+    scopes = _factory_scopes(tree)
+    calls = sorted(
+        (node.lineno, node.func.id, scopes.get(id(node), ""))
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    )
+
+    assert [(line, scope) for line, _name, scope in calls] == [
+        (3, "tick"),
+        (6, "build_ports"),
+        (9, "business"),
+    ]
+    for line, scope in ((3, "tick"), (6, "build_ports"), (9, "business")):
+        assert (scope.startswith(_FACTORY_PREFIXES)) is (line == 6)
 
 
 def test_v2_product_context_has_explicit_contracts_and_no_database_dependency() -> None:

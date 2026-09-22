@@ -7,8 +7,9 @@
     "web:build": "pnpm --dir apps/web build",
     "web:test": "pnpm --dir apps/web test",
     "generate:client": "python scripts/generate_client.py",
-    "api:test": "python -m pytest apps/api/tests",
+    "api:test": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_api_safe.ps1",
     "api:test:safe": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_api_safe.ps1",
+    "api:test:live": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_api_live.ps1",
     "check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1"
   },
   "devDependencies": {

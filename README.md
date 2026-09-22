@@ -183,22 +183,58 @@ $env:PYTHONPATH = (Join-Path (Get-Location) 'apps/api')
 ## 测试与质量门禁
 
 ```powershell
-# API 单测（默认不连接实时 ComfyUI）
+# API 单测：安全默认集，不连接实时 ComfyUI / GPU（等价于 scripts/test_api_safe.ps1）
 pnpm run api:test
 
 # Web TypeScript/Vitest
 pnpm run web:test
 
-# 完整检查：蓝图校验、Python 编译、OpenAPI/客户端生成、API、mypy、Ruff、审计、Web 构建与测试
+# 完整检查：依赖锁校验、仓库内契约校验（G0）、Python 编译、OpenAPI/客户端生成、API、mypy、Ruff、审计、Web 构建与测试
 pnpm run check
 ```
 
+### 默认集与真实硬件集
+
+`pnpm run api:test`（`scripts/test_api_safe.ps1`）只做两件事来保证安全与可复现：
+
+- 设置 `LOCAL_DRAMA_COMFY_ACCESS=disabled`，退出时恢复原值（原本不存在则删除该键）；
+- 追加 `-m 'not comfyui and not video_upscale_gpu'`，因此带 `comfyui` 或 `video_upscale_gpu` marker 的用例根本不会被收集执行。
+
+当前仓库中安全集为 1710 个用例、真实硬件集为 4 个用例（`pytest --collect-only -m "comfyui or video_upscale_gpu"` 可核对）。真实硬件用例仍然保留在仓库中，只是不会随默认命令运行。
+
+需要真实验收时显式执行：
+
+```powershell
+pnpm run api:test:live
+```
+
+`api:test:live`（`scripts/test_api_live.ps1`）等价于 `-m 'comfyui or video_upscale_gpu'`，其前提条件必须事先由操作者满足，脚本本身不下载模型、不启动服务：
+
+- Windows x64 + 可用的 NVIDIA 驱动；
+- ComfyUI 监听 loopback（默认 `http://127.0.0.1:8188`）并已安装所需模型文件，`LOCAL_DRAMA_COMFY_ACCESS` 为 `enabled`；
+- `video_upscale_gpu` 用例还需要真实的 NCNN/Vulkan 运行时、其模型文件与足够的显存；
+- 真实的本机 `model_manifest.json`（这些用例不使用合成清单）。
+
+`pnpm run check` 默认只跑可移植的仓库内门禁。外部蓝图（`LocalDramaStudio_Blueprint_v2`）与真实 `model_manifest.json` 位于仓库之外，属于 **opt-in 扩展审计**：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check.ps1 -IncludeBlueprintAudit `
+  -BlueprintRoot ..\LocalDramaStudio_Blueprint_v2 -ModelManifest ..\model_manifest.json -IncludeComfyUI
+```
+
+只提供其中一个输入会被明确拒绝；未配置时扩展审计报告 `NOT_CONFIGURED` 并指向 UAT 路径，不会伪造 PASS。
+
 涉及真实浏览器流程的 Playwright 用例位于 [`tests/e2e`](tests/e2e)，测试环境会使用 Edge、Vite 和项目中配置的本地 API；涉及真实 GPU / ComfyUI / SAPI 的用例应按文件中的 UAT 说明单独执行，不要把模拟证据当作真实模型产物。
+
+契约与迁移 head 由仓库内版本化规范 [`docs/release/g0-contract.json`](docs/release/g0-contract.json) 和 [`docs/release/migration-contract.json`](docs/release/migration-contract.json) 共同约束：默认 G0 校验会检查必需组件、schema 版本、API contract version、提交的 OpenAPI/TS 生成物是否与生成器输出一致，以及 alembic head 图是否只有单一可达 head。`scripts/check_dependency_locks.py` 另行验证 `apps/api/pyproject.toml` 的每个运行时依赖都存在于两份锁文件且版本满足声明范围，新增依赖忘记加锁会直接失败。
 
 OpenAPI 与 TypeScript 客户端由 [`scripts/generate_client.py`](scripts/generate_client.py) 从 FastAPI 应用生成：
 
 ```powershell
 python scripts\generate_client.py
+
+# 只检查提交的生成物是否过期，不写文件
+python scripts\generate_client.py --check
 ```
 
 生成结果为 [`docs/openapi/openapi.json`](docs/openapi/openapi.json) 和 [`apps/web/src/generated/api.ts`](apps/web/src/generated/api.ts)，不要直接手改生成文件。

@@ -1,75 +1,86 @@
-"""Read-only G0 validator for the v2 blueprint and local H3 manifest."""
+"""Read-only G0 gate validator.
+
+Default (portable) mode validates the versioned in-repo contract
+``docs/release/g0-contract.json``: required code/contract/migration/test/lock
+components, versioned schemas, the API contract version, the committed
+OpenAPI/TS generator output, the alembic head graph, and the declared quality
+gates.  It needs nothing outside the repository, so a clean checkout in any
+directory can run it.
+
+The former external blueprint + ``model_manifest.json`` audit is retained as an
+opt-in extended mode (``--blueprint-root`` and ``--manifest``).  When those
+inputs are not supplied the extended audit reports ``NOT_CONFIGURED`` and points
+at the licensed local UAT path; it never fabricates a PASS.
+"""
 
 from __future__ import annotations
 
-import hashlib
-import json
-import re
+import argparse
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-BLUEPRINT = ROOT / "LocalDramaStudio_Blueprint_v2"
-MANIFEST = ROOT / "model_manifest.json"
-IN_SCOPE = [*range(11), *range(12, 18)]
+from g0_validate_core import (
+    DEFAULT_SPEC,
+    NOT_CONFIGURED,
+    REPO_ROOT,
+    G0ValidationError,
+    ValidationReport,
+    audit_blueprint,
+    validate_repository,
+)
 
 
-def in_scope_docs() -> list[Path]:
-    return [BLUEPRINT / f"{number:02d}_" for number in IN_SCOPE]  # type: ignore[list-item]
+def _print_report(report: ValidationReport) -> None:
+    print(f"mode={report.mode}")
+    for check in report.checks:
+        print(f"{check.code}={check.status} ({check.detail})")
+        for finding in check.findings:
+            print(f"  - {finding}")
+    print(f"g0_status={report.status}")
 
 
-def resolve_docs() -> list[Path]:
-    paths: list[Path] = []
-    for number in IN_SCOPE:
-        matches = sorted(BLUEPRINT.glob(f"{number:02d}_*.md"))
-        if len(matches) != 1:
-            raise RuntimeError(
-                f"expected exactly one in-scope document for {number:02d}"
-            )
-        paths.append(matches[0])
-    return paths
-
-
-def requirement_ids(text: str, prefix: str) -> set[str]:
-    return set(
-        re.findall(rf"^\|\s*({re.escape(prefix)}[A-Z0-9]+-\d{{3}})\b", text, re.MULTILINE)
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=REPO_ROOT,
+        help="repository root to validate (default: the root containing this script)",
     )
-
-
-def main() -> None:
-    docs = resolve_docs()
-    requirements = (BLUEPRINT / "01_产品需求与验收范围.md").read_text(encoding="utf-8")
-    tests = (BLUEPRINT / "10_测试策略_用例矩阵与发布检查.md").read_text(
-        encoding="utf-8"
+    parser.add_argument("--spec", type=Path, default=DEFAULT_SPEC, help="in-repo G0 contract specification")
+    parser.add_argument(
+        "--no-verify-generator",
+        action="store_true",
+        help="skip re-running scripts/generate_client.py --check (structural artifact checks still run)",
     )
-    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    print(f"blueprint={BLUEPRINT}")
-    print(f"documents_in_scope={len(docs)}")
-    print(
-        f"document_11_present={int((BLUEPRINT / '11_老屋灯火迁移_试运行与上线.md').exists())}"
+    parser.add_argument(
+        "--blueprint-root",
+        type=Path,
+        default=None,
+        help="OPT-IN extended audit: directory holding LocalDramaStudio_Blueprint_v2 documents",
     )
-    fr_count = len(requirement_ids(requirements, "FR-"))
-    nfr_count = len(requirement_ids(requirements, "NFR-"))
-    tc_count = len(set(re.findall(r"\bTC-[A-Z]+-\d{3}\b", tests)))
-    if (fr_count, nfr_count, tc_count) != (86, 15, 85):
-        raise RuntimeError(
-            f"master inventory drift: expected FR/NFR/TC=86/15/85, observed {fr_count}/{nfr_count}/{tc_count}"
-        )
-    print(f"fr_count={fr_count}")
-    print(f"nfr_count={nfr_count}")
-    print(f"tc_count={tc_count}")
-    authoritative = manifest["authoritative_current_state"]
-    route_status = authoritative["route_status"]
-    print(f"manifest_version={manifest['manifest_version']}")
-    print(f"worker_policy={authoritative['worker_policy']}")
-    print(f"native_t2v={route_status['native_t2v']}")
-    print(f"native_i2v={route_status['native_i2v']}")
-    print(f"native_ref2v={route_status['native_ref2v']}")
-    print(f"native_first_last={route_status['native_first_last']}")
-    print(f"forbidden_assets={len(authoritative['forbidden_assets'])}")
-    for path in docs:
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        print(f"sha256[{path.name}]={digest}")
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="OPT-IN extended audit: real model_manifest.json path",
+    )
+    args = parser.parse_args(argv)
+    if (args.blueprint_root is None) != (args.manifest is None):
+        parser.error("the extended blueprint audit needs BOTH --blueprint-root and --manifest, or neither")
+    try:
+        report = validate_repository(args.repo_root.resolve(), args.spec, verify_generator=not args.no_verify_generator)
+        if args.blueprint_root is not None or args.manifest is not None:
+            blueprint = audit_blueprint(args.blueprint_root, args.manifest, args.spec)
+            report = ValidationReport(mode=f"{report.mode}+{blueprint.mode}", checks=report.checks + blueprint.checks)
+    except G0ValidationError as error:
+        print("g0_status=FAIL")
+        print(f"  - {error}")
+        return 1
+    _print_report(report)
+    if report.status == NOT_CONFIGURED:
+        return 2
+    return 1 if report.status == "FAIL" else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

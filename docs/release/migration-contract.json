@@ -1,13 +1,13 @@
 {
   "schema_version": "localdrama.release-migration-contract.v1",
   "expected_heads": [
-    "0100_production_session_waiting_user"
+    "0102_explainer_factory_foundation"
   ],
   "upgrade_command": ".venv\\\\Scripts\\\\python.exe -m alembic upgrade heads",
   "rollback_policy": "restore_verified_pre_migration_backup_with_matching_code",
   "project_package": {
     "manifest_schema": "localdrama.project-package.v2",
-    "state_schema": "localdrama.project-state.v2",
+    "state_schema": "localdrama.project-state.v3",
     "older_missing_optional_fields": "safe_defaults",
     "unsupported_schema": "PROJECT_PACKAGE_SCHEMA_UNSUPPORTED"
   },
@@ -468,6 +468,38 @@
       "facts": [
         "explicit_waiting_user_state_for_exhausted_blocked_sessions",
         "no_busy_reconciliation_while_human_intervention_is_required"
+      ]
+    },
+    {
+      "revision": "0101_versioned_source_parsing",
+      "facts": [
+        "source_document_versions.parser_version",
+        "source_document_versions.structure_version",
+        "new_parse_generation_gets_its_own_extracted_text_without_rewriting_existing_offsets",
+        "import_sessions.committed_body_range_for_scope_aware_idempotency",
+        "retire_zero_paragraph_preview_ready_sessions"
+      ]
+    },
+    {
+      "revision": "0102_explainer_factory_foundation",
+      "facts": [
+        "projects.product_kind with DRAMA default and backfill",
+        "explainer_job_stage_definitions",
+        "explainer_videos_channel_profiles_and_versions",
+        "explainer_research_packets_sources_and_spans",
+        "explainer_claims_evidence_events_and_entities_with_state_revisions",
+        "explainer_script_revisions_chapters_and_narration_segments",
+        "explainer_visual_beats_and_beat_narration_links",
+        "explainer_editions_with_unique_edition_key",
+        "narration_takes_alignment_revisions_and_explainer_subtitle_revisions",
+        "composition_revisions_items_renders_chunks_and_deliveries",
+        "explainer_runs_step_bindings_and_artifact_dependencies_as_projection_only",
+        "explainer_media_candidates_and_beat_selections",
+        "run_identity_inputs_and_entity_identity_bindings",
+        "explainer_qc_reports_issues_and_machine_or_human_decisions",
+        "explainer_schedules_and_occurrences_without_config_revision_in_the_trigger_key",
+        "publication_packages_and_receipts",
+        "explainer_tables_do_not_reuse_episode_subtitle_audio_or_delivery_tables"
       ]
     }
   ]

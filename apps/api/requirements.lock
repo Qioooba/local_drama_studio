@@ -24,6 +24,7 @@ pluggy==1.6.0
 pydantic==2.13.4
 pydantic_core==2.46.4
 Pygments==2.20.0
+pypdf==6.16.2
 pytest==8.4.2
 pytest-asyncio==0.26.0
 python-dotenv==1.2.2
@@ -33,6 +34,7 @@ SQLAlchemy==2.0.51
 starlette==1.6.0
 typing-inspection==0.4.3
 typing_extensions==4.16.0
+tzdata==2026.4
 uvicorn==0.52.1
 watchfiles==1.2.0
 websockets==17.0.1
