@@ -29,7 +29,15 @@ class Database:
         try:
             connection.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
             yield connection
-            connection.execute("COMMIT")
+            # A helper inside the block may legitimately have finished the
+            # transaction (``connection.commit()`` in this driver ends an
+            # explicit ``BEGIN``).  Committing an already-closed transaction is a
+            # no-op here rather than an OperationalError that would hide the real
+            # failure; the data is already durable either way.
+            if connection.in_transaction:
+                connection.execute("COMMIT")
+            else:
+                connection.commit()
         except Exception:
             if connection.in_transaction:
                 connection.execute("ROLLBACK")

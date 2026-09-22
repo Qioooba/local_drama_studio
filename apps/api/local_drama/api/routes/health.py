@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import shutil
-import sqlite3
 from pathlib import Path
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from local_drama.api.contract_version import API_CONTRACT_VERSION
 from local_drama.application.diagnostics import _probe_loopback
 from local_drama.application.worker_sessions import ACTIVE_SESSION_STATES, WorkerSessionService
+from local_drama.infrastructure.database.readiness import InitializationReport, SchemaReadiness, inspect_schema_readiness
 from local_drama.infrastructure.filesystem.path_policy import client_is_server_loopback
 
 router = APIRouter(tags=["health"])
@@ -18,6 +19,10 @@ router = APIRouter(tags=["health"])
 class HealthCheck(BaseModel):
     status: str
     checks: dict[str, str]
+    # Structured, machine-readable explanation of a non-healthy readiness
+    # verdict.  Optional so existing complete-database responses are unchanged.
+    reasons: list[str] = []
+    initialization: dict[str, str] = {}
 
 
 def _writable(path: Path) -> str:
@@ -72,28 +77,80 @@ async def client_capabilities(request: Request) -> dict[str, object]:
     return {"capabilities": _client_capabilities(request)}
 
 
+def _schema_readiness(request: Request) -> SchemaReadiness | None:
+    """Return the startup-cached schema verdict, or inspect once if uncached.
+
+    ``ready`` must not run an expensive full-database ``integrity_check`` on
+    every request.  The verdict is computed once during startup (or after
+    migration/maintenance) and only re-inspected when an app was built without
+    running the lifespan, which happens in a few test harnesses.
+    """
+    report = getattr(request.app.state, "readiness", None)
+    if isinstance(report, InitializationReport):
+        return report.schema
+    database = getattr(request.app.state, "database", None)
+    if database is None:
+        return None
+    try:
+        return inspect_schema_readiness(database.path)
+    except Exception:
+        return None
+
+
+_DATABASE_STATUS_BY_STATE: dict[str, str] = {
+    "ready": "ok",
+    "not_applicable": "schema_not_initialized",
+    "no_database": "not_configured_until_g2",
+    "unreadable": "unreadable",
+    "schema_incomplete": "schema_incomplete",
+    "revision_mismatch": "migration_pending",
+}
+
+
+def _database_status(schema: SchemaReadiness | None) -> str:
+    if schema is None:
+        return "unreadable"
+    return _DATABASE_STATUS_BY_STATE.get(schema.state, "unreadable")
+
+
 @router.get("/health/ready", response_model=HealthCheck, operation_id="healthReady")
-async def ready(request: Request) -> HealthCheck:
+async def ready(request: Request) -> JSONResponse:
+    """Report business readiness, not merely process liveness.
+
+    A database that cannot serve business requests (absent, unreadable,
+    missing core tables/columns, or not at the release migration head) turns
+    into an application-level readiness blocker with HTTP 503 and a structured
+    reason.  ``/health/live`` keeps meaning only "the process is alive".
+    """
     settings = request.app.state.settings
-    database = request.app.state.database
-    database_status = "not_configured_until_g2"
-    if database.exists:
-        try:
-            with database.connect() as connection:
-                version = connection.execute("SELECT version_num FROM alembic_version LIMIT 1").fetchone()
-                database_status = "ok" if version else "migration_pending"
-        except sqlite3.Error:
-            database_status = "unreadable"
+    report = getattr(request.app.state, "readiness", None)
+    schema = _schema_readiness(request)
     checks = {
         "mode": "ok" if settings.mode == "LOCAL_ONLY" else "invalid",
         "data_root": _writable(settings.data_root),
         "projects_root": _writable(settings.projects_root),
         "work_root": _writable(settings.work_root),
         "cache_root": _writable(settings.cache_root),
-        "database": database_status,
+        "database": _database_status(schema),
     }
-    status = "HEALTHY" if all(value == "ok" for value in checks.values()) else "NOT_READY"
-    return HealthCheck(status=status, checks=checks)
+    reasons: list[str] = []
+    if schema is None:
+        reasons.append("DATABASE_READINESS_UNKNOWN")
+    elif not schema.ready:
+        reasons.append(schema.reason)
+    initialization: dict[str, str] = {}
+    if isinstance(report, InitializationReport):
+        for step in report.steps:
+            initialization[step.name] = step.status
+        reasons.extend(f"REQUIRED_INIT_FAILED:{name}" for name in report.blocked_by)
+    healthy = all(value == "ok" for value in checks.values()) and not reasons
+    payload = HealthCheck(
+        status="HEALTHY" if healthy else "NOT_READY",
+        checks=checks,
+        reasons=reasons,
+        initialization=initialization,
+    )
+    return JSONResponse(status_code=200 if healthy else 503, content=payload.model_dump())
 
 
 @router.get("/health/dependencies", response_model=HealthCheck, operation_id="healthDependencies")
@@ -110,17 +167,17 @@ async def dependencies(request: Request) -> HealthCheck:
         # embedded hosts have historically replaced this one-argument call.
         comfy_probe, comfy_observed = _probe_loopback(settings.comfy_base_url)
     comfy_status = "ready" if comfy_probe == "PASS" else f"blocked:{comfy_observed.get('reason', 'unavailable')}"
-    database = request.app.state.database
-    database_status = "not_configured" if not database.exists else "unreadable"
+    database_status = "not_configured"
     profile_status = "not_configured"
     worker_status = "not_running"
-    if database.exists:
+    schema = _schema_readiness(request)
+    if schema is not None and schema.ready and schema.database_exists:
+        database = request.app.state.database
+        database_status = "ok"
         try:
             with database.connect() as connection:
-                version = connection.execute("SELECT version_num FROM alembic_version LIMIT 1").fetchone()
                 profiles = connection.execute("SELECT COUNT(*) FROM execution_profile_versions").fetchone()[0]
-                database_status = "ok" if version else "migration_pending"
-                profile_status = "synced_candidates" if profiles else "not_synced"
+            profile_status = "synced_candidates" if profiles else "not_synced"
             sessions = WorkerSessionService(database, settings).list_sessions(limit=20)
             active = next(
                 (
@@ -132,7 +189,7 @@ async def dependencies(request: Request) -> HealthCheck:
             )
             if active is not None:
                 worker_status = f"ready:{','.join(active['supported_channels'])}"
-        except sqlite3.Error:
+        except Exception:
             database_status = "unreadable"
     dependencies_ready = (
         bool(ffmpeg)

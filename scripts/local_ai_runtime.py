@@ -101,6 +101,7 @@ def _voxcpm_smoke(
     *,
     prompt_audio: Path | None = None,
     prompt_text: str | None = None,
+    speed: float | None = None,
 ) -> dict[str, Any]:
     import inspect
 
@@ -127,14 +128,27 @@ def _voxcpm_smoke(
     if prompt_audio is not None:
         # Zero-shot cloning is only requested by production voice profiles; the
         # smoke default (no --prompt-audio) must keep working on every install.
-        parameters = inspect.signature(model.generate).parameters
-        if "prompt_wav_path" not in parameters:
+        parameter_names = inspect.signature(model.generate).parameters
+        if "prompt_wav_path" not in parameter_names:
             raise RuntimeError("VOXCPM_PROMPT_UNSUPPORTED: installed VoxCPM lacks prompt_wav_path")
         generate_kwargs["prompt_wav_path"] = str(prompt_audio.resolve())
         if prompt_text:
-            if "prompt_text" not in parameters:
+            if "prompt_text" not in parameter_names:
                 raise RuntimeError("VOXCPM_PROMPT_UNSUPPORTED: installed VoxCPM lacks prompt_text")
             generate_kwargs["prompt_text"] = prompt_text
+    # Speed is a declared product parameter.  The installed model may or may not
+    # expose a native control; when it does we pass the value through, and the
+    # product additionally applies a declared atempo post-process so the audible
+    # rate always matches the user's setting.  ``speed_applied_natively``
+    # records which path actually happened instead of assuming either one.
+    applied_speed_natively = False
+    if speed is not None and speed != 1.0:
+        parameter_names = inspect.signature(model.generate).parameters
+        for candidate in ("speed", "speech_rate", "rate"):
+            if candidate in parameter_names:
+                generate_kwargs[candidate] = float(speed)
+                applied_speed_natively = True
+                break
     waveform = model.generate(**generate_kwargs)
     samples = np.asarray(waveform, dtype=np.float32).reshape(-1)
     if (
@@ -155,6 +169,8 @@ def _voxcpm_smoke(
         "duration_seconds": round(samples.size / 48000, 3),
         "peak": round(float(np.max(np.abs(samples))), 6),
         "elapsed_seconds": round(time.perf_counter() - started, 3),
+        "requested_speed": None if speed is None else round(float(speed), 6),
+        "speed_applied_natively": applied_speed_natively,
         "network_used": False,
     }
 
@@ -307,6 +323,12 @@ def main() -> int:
     parser.add_argument("--prompt-audio", type=Path)
     parser.add_argument("--prompt-text")
     parser.add_argument("--prompt-text-b64")
+    parser.add_argument(
+        "--speed",
+        type=float,
+        default=None,
+        help="Declared product speech-rate multiplier (0.5-2.0). Passed to the model when it exposes a native control.",
+    )
     parser.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
     parser.add_argument("--ollama-model", default="qwen3.8:27b")
     parser.add_argument("--output", type=Path)
@@ -333,6 +355,7 @@ def main() -> int:
             (texts or ["本地导演台配音测试通过。"])[0],
             prompt_audio=args.prompt_audio,
             prompt_text=prompt_text,
+            speed=args.speed,
         )
     elif args.task == "asr":
         if args.audio_input is None or not args.audio_input.is_file():

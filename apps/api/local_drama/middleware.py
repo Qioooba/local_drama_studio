@@ -54,7 +54,83 @@ def _is_loopback_client(request: Request) -> bool:
         return False
 
 
-def _origin_matches_request_host(origin: str, request: Request) -> bool:
+def _configured_hosts(allowed_origins: set[str], trusted_hosts: tuple[str, ...] | None) -> set[str] | None:
+    """Resolve the authorities a same-origin write may legitimately arrive on.
+
+    Returns ``None`` when the operator did not pin the list, which means "also
+    allow the built-in safe authorities" (see :func:`_host_is_trusted`).  An
+    explicit list — including an empty one — is authoritative: the hosts are then
+    derived from ``trusted_hosts`` alone, and an empty list trusts no host beyond
+    the explicitly configured origins.
+    """
+    if trusted_hosts is not None:
+        return {item.strip().casefold() for item in trusted_hosts if item.strip()}
+    hosts: set[str] = set()
+    for origin in allowed_origins:
+        parsed = urlsplit(origin)
+        if parsed.hostname:
+            hosts.add(parsed.hostname.casefold())
+    return hosts
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return bool(ip_address(host).is_loopback)
+    except ValueError:
+        return False
+
+
+def _is_ip_literal(host: str) -> bool:
+    try:
+        ip_address(host)
+    except ValueError:
+        return False
+    return True
+
+
+def _host_is_trusted(host: str, allowed_origins: set[str], trusted_hosts: tuple[str, ...] | None) -> bool:
+    """Decide whether a same-origin request may treat ``host`` as its own origin.
+
+    Trust comes from three places:
+
+    * a host the operator configured — an explicit ``trusted_hosts`` list when set,
+      otherwise the hosts of the configured origins;
+    * a loopback host (``localhost`` / a literal loopback IP), which can never be
+      produced by DNS rebinding and whose Vite port may legitimately drift;
+    * any other IP-literal host, which keeps the documented LAN workflow working
+      when the operator reaches the server by its own address.
+
+    A bare domain name is trusted only when configured.  That is the point of the
+    check: DNS rebinding has to use a domain name (an attacker cannot make a
+    browser send ``Host: <LAN IP>`` while serving the page from the attacker's
+    domain), so refusing unconfigured hostnames removes the rebinding path without
+    breaking legitimate loopback or IP-based access.  Pinning ``trusted_hosts``
+    disables the two built-in rules so the operator's list is authoritative.
+    """
+    configured = _configured_hosts(allowed_origins, trusted_hosts)
+    if configured is not None and host in configured:
+        return True
+    if trusted_hosts is not None:
+        return False
+    return _is_loopback_host(host) or _is_ip_literal(host)
+
+
+def _origin_matches_request_host(
+    origin: str,
+    request: Request,
+    *,
+    allowed_origins: set[str],
+    trusted_hosts: tuple[str, ...] | None,
+) -> bool:
+    """Accept a same-origin write only for a Host this server can trust.
+
+    Comparing ``Origin`` with whatever ``Host`` the client sent is not a boundary:
+    a hostile domain that resolves to this server (DNS rebinding) supplies a
+    matching pair on its own.  The ``Host`` authority must therefore be an
+    explicitly trusted host or an IP literal.
+    """
     parsed_origin = urlsplit(origin)
     host_header = request.headers.get("host", "").strip()
     if not host_header or not parsed_origin.hostname:
@@ -68,12 +144,22 @@ def _origin_matches_request_host(origin: str, request: Request) -> bool:
         request_authority = urlsplit(f"//{host_header}")
         request_host = (request_authority.hostname or "").casefold()
         request_port = request_authority.port or origin_port
+        origin_host = parsed_origin.hostname.casefold()
     except ValueError:
         return False
-    return parsed_origin.hostname.casefold() == request_host and origin_port == request_port
+    if origin_host != request_host or origin_port != request_port:
+        return False
+    return _host_is_trusted(request_host, allowed_origins, trusted_hosts)
 
 
-def _is_allowed_write_origin(origin: str, allowed_origins: set[str], *, request: Request | None = None) -> bool:
+
+def _is_allowed_write_origin(
+    origin: str,
+    allowed_origins: set[str],
+    *,
+    request: Request | None = None,
+    trusted_hosts: tuple[str, ...] | None = None,
+) -> bool:
     """Accept configured origins and HTTP origins served on literal loopback.
 
     The Vite development server may choose another free port when its preferred
@@ -85,8 +171,20 @@ def _is_allowed_write_origin(origin: str, allowed_origins: set[str], *, request:
 
     if origin in allowed_origins:
         return True
-    if request is not None and _origin_matches_request_host(origin, request):
+    if request is not None and _origin_matches_request_host(
+        origin,
+        request,
+        allowed_origins=allowed_origins,
+        trusted_hosts=trusted_hosts,
+    ):
         return True
+    if trusted_hosts is not None:
+        # The operator pinned the trusted host list, so it is authoritative: no
+        # origin fallback may grant access beyond it.
+        return False
+    # Loopback origins remain writable so a drifted Vite port does not turn a
+    # legitimate local UI read-only. This fallback only ever accepts loopback
+    # authorities, which DNS rebinding cannot produce.
     try:
         parsed = urlsplit(origin)
         if parsed.scheme != "http" or not parsed.hostname or parsed.username or parsed.password:
@@ -286,10 +384,12 @@ class LocalOriginMiddleware(BaseHTTPMiddleware):
         allowed_origins: tuple[str, ...],
         *,
         allow_same_origin_writes: bool = False,
+        trusted_hosts: tuple[str, ...] | None = None,
     ) -> None:
         super().__init__(app)
         self.allowed_origins = set(allowed_origins)
         self.allow_same_origin_writes = allow_same_origin_writes
+        self.trusted_hosts = trusted_hosts
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         origin = request.headers.get("Origin")
@@ -315,6 +415,7 @@ class LocalOriginMiddleware(BaseHTTPMiddleware):
             origin,
             self.allowed_origins,
             request=request if self.allow_same_origin_writes else None,
+            trusted_hosts=self.trusted_hosts,
         ):
             request_id, _trace_id = _ensure_request_context(request)
             _log_request("request.rejected", request, status_code=403, error="ORIGIN_NOT_ALLOWED")

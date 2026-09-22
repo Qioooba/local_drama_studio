@@ -101,6 +101,7 @@ class LocalAiSubprocessRuntime:
         *,
         prompt_audio: Path | None = None,
         prompt_text: str | None = None,
+        speed: float | None = None,
     ) -> LocalAiExecution:
         if not text.strip():
             raise ValueError("speech text must not be empty")
@@ -109,6 +110,13 @@ class LocalAiSubprocessRuntime:
             arguments += ("--prompt-audio", str(prompt_audio))
         if prompt_text:
             arguments += ("--prompt-text-b64", self._encode_text(prompt_text))
+        # The declared product speech-rate parameter reaches the runtime as an
+        # explicit argument instead of staying in Job metadata.  ``--speed`` is
+        # the adapter's declared input; a runtime that lacks a native control
+        # reports ``speed_applied_natively=false`` and the worker additionally
+        # applies the declared atempo post-process.
+        if speed is not None:
+            arguments += ("--speed", f"{float(speed):.6f}")
         return self.run_task("voxcpm2", arguments)
 
     def transcribe(self, audio_path: Path) -> LocalAiExecution:

@@ -7,6 +7,8 @@ deployment.  ``LAN_SERVICE`` opts into the relaxed-but-bounded server rules.
 
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 
 import pytest
@@ -267,6 +269,90 @@ def test_lan_service_cross_host_origin_is_still_rejected(tmp_path: Path) -> None
     assert lookalike.status_code == 403
 
 
+def test_lan_dns_rebinding_host_is_rejected_without_explicit_registration(tmp_path: Path) -> None:
+    """R-01: a matching Origin/Host pair alone must not grant write trust.
+
+    The reported risk was that the same-origin fallback only compared ``Origin``
+    with the client's own ``Host``.  A hostile domain resolving to this LAN server
+    satisfies that comparison by itself, so an unconfigured domain-name Host must
+    not be trusted even when the token was fetched over GET.
+    """
+    settings = _lan_settings(tmp_path)
+    attacker_host = "rebind.attacker.example:3210"
+    with TestClient(create_app(settings), client=("10.8.0.99", 50000)) as client:
+        token = client.get(
+            "/api/v1/session/bootstrap",
+            headers={"Host": attacker_host, "Origin": f"http://{attacker_host}"},
+        ).json()["token"]
+        rejected = client.post(
+            "/api/v1/system/contract",
+            headers={
+                "Host": attacker_host,
+                "Origin": f"http://{attacker_host}",
+                "X-Local-Instance-Token": token,
+            },
+        )
+    assert rejected.status_code == 403
+    assert rejected.json()["error"]["code"] == "ORIGIN_NOT_ALLOWED"
+
+
+def test_lan_ip_literal_host_keeps_working_and_registered_host_is_trusted(tmp_path: Path) -> None:
+    """The rebinding fix must not break legitimate LAN access.
+
+    An IP-literal Host (the documented LAN workflow, reachable without
+    pre-registration) and any explicitly configured host stay trusted.
+    """
+    registered = "http://drama.internal.example:3210"
+    settings = _lan_settings(tmp_path, allowed_origins=(registered,))
+    with TestClient(create_app(settings), client=("10.8.0.99", 50000)) as client:
+        literal = client.get("/api/v1/session/bootstrap", headers={"Host": "10.8.0.20:3210"})
+        accepted_literal = client.post(
+            "/api/v1/system/contract",
+            headers={
+                "Host": "10.8.0.20:3210",
+                "Origin": "http://10.8.0.20:3210",
+                "X-Local-Instance-Token": literal.json()["token"],
+            },
+        )
+        bootstrap = client.get(
+            "/api/v1/session/bootstrap",
+            headers={"Host": "drama.internal.example:3210"},
+        )
+        accepted_registered = client.post(
+            "/api/v1/system/contract",
+            headers={
+                "Host": "drama.internal.example:3210",
+                "Origin": registered,
+                "X-Local-Instance-Token": bootstrap.json()["token"],
+            },
+        )
+    # 405 proves the request passed the origin/token boundary and reached routing.
+    assert accepted_literal.status_code == 405
+    assert accepted_registered.status_code == 405
+
+
+def test_explicit_trusted_hosts_override_replaces_origin_derived_hosts(tmp_path: Path) -> None:
+    """An explicit ``trusted_hosts`` list is authoritative, including empty.
+
+    ``allowed_origins`` is cleared here so the only possible grant would come from
+    the trusted-host rule, which proves ``trusted_hosts=()`` really denies rather
+    than silently falling back to the origin-derived hosts.
+    """
+    settings = _lan_settings(tmp_path, allowed_origins=(), trusted_hosts=())
+    with TestClient(create_app(settings), client=("10.8.0.99", 50000)) as client:
+        token = client.get("/api/v1/session/bootstrap", headers={"Host": "localhost:3210"}).json()["token"]
+        rejected = client.post(
+            "/api/v1/system/contract",
+            headers={
+                "Host": "localhost:3210",
+                "Origin": "http://localhost:3210",
+                "X-Local-Instance-Token": token,
+            },
+        )
+    assert rejected.status_code == 403
+    assert rejected.json()["error"]["code"] == "ORIGIN_NOT_ALLOWED"
+
+
 def test_lan_service_emits_cors_headers_for_registered_origins(tmp_path: Path) -> None:
     settings = _lan_settings(tmp_path)
     with TestClient(create_app(settings)) as client:
@@ -340,6 +426,99 @@ def test_work_root_derives_comfy_roots(monkeypatch: pytest.MonkeyPatch, tmp_path
     settings = Settings.from_env()
     assert settings.comfy_input_root == tmp_path / "runtime-work" / "comfy-production" / "input"
     assert settings.comfy_output_root == tmp_path / "runtime-work" / "comfy-production" / "output"
+
+
+def test_from_env_lan_settings_are_hermetic_and_platform_path_safe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """``Settings.from_env`` LAN reads must not depend on the developer machine.
+
+    The two historical failures this covers set only the LAN mode/host/roots. That
+    is not a complete LAN declaration: the supported contract requires the explicit
+    ``network.trusted_lan_unauthenticated`` acceptance, which today only the machine
+    JSON provides. Without an explicit temporary instance root and config the test
+    silently read whatever ``config.json`` happened to exist on the machine, and one
+    of them hardcoded Windows backslashes for the tool fallback directories.
+    """
+    instance = tmp_path / "instance"
+    config_dir = instance / "config"
+    config_dir.mkdir(parents=True)
+    work_root = tmp_path / "runtime-work"
+    (config_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 3,
+                "instance_id": "ci-lan",
+                "network": {
+                    "mode": "LAN_SERVICE",
+                    "host": "0.0.0.0",
+                    "trusted_lan_unauthenticated": True,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LOCAL_DRAMA_INSTANCE_ROOT", str(instance))
+    monkeypatch.setenv("LOCAL_DRAMA_CONFIG", str(config_dir / "config.json"))
+    monkeypatch.setenv("LOCAL_DRAMA_NETWORK_MODE", "LAN_SERVICE")
+    monkeypatch.setenv("LOCAL_DRAMA_HOST", "0.0.0.0")
+    monkeypatch.setenv("LOCAL_DRAMA_DATA_ROOT", str(tmp_path / "srv-data"))
+    monkeypatch.setenv("LOCAL_DRAMA_PROJECTS_ROOT", str(tmp_path / "srv-projects"))
+    monkeypatch.setenv("LOCAL_DRAMA_WORK_ROOT", str(work_root))
+    monkeypatch.setenv("LOCAL_DRAMA_UPLOAD_MAX_VIDEO_MB", "2048")
+    # Build the search path with the current platform's separator instead of
+    # hardcoded Windows backslashes, so the assertion is valid on every target.
+    tools = (tmp_path / "tools", tmp_path / "tools2")
+    monkeypatch.setenv("LOCAL_DRAMA_TOOL_FALLBACK_DIRS", os.pathsep.join(str(item) for item in tools))
+
+    settings = Settings.from_env()
+    assert settings.network_mode == "LAN_SERVICE"
+    assert settings.host == "0.0.0.0"
+    assert settings.trusted_lan_unauthenticated is True
+    assert settings.instance_root == instance
+    assert settings.data_root == tmp_path / "srv-data"
+    assert settings.projects_root == tmp_path / "srv-projects"
+    assert settings.work_root == work_root
+    assert settings.upload_max_video_mb == 2048
+    assert settings.tool_fallback_dirs == (str(tools[0]), str(tools[1]))
+    # Directory derivation is a pure function of work_root and must agree with the
+    # value the historical failure asserted.
+    assert settings.comfy_input_root == work_root / "comfy-production" / "input"
+    assert settings.comfy_output_root == work_root / "comfy-production" / "output"
+
+
+def test_from_env_lan_without_explicit_acceptance_is_rejected_hermetically(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """The LAN guard must still refuse a LAN mode with no explicit acceptance.
+
+    This is the contract the historical failures tripped over; it must keep
+    failing closed, and it must do so without reading a machine config.
+    """
+    instance = tmp_path / "instance"
+    config_dir = instance / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 3,
+                "instance_id": "ci-lan-untrusted",
+                "network": {"mode": "LAN_SERVICE", "host": "0.0.0.0"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LOCAL_DRAMA_INSTANCE_ROOT", str(instance))
+    monkeypatch.setenv("LOCAL_DRAMA_CONFIG", str(config_dir / "config.json"))
+    monkeypatch.setenv("LOCAL_DRAMA_NETWORK_MODE", "LAN_SERVICE")
+    monkeypatch.setenv("LOCAL_DRAMA_HOST", "0.0.0.0")
+    with pytest.raises(ValidationError, match="trusted_lan_unauthenticated=true"):
+        Settings.from_env()
+    # There is deliberately no supported environment-variable mapping for the
+    # acceptance flag; setting one must not silently turn the guard off.
+    monkeypatch.setenv("LOCAL_DRAMA_TRUSTED_LAN_UNAUTHENTICATED", "true")
+    with pytest.raises(ValidationError, match="trusted_lan_unauthenticated=true"):
+        Settings.from_env()
 
 
 def test_upload_limits_reject_non_positive_values(tmp_path: Path) -> None:

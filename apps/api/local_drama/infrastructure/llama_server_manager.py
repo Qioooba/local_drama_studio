@@ -18,7 +18,9 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
@@ -57,34 +59,104 @@ _MANAGED_ARGUMENTS = frozenset(
 )
 
 
-def _pid_is_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    if sys.platform == "win32":
-        import ctypes
+class ProcessState(StrEnum):
+    """Platform process liveness, including the Linux zombie distinction."""
 
-        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        kernel32 = ctypes.windll.kernel32
-        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-        if not handle:
-            return False
-        try:
-            exit_code = ctypes.c_ulong()
-            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
-                return False
-            return exit_code.value == _STILL_ACTIVE
-        finally:
-            kernel32.CloseHandle(handle)
+    RUNNING = "running"
+    #: The process ended but its parent has not reaped it yet (POSIX ``Z``/``X``).
+    EXITED = "exited"
+    #: No process with this PID exists any more.
+    MISSING = "missing"
+    #: The PID exists but this process may not query or signal it.
+    UNKNOWN = "unknown"
+
+
+def _windows_process_state(pid: int) -> ProcessState:
+    import ctypes
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return ProcessState.MISSING
+    try:
+        exit_code = ctypes.c_ulong()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return ProcessState.UNKNOWN
+        # A Windows PID keeps its handle alive while any handle is open, so
+        # "still active" is the only running signal; every other exit code
+        # means the process has terminated.
+        return ProcessState.RUNNING if exit_code.value == _STILL_ACTIVE else ProcessState.EXITED
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _procfs_process_state(pid: int) -> ProcessState:
+    """Read Linux ``/proc/<pid>/stat`` and treat ``Z``/``X`` as exited.
+
+    ``os.kill(pid, 0)`` cannot distinguish a running process from a zombie: an
+    exited-but-unreaped child still owns its PID, so a plain existence check
+    reports a GPU-holding server that has in fact already released CUDA.  The
+    ``state`` field of ``/proc/<pid>/stat`` is authoritative, and it must be
+    read after the final ``)`` because the command name may contain spaces or
+    parentheses.
+    """
+
+    try:
+        raw = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return ProcessState.MISSING
+    except OSError:
+        # /proc is not mounted, or the process vanished mid-read: fall back to
+        # the existence probe instead of claiming the process is gone.
+        return _existence_process_state(pid)
+    close = raw.rfind(")")
+    if close < 0 or close + 2 >= len(raw):
+        return _existence_process_state(pid)
+    code = raw[close + 2 : close + 3]
+    if code in {"Z", "X"}:
+        return ProcessState.EXITED
+    return ProcessState.RUNNING
+
+
+def _existence_process_state(pid: int) -> ProcessState:
+    """Platform-neutral existence probe used only as a controlled fallback."""
+
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
-        return False
+        return ProcessState.MISSING
     except PermissionError:
-        return True
-    return True
+        return ProcessState.UNKNOWN
+    except OSError:
+        return ProcessState.MISSING
+    return ProcessState.RUNNING
 
 
-def _terminate_pid(pid: int) -> bool:
+def default_process_state(pid: int) -> ProcessState:
+    """Return this platform's process state without ever reaping a child.
+
+    ``waitpid(-1)`` is deliberately never used: stealing another service's exit
+    status would corrupt unrelated runtimes.  Only the manager's own ``Popen``
+    handles are waited on elsewhere in this module.
+    """
+
+    if pid <= 0:
+        return ProcessState.MISSING
+    if sys.platform == "win32":
+        return _windows_process_state(pid)
+    if sys.platform.startswith("linux"):
+        return _procfs_process_state(pid)
+    return _existence_process_state(pid)
+
+
+def _pid_is_alive(pid: int) -> bool:
+    """Backwards-compatible liveness probe built on :func:`default_process_state`."""
+
+    return default_process_state(pid) in {ProcessState.RUNNING, ProcessState.UNKNOWN}
+
+
+def _terminate_pid(pid: int, *, state_reader: Callable[[int], ProcessState] = default_process_state) -> bool:
     if pid <= 0:
         return False
     if sys.platform == "win32":
@@ -109,9 +181,13 @@ def _terminate_pid(pid: int) -> bool:
         # was walking the tree even though the requested tree termination has
         # completed.  Process existence, not taskkill's diagnostic exit code,
         # is the lifecycle authority used everywhere else in this manager.
-        return completed.returncode == 0 or not _pid_is_alive(pid)
+        return completed.returncode == 0 or state_reader(pid) in {ProcessState.MISSING, ProcessState.EXITED}
     try:
         os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        # The process ended between the state probe and the signal: that is a
+        # successful outcome for a stop request, not a failure.
+        return state_reader(pid) in {ProcessState.MISSING, ProcessState.EXITED}
     except OSError:
         return False
     return True
@@ -276,6 +352,8 @@ class LlamaServerManager:
         post_exit_settle_seconds: float = 0.5,
         port_free_wait_seconds: float = 2.0,
         sleep: Any = time.sleep,
+        process_state: Callable[[int], ProcessState] = default_process_state,
+        terminate_pid: Callable[[int], bool] | None = None,
     ) -> None:
         # A ~17 GB Q4 GGUF cold load takes tens of seconds from disk; the
         # generous default avoids killing a healthy startup on slow storage.
@@ -285,6 +363,11 @@ class LlamaServerManager:
         self.post_exit_settle_seconds = post_exit_settle_seconds
         self.port_free_wait_seconds = port_free_wait_seconds
         self._sleep = sleep
+        # The platform process-state reader and the PID terminator are injectable
+        # seams so the Linux zombie logic is unit-testable on any host without
+        # replacing the product code paths themselves.
+        self._process_state = process_state
+        self._terminate = terminate_pid if terminate_pid is not None else lambda pid: _terminate_pid(pid, state_reader=process_state)
         self._log_dir = Path(log_dir)
         self._log_path = self._log_dir / "llama_server.log"
         self._pid_path = self._log_dir / "llama_server.pid"
@@ -306,7 +389,7 @@ class LlamaServerManager:
         if self._process is not None:
             return self._process.poll() is None
         if self._adopted_pid is not None:
-            return _pid_is_alive(self._adopted_pid)
+            return self._process_state(self._adopted_pid) in {ProcessState.RUNNING, ProcessState.UNKNOWN}
         return False
 
     def start(self, spec: LlamaServerLaunchSpec, *, timeout_seconds: float | None = None) -> str:
@@ -343,7 +426,7 @@ class LlamaServerManager:
             pid = int(self._pid_path.read_text(encoding="utf-8").strip())
         except (OSError, ValueError):
             return False
-        if _pid_is_alive(pid):
+        if self._process_state(pid) in {ProcessState.RUNNING, ProcessState.UNKNOWN}:
             return True
         self._remove_pidfile()
         return False
@@ -359,7 +442,7 @@ class LlamaServerManager:
             if process is not None:
                 if process.poll() is None:
                     if sys.platform == "win32":
-                        if not _terminate_pid(process.pid):
+                        if not self._terminate(process.pid):
                             raise DomainRuleError(
                                 "LLAMA_SERVER_STOP_FAILED",
                                 "无法终止 llama-server 进程树",
@@ -381,14 +464,20 @@ class LlamaServerManager:
                             process.kill()
                             process.wait(timeout=self.terminate_grace_seconds)
                 stopped = True
-            elif adopted_pid is not None and _pid_is_alive(adopted_pid):
-                if not _terminate_pid(adopted_pid):
-                    raise DomainRuleError(
-                        "LLAMA_SERVER_STOP_FAILED",
-                        "无法终止遗留的 llama-server 进程",
-                        {"pid": adopted_pid},
-                    )
-                self._wait_pid_exit(adopted_pid)
+            elif adopted_pid is not None:
+                # An adopted PID that is MISSING or EXITED (including a Linux
+                # zombie whose parent has not reaped it) has already released
+                # the runtime: report the stop as successful instead of waiting
+                # for a process that will never exit again.  A live process that
+                # ignores termination still times out in ``_wait_pid_exit``.
+                if self._process_state(adopted_pid) in {ProcessState.RUNNING, ProcessState.UNKNOWN}:
+                    if not self._terminate(adopted_pid):
+                        raise DomainRuleError(
+                            "LLAMA_SERVER_STOP_FAILED",
+                            "无法终止遗留的 llama-server 进程",
+                            {"pid": adopted_pid},
+                        )
+                    self._wait_pid_exit(adopted_pid)
                 stopped = True
             if stopped and active_spec is not None:
                 self._wait_port_release(active_spec)
@@ -437,7 +526,9 @@ class LlamaServerManager:
         except (OSError, ValueError):
             self._remove_pidfile()
             return False
-        if not _pid_is_alive(pid):
+        # A Linux zombie still owns its PID but has already exited, so it must
+        # not be adopted and must not be reported as an un-recyclable server.
+        if self._process_state(pid) not in {ProcessState.RUNNING, ProcessState.UNKNOWN}:
             self._remove_pidfile()
             return False
         base_url = f"http://{_client_host(spec.host)}:{spec.port}"
@@ -447,7 +538,7 @@ class LlamaServerManager:
             return True
         # Alive but not our expected server: recycle it so the port and VRAM
         # come back under this manager's control.
-        _terminate_pid(pid)
+        self._terminate(pid)
         self._wait_pid_exit(pid)
         self._remove_pidfile()
         self._sleep(self.post_exit_settle_seconds)
@@ -455,7 +546,7 @@ class LlamaServerManager:
 
     def _wait_pid_exit(self, pid: int) -> None:
         deadline = time.monotonic() + self.terminate_grace_seconds
-        while _pid_is_alive(pid):
+        while self._process_state(pid) in {ProcessState.RUNNING, ProcessState.UNKNOWN}:
             if time.monotonic() >= deadline:
                 raise DomainRuleError(
                     "LLAMA_SERVER_STOP_FAILED",
