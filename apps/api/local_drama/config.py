@@ -131,6 +131,12 @@ class Settings(BaseModel):
     #: rather than something compiled into the renderer.
     explainer_generation_height: int = Field(default=480, ge=240, le=2160)
     explainer_delivery_height: int = Field(default=1080, ge=480, le=4320)
+    #: Explainer picture track source: the bound local image model (default) or the
+    #: deterministic typeset card.  Machine-config keys live under ``runtime``.
+    explainer_picture_source: str = Field(default="LOCAL_GENERATION", pattern="^(LOCAL_GENERATION|TYPESET_CARD)$")
+    explainer_generation_steps: int = Field(default=20, ge=1, le=80)
+    explainer_generation_timeout_seconds: float = Field(default=600.0, gt=0, le=7200)
+    explainer_generation_negative_prompt: str = ""
     frontend_dist_root: Path | None = None
     model_manifest_override: Path | None = None
     trusted_lan_unauthenticated: bool = False
@@ -399,6 +405,10 @@ class Settings(BaseModel):
             "gpu_switch_min_free_ratio",
             "explainer_generation_height",
             "explainer_delivery_height",
+            "explainer_generation_steps",
+            "explainer_generation_timeout_seconds",
+            "explainer_picture_source",
+            "explainer_generation_negative_prompt",
         ):
             env_name = f"LOCAL_DRAMA_{field_name.upper()}"
             if env_name in os.environ:

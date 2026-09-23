@@ -174,10 +174,22 @@ def run_explainer_workflow_step(
         # "every declared edition".  Without the marker, a work declaring a clean and
         # a captioned output rendered and packaged only the first one.
         semantic_inputs["edition_scope"] = "VIDEO"
+    # The frozen capability snapshot is the authority for which local model a stage
+    # may use.  VISUAL_GENERATION executes the bound image profile recorded at
+    # preflight time, so the snapshot travels with the job instead of the worker
+    # guessing a "latest" profile.
+    raw_snapshot = run["capability_snapshot_json"] if "capability_snapshot_json" in run.keys() else None
+    if isinstance(raw_snapshot, str) and raw_snapshot.strip():
+        try:
+            semantic_inputs["capability_snapshot"] = json.loads(raw_snapshot)
+        except (TypeError, ValueError):
+            pass
+    elif isinstance(raw_snapshot, Mapping):
+        semantic_inputs["capability_snapshot"] = dict(raw_snapshot)
     if step_code == "EXPLAINER_STORYBOARD":
         # The storyboard may only plan render types the frozen capability snapshot
         # authorized; without the snapshot the planner keeps the still/graphic path.
-        raw_capabilities = run["capability_snapshot_json"] if "capability_snapshot_json" in run.keys() else None
+        raw_capabilities = raw_snapshot
         capabilities: Any = {}
         if isinstance(raw_capabilities, str) and raw_capabilities.strip():
             try:

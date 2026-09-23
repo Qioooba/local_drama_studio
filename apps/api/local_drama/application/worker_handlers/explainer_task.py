@@ -457,13 +457,15 @@ def run_explainer_task(
                 semantic_inputs=semantic_inputs,
             )
             # The verdict has three outcomes, not two.  A verdict that asks for an
-            # operator (``workflow_effect=REQUEST_HUMAN``) is the designed pause of
-            # a review-first run, not a terminal failure of the step: reporting it as
-            # FAIL made the projection show "终止失败" for a run that was merely
-            # waiting for the human approval it went on to receive.
+            # operator is the designed pause of a review-first run, and it must stay
+            # a *blocking* status: the only statuses that pause an automation run are
+            # FAIL/FAILED/BLOCKED, so reporting NEEDS_HITL would let the graph walk
+            # straight past the human gate.  BLOCKED pauses the run and projects the
+            # step as 等待处理, which is exactly what happened — unlike FAIL, which
+            # made the projection claim 终止失败 for a run that was merely waiting.
             accepted = bool(decision.get("accepted"))
             requests_human = str(decision.get("workflow_effect") or "") == "REQUEST_HUMAN"
-            verdict_status = "PASS" if accepted else ("NEEDS_HITL" if requests_human else "FAIL")
+            verdict_status = "PASS" if accepted else ("BLOCKED" if requests_human else "FAIL")
             report = {
                 "status": verdict_status,
                 "machine_check": {

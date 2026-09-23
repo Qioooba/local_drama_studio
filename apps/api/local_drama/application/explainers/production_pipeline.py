@@ -35,9 +35,11 @@ This module is those steps.  Three rules hold throughout:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
+import traceback
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -1044,6 +1046,12 @@ def _ass_timestamp(seconds: float) -> str:
     return f"{hours:d}:{minutes:02d}:{secs:05.2f}"
 
 
+def _last_frames(error: BaseException, *, limit: int = 1200) -> str:
+    """The tail of a traceback, for a report a human has to act on."""
+
+    return "".join(traceback.format_exception(type(error), error, error.__traceback__))[-limit:]
+
+
 def _wrap_cjk(value: str, chars_per_line: int) -> str:
     """Break a card line into ``\\N``-separated runs that fit the frame.
 
@@ -1130,10 +1138,10 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Kicker,Microsoft YaHei,{kicker_size},&H005482B7,&H005482B7,&H00000000,&H00000000,0,0,0,0,100,100,2,0,1,0,0,7,{margin},{margin},{kicker_v},1
+Style: Kicker,Microsoft YaHei,{kicker_size},&H005482B7,&H005482B7,&H00000000,&H00000000,0,0,0,0,100,100,2,0,1,2,0,7,{margin},{margin},{kicker_v},1
 Style: Card,Microsoft YaHei,{card_size},&H00D0DDE4,&H00D0DDE4,&H00000000,&H80000000,1,0,0,0,100,100,1,0,1,0,1,7,{margin},{margin},{card_v},1
 Style: Body,Microsoft YaHei,{body_size},&H00C8D2DA,&H00C8D2DA,&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,0,1,7,{margin},{margin},{body_v},1
-Style: Footer,Microsoft YaHei,{footer_size},&H00A0B4C0,&H00A0B4C0,&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,0,0,2,{footer_margin},{footer_margin},{footer_v},1
+Style: Footer,Microsoft YaHei,{footer_size},&H00A0B4C0,&H00A0B4C0,&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,2,0,2,{footer_margin},{footer_margin},{footer_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1152,6 +1160,17 @@ def _disclosure_line(content_kind: str) -> str:
     if str(content_kind).upper() == "ORIGINAL_FICTION":
         return "原创虚构 · AI 画面演绎 · 本地排版卡"
     return "AI 辅助解说 · 本地排版卡（非实拍、非生成画面）"
+
+
+def _generated_disclosure_line() -> str:
+    """The in-frame disclosure a *generated* picture must carry.
+
+    The typeset-card wording says "非生成画面" and would be a false statement on a
+    frame the image model drew, so the generated path states what actually happened:
+    the picture is model-generated, not photographed.
+    """
+
+    return "AI 生成画面 · 本机图像模型（非实拍）"
 
 
 def _beat_card_text(repo: ExplainerRepository, *, segment_ids: Sequence[str], intent: str) -> str:
@@ -1175,18 +1194,23 @@ def make_visual_generation_handler(
     settings: Any,
     media_service: Any,
     work_root: Path,
+    picture_runtime: Any | None = None,
 ) -> Callable[[dict[str, Any], Mapping[str, Any]], dict[str, Any]]:
-    """``VISUAL_GENERATION``: one real motion clip per beat, from a typeset card.
+    """``VISUAL_GENERATION``: one clip per beat, from a real generated picture.
 
     The design's picture taxonomy is *still motion*, *parallax*, *I2V*,
     *infographic* and *licensed media*, and it pre-authorizes degrading a
-    generated shot to a motion still or an information graphic.  This build has
-    no in-process path from a step job to a GPU generation job — the worker claims
-    one job at a time, so a step that waited on a child generation job would
-    deadlock — therefore every beat is rendered through the deterministic path and
-    reported as such: ``render_type_planned`` keeps what the storyboard asked for,
-    ``render_type_actual`` says ``MOTION_STILL``, and ``fallback_reason`` names the
-    reason.  Nothing here claims a generated shot happened.
+    generated shot to a motion still.  Every beat carries a generation-ready
+    prompt (``prompt_intent``) and the machine runs a real image model, so the
+    default path is: run the bound local model once per beat, scale the result onto
+    the edition canvas and give it a deterministic camera move.  ``picture_runtime``
+    performs that generation **inside this stage**: the worker claims one job at a
+    time, so a stage that waited on its own child GPU job would deadlock, and the
+    stage already runs under the worker's lease heartbeat.  When generation is
+    disabled, unavailable, or fails for a single beat, the deterministic typeset
+    card is produced instead and the candidate records exactly which path ran —
+    ``render_type_actual`` plus a ``fallback_reason`` that names the real cause.
+    Nothing here ever claims a generated shot that did not happen.
     """
 
     from local_drama.infrastructure.composition.ffmpeg_renderer import (
@@ -1201,6 +1225,110 @@ def make_visual_generation_handler(
     runner = FfmpegRunner(ffmpeg=ffmpeg_path or "ffmpeg", ffprobe=ffprobe_path or "ffprobe", timeout_seconds=1800.0)
     font = _card_font()
     renders_root = Path(work_root) / "explainer_cards"
+    generated_root = Path(work_root) / "explainer_generated"
+
+    def _render_motion_clip(
+        *,
+        still_path: Path,
+        clip_path: Path,
+        width: int,
+        height: int,
+        fps_num: int,
+        fps_den: int,
+        frames: int,
+        purpose: str,
+        note: str,
+    ) -> dict[str, Any]:
+        """Turn one still into a moving beat clip with a deterministic slow push."""
+
+        duration = frames * fps_den / fps_num
+        zoom = (
+            "zoompan=z='min(1+0.06*on/{frames},1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+            f":d={frames}:s={width}x{height}:fps={fps_num}/{fps_den}"
+        ).format(frames=max(1, frames))
+        clip_command = FfmpegCommand(
+            args=(
+                "-hide_banner", "-nostats", "-y",
+                "-loop", "1", "-i", str(still_path),
+                "-vf", f"{zoom},format=yuv420p",
+                "-frames:v", str(max(1, frames)),
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                "-r", f"{fps_num}/{fps_den}",
+                str(clip_path),
+            ),
+            purpose=purpose,
+            note=note,
+        )
+        clip_outcome = dict(runner.run(clip_command))
+        if str(clip_outcome.get("status")) != "SUCCEEDED":
+            # A zoompan expression the local build refuses must not lose the beat:
+            # the declared motion is degraded to a held still and reported.
+            static_command = FfmpegCommand(
+                args=(
+                    "-hide_banner", "-nostats", "-y",
+                    "-loop", "1", "-i", str(still_path),
+                    "-vf", "format=yuv420p",
+                    "-frames:v", str(max(1, frames)),
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                    "-r", f"{fps_num}/{fps_den}",
+                    str(clip_path),
+                ),
+                purpose=f"{purpose}_STATIC",
+                note="推近表达式失败时的降级：保持静帧，仍按实测时长补齐帧数",
+            )
+            clip_outcome = dict(runner.run(static_command))
+            if str(clip_outcome.get("status")) != "SUCCEEDED":
+                return {"status": "FAILED", "stage": "beat-motion", **clip_outcome}
+            return {"status": "SUCCEEDED", "motion": "STATIC_FALLBACK", "duration_seconds": duration}
+        return {"status": "SUCCEEDED", "motion": "SLOW_PUSH", "duration_seconds": duration}
+
+    def _fit_generated_still(
+        *,
+        source_image: Path,
+        still_path: Path,
+        ass_path: Path | None,
+        width: int,
+        height: int,
+    ) -> dict[str, Any]:
+        """Scale a generated picture onto the edition canvas and burn its labels.
+
+        The model is asked for the nearest grid-aligned canvas of the same aspect
+        ratio (864x480 for an 854x480 edition), so the difference is a few pixels of
+        padding — never a crop, because a crop would silently change the
+        composition the operator's edition declares.  The kicker and the AI
+        disclosure are drawn here; the narration caption is *not*, because the
+        captioned edition burns the subtitle track during composition and a second
+        copy would double it.
+        """
+
+        filters = [
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease",
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color={_CARD_PALETTE['background']}",
+            # A real photograph has no design-controlled contrast, so the kicker and
+            # the disclosure sit on a translucent band instead of vanishing into a
+            # bright sky or a white wall.
+            f"drawbox=x=0:y=0:w={width}:h={max(8, int(height * 0.12))}:"
+            f"color={_CARD_PALETTE['band']}@0.55:t=fill",
+            f"drawbox=x=0:y={max(8, int(height * 0.12))}:w={width}:h={max(2, int(round(height * 0.0056)))}:"
+            f"color={_CARD_PALETTE['accent']}@0.85:t=fill",
+            f"drawbox=x=0:y={height - max(10, int(height * 0.13))}:w={width}:h={max(10, int(height * 0.13))}:"
+            f"color={_CARD_PALETTE['band']}@0.55:t=fill",
+        ]
+        if ass_path is not None:
+            filters.append(f"subtitles=filename={escape_filter_value(str(ass_path))}")
+        filters.append("format=yuv420p")
+        command = FfmpegCommand(
+            args=(
+                "-hide_banner", "-nostats", "-y",
+                "-i", str(source_image),
+                "-vf", ",".join(filters),
+                "-frames:v", "1",
+                str(still_path),
+            ),
+            purpose="EXPLAINER_GENERATED_STILL",
+            note="把本机生成的画面按交付画布等比缩放并补齐，不裁切构图",
+        )
+        return dict(runner.run(command))
 
     def _render_card_clip(
         *,
@@ -1213,7 +1341,6 @@ def make_visual_generation_handler(
         fps_den: int,
         frames: int,
     ) -> dict[str, Any]:
-        duration = frames * fps_den / fps_num
         accent_height = max(2, int(round(height * 0.0056)))
         still_command = FfmpegCommand(
             args=(
@@ -1233,45 +1360,208 @@ def make_visual_generation_handler(
         still_outcome = dict(runner.run(still_command))
         if str(still_outcome.get("status")) != "SUCCEEDED":
             return {"status": "FAILED", "stage": "card-still", **still_outcome}
-        zoom = (
-            "zoompan=z='min(1+0.06*on/{frames},1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-            f":d={frames}:s={width}x{height}:fps={fps_num}/{fps_den}"
-        ).format(frames=max(1, frames))
-        clip_command = FfmpegCommand(
-            args=(
-                "-hide_banner", "-nostats", "-y",
-                "-loop", "1", "-i", str(still_path),
-                "-vf", f"{zoom},format=yuv420p",
-                "-frames:v", str(max(1, frames)),
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-                "-r", f"{fps_num}/{fps_den}",
-                str(clip_path),
-            ),
+        return _render_motion_clip(
+            still_path=still_path,
+            clip_path=clip_path,
+            width=width,
+            height=height,
+            fps_num=fps_num,
+            fps_den=fps_den,
+            frames=frames,
             purpose="EXPLAINER_CARD_MOTION",
             note="静帧动效：同一母图上的确定性缓慢推近，不使用 -shortest",
         )
-        clip_outcome = dict(runner.run(clip_command))
-        if str(clip_outcome.get("status")) != "SUCCEEDED":
-            # A zoompan expression the local build refuses must not lose the beat:
-            # the declared motion is degraded to a held still and reported.
-            static_command = FfmpegCommand(
-                args=(
-                    "-hide_banner", "-nostats", "-y",
-                    "-loop", "1", "-i", str(still_path),
-                    "-vf", "format=yuv420p",
-                    "-frames:v", str(max(1, frames)),
-                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-                    "-r", f"{fps_num}/{fps_den}",
-                    str(clip_path),
-                ),
-                purpose="EXPLAINER_CARD_STATIC",
-                note="推近表达式失败时的降级：保持静帧，仍按实测时长补齐帧数",
-            )
-            clip_outcome = dict(runner.run(static_command))
-            if str(clip_outcome.get("status")) != "SUCCEEDED":
-                return {"status": "FAILED", "stage": "card-motion", **clip_outcome}
-            return {"status": "SUCCEEDED", "motion": "STATIC_FALLBACK", "duration_seconds": duration}
-        return {"status": "SUCCEEDED", "motion": "SLOW_PUSH", "duration_seconds": duration}
+
+    def _generated_prompt(beat: Mapping[str, Any]) -> str:
+        """The prompt handed to the local image model for one beat.
+
+        The storyboard already writes a generation-ready English ``prompt_intent``
+        and it is used verbatim, so the picture matches the shot the planner
+        described.  On-screen words are the subtitle layer's job — a model asked to
+        draw letters produces garbage — so the suffix asks for a photographic frame
+        with no rendered text.
+        """
+
+        prompt = str(beat.get("prompt_intent") or "").strip() or str(beat.get("visual_intent") or "").strip()
+        if not prompt:
+            prompt = "a realistic documentary illustration of the narrated subject"
+        return (
+            f"{prompt} Photographic documentary still, natural lighting, cinematic composition, "
+            "high detail, no text, no letters, no captions, no watermark."
+        )
+
+    def _generation_seed(*, video_id: str, beat_id: str) -> int:
+        """A reproducible seed per beat, so a re-run regenerates the same frame."""
+
+        digest = hashlib.sha256(f"{video_id}:{beat_id}:image".encode("utf-8")).hexdigest()
+        return int(digest[:8], 16)
+
+    def _card_beat_picture(
+        *,
+        video_id: str,
+        beat_id: str,
+        body: str,
+        kicker: str,
+        footer: str,
+        frames: int,
+        duration_seconds: float,
+        width: int,
+        height: int,
+        fps_num: int,
+        fps_den: int,
+    ) -> dict[str, Any]:
+        """The declared fallback: a deterministic typeset card with a slow push."""
+
+        card_dir = renders_root / video_id / beat_id
+        card_dir.mkdir(parents=True, exist_ok=True)
+        ass_path = card_dir / "card.ass"
+        ass_path.write_text(
+            _card_ass(
+                text=body, kicker=kicker, footer=footer, duration_seconds=duration_seconds, width=width, height=height
+            ),
+            encoding="utf-8",
+        )
+        still_path = card_dir / "card.png"
+        clip_path = card_dir / "card.mp4"
+        outcome = _render_card_clip(
+            ass_path=ass_path,
+            still_path=still_path,
+            clip_path=clip_path,
+            width=width,
+            height=height,
+            fps_num=fps_num,
+            fps_den=fps_den,
+            frames=frames,
+        )
+        if outcome.get("status") != "SUCCEEDED":
+            return {"status": "FAILED", "reason": f"{outcome.get('stage')}:{outcome.get('status')}"}
+        if font is None:
+            return {"status": "FAILED", "reason": "CJK_FONT_NOT_FOUND_ON_THIS_MACHINE"}
+        return {
+            "status": "SUCCEEDED",
+            "clip_path": clip_path,
+            "still_path": still_path,
+            "actual_type": "MOTION_STILL",
+            "fallback_reason": "DETERMINISTIC_TYPESET_CARD_PATH",
+            "lineage": {
+                "source": "LOCAL_FFMPEG_TYPESET_CARD",
+                "card_ass_sha256": _sha256_file(ass_path),
+                "clip_sha256": _sha256_file(clip_path),
+                "duration_seconds": duration_seconds,
+                "frames": frames,
+                "motion": outcome.get("motion"),
+                "generated_picture_model": None,
+                "note": "本机未调用图像/视频生成模型；画面为确定性排版卡与其静帧动效。",
+            },
+            "execution_snapshot": {"provider": "LOCAL_FFMPEG", "network_used": False},
+        }
+
+    def _generated_beat_picture(
+        *,
+        runtime: Any,
+        probe: Mapping[str, Any],
+        video_id: str,
+        beat_id: str,
+        beat: Mapping[str, Any],
+        kicker: str,
+        footer: str,
+        frames: int,
+        duration_seconds: float,
+        width: int,
+        height: int,
+        fps_num: int,
+        fps_den: int,
+    ) -> dict[str, Any]:
+        """One real generated picture for one beat, plus its camera move."""
+
+        prompt = _generated_prompt(beat)
+        image = runtime.generate_image(
+            binding=probe,
+            prompt=prompt,
+            width=width,
+            height=height,
+            seed=_generation_seed(video_id=video_id, beat_id=beat_id),
+            negative_prompt=str(getattr(settings, "explainer_generation_negative_prompt", "") or ""),
+            steps=int(getattr(settings, "explainer_generation_steps", 20) or 20),
+            output_prefix=f"local_drama/explainer/{video_id[:8]}",
+            timeout_seconds=float(getattr(settings, "explainer_generation_timeout_seconds", 600.0) or 600.0),
+        )
+        beat_dir = generated_root / video_id / beat_id
+        beat_dir.mkdir(parents=True, exist_ok=True)
+        # The kicker and the AI disclosure are burned onto the generated frame.  The
+        # narration caption is not: the captioned edition burns the subtitle track in
+        # the composition pass, and a second copy would double the caption.
+        label_ass = beat_dir / "labels.ass"
+        label_ass.write_text(
+            _card_ass(
+                text="", kicker=kicker, footer=footer, duration_seconds=duration_seconds, width=width, height=height
+            ),
+            encoding="utf-8",
+        )
+        still_path = beat_dir / "still.png"
+        fit = _fit_generated_still(
+            source_image=Path(image["path"]),
+            still_path=still_path,
+            ass_path=label_ass,
+            width=width,
+            height=height,
+        )
+        if fit.get("status") != "SUCCEEDED":
+            raise RuntimeError(f"generated-still-fit:{fit.get('stage') or fit.get('status')}")
+        clip_path = beat_dir / "clip.mp4"
+        outcome = _render_motion_clip(
+            still_path=still_path,
+            clip_path=clip_path,
+            width=width,
+            height=height,
+            fps_num=fps_num,
+            fps_den=fps_den,
+            frames=frames,
+            purpose="EXPLAINER_GENERATED_MOTION",
+            note="本机生成画面 + 确定性缓慢推近（相机运动，非模型生成的动态）",
+        )
+        if outcome.get("status") != "SUCCEEDED":
+            raise RuntimeError(f"generated-motion:{outcome.get('stage') or outcome.get('status')}")
+        planned = str(beat.get("render_type") or "STILL_MOTION")
+        # A generated still with a camera move is a motion still; it is never
+        # reported as the planned I2V, because no model generated that motion.
+        actual_type = "MOTION_STILL" if planned in {"I2V", "STILL_MOTION", "PARALLAX"} else planned
+        if actual_type not in {"MOTION_STILL", "I2V", "PARALLAX", "INFOGRAPHIC", "LICENSED_MEDIA"}:
+            actual_type = "MOTION_STILL"
+        return {
+            "status": "SUCCEEDED",
+            "clip_path": clip_path,
+            "still_path": still_path,
+            "actual_type": actual_type,
+            "fallback_reason": None,
+            "lineage": {
+                "source": "LOCAL_GENERATED_IMAGE",
+                "generated_picture_model": str(image.get("model_code") or ""),
+                "generation_profile_version_id": str(image.get("profile_version_id") or ""),
+                "generation_workflow_version_id": str(image.get("workflow_version_id") or ""),
+                "generation_runtime_code": str(image.get("runtime_code") or ""),
+                "generation_prompt_id": str(image.get("prompt_id") or ""),
+                "generation_prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+                "generation_seed": int(image.get("seed") or 0),
+                "generation_width": int(image.get("generation_width") or 0),
+                "generation_height": int(image.get("generation_height") or 0),
+                "generation_steps": int(image.get("steps") or 0),
+                "generation_seconds": float(image.get("elapsed_seconds") or 0.0),
+                "image_sha256": str(image.get("sha256") or ""),
+                "clip_sha256": _sha256_file(clip_path),
+                "duration_seconds": duration_seconds,
+                "frames": frames,
+                "motion": outcome.get("motion"),
+                "camera_motion_only": True,
+                "planned_render_type": planned,
+                "note": "画面由本机图像生成模型产出；动态仅为确定性推镜，不是模型生成的视频。",
+            },
+            "execution_snapshot": {
+                "provider": f"COMFYUI:{image.get('runtime_code') or 'local'}",
+                "model_code": str(image.get("model_code") or ""),
+                "network_used": False,
+            },
+        }
 
     def handler(job: dict[str, Any], context: Mapping[str, Any]) -> dict[str, Any]:
         del job
@@ -1280,12 +1570,27 @@ def make_visual_generation_handler(
         video_id = str(payload.get("video_id") or "")
         generated: list[dict[str, Any]] = []
         failures: list[dict[str, Any]] = []
+        picture_source = str(getattr(settings, "explainer_picture_source", "LOCAL_GENERATION") or "").upper()
+        capability_snapshot = payload.get("capability_snapshot")
+        if not isinstance(capability_snapshot, Mapping):
+            capability_snapshot = None
+        picture_probe: dict[str, Any] = {"available": False, "reason": "PICTURE_RUNTIME_NOT_CONFIGURED"}
+        if picture_source == "LOCAL_GENERATION" and picture_runtime is not None:
+            try:
+                picture_probe = dict(picture_runtime.probe(capability_snapshot))
+            except Exception as error:  # a broken runtime degrades, it never aborts the stage
+                picture_probe = {
+                    "available": False,
+                    "reason": "PICTURE_PROBE_FAILED",
+                    "detail": {"error": type(error).__name__},
+                }
         with repo_factory() as repo:
             video, editions = _video_and_editions(repo, project_id=project_id, video_id=video_id)
             if not editions:
                 return _blocked("该作品没有输出版本，无法生成画面", "SCHEMA_INVALID", {"video_id": video_id})
             beats = {str(item["id"]): item for item in repo.beats(video_id)}
             disclosure = _disclosure_line(str(video.get("content_kind") or ""))
+            generated_disclosure = _generated_disclosure_line()
             # One clip per beat, sized for the longest edition placement so every
             # edition can reference the same immutable media version.
             timelines = {str(edition["id"]): _load_timeline(repo, video=video, edition=edition) for edition in editions}
@@ -1315,172 +1620,223 @@ def make_visual_generation_handler(
             height = int(primary_edition["height"])
             fps_num = int(primary_edition["fps_num"])
             fps_den = int(primary_edition["fps_den"])
-            voice_locale = normalize_locale(str(primary_edition["voice_locale"]))
 
-        for beat_id, requirement in sorted(needed.items(), key=lambda item: int(beats[item[0]]["ordinal"])):
-            if beat_id in existing:
-                generated.append({"beat_id": beat_id, "reused": True, "candidate_id": str(existing[beat_id]["id"])})
-                continue
-            beat = beats[beat_id]
-            frames = max(1, int(requirement["frames"]))
-            duration_seconds = frames * fps_den / fps_num
-            card_dir = renders_root / video_id / beat_id
-            card_dir.mkdir(parents=True, exist_ok=True)
-            with repo_factory() as repo:
-                body = _beat_card_text(
-                    repo,
-                    segment_ids=requirement["segment_ids"],
-                    intent=requirement["visual_intent"],
-                )
-                entities = [
-                    str(code) for code in (beat.get("entity_refs_json") or []) if str(code)
-                ][:6]
-                entity_line = ("实体：" + "、".join(entities)) if entities else ""
-            kicker = f"画面 {int(beat['ordinal']) + 1:02d} · {beat['code']}"
-            footer = " ｜ ".join([part for part in (entity_line, disclosure) if part])
-            ass_text = _card_ass(
-                text=body, kicker=kicker, footer=footer, duration_seconds=duration_seconds, width=width, height=height
-            )
-            ass_path = card_dir / "card.ass"
-            ass_path.write_text(ass_text, encoding="utf-8")
-            still_path = card_dir / "card.png"
-            clip_path = card_dir / "card.mp4"
-            outcome = _render_card_clip(
-                ass_path=ass_path,
-                still_path=still_path,
-                clip_path=clip_path,
-                width=width,
-                height=height,
-                fps_num=fps_num,
-                fps_den=fps_den,
-                frames=frames,
-            )
-            if outcome.get("status") != "SUCCEEDED":
-                failures.append({"beat_id": beat_id, "stage": outcome.get("stage"), "reason": outcome.get("reason")})
-                continue
-            if font is None:
-                failures.append(
-                    {
-                        "beat_id": beat_id,
-                        "stage": "font",
-                        "reason": "CJK_FONT_NOT_FOUND_ON_THIS_MACHINE",
-                    }
-                )
-            registered = media_service.import_file(
-                project_id,
-                clip_path,
-                purpose="EXPLAINER_BEAT_CLIP",
-                owner_type="EXPLAINER_VIDEO",
-                owner_id=video_id,
-                media_kind="VIDEO",
-                stage="VISUAL_GENERATION",
-                actor="explainer-worker",
-            )
-            with repo_factory() as repo:
-                candidate = repo.insert(
-                    "explainer_media_candidates",
-                    {
-                        "video_id": video_id,
-                        "beat_id": beat_id,
-                        "variant_no": 1,
-                        "candidate_kind": "CREATIVE",
-                        "purpose": "VISUAL",
-                        "media_asset_id": registered.get("media_asset_id"),
-                        "media_version_id": registered.get("media_version_id"),
-                        "media_sha256": registered.get("sha256"),
-                        "status": "READY",
-                        "render_type_planned": str(beat.get("render_type") or "STILL_MOTION"),
-                        "render_type_actual": "MOTION_STILL",
-                        "fallback_reason": "DETERMINISTIC_TYPESET_CARD_PATH",
-                        "lineage_json": {
-                            "source": "LOCAL_FFMPEG_TYPESET_CARD",
-                            "card_ass_sha256": _sha256_file(ass_path),
-                            "clip_sha256": _sha256_file(clip_path),
-                            "duration_seconds": duration_seconds,
-                            "frames": frames,
-                            "motion": outcome.get("motion"),
-                            "generated_picture_model": None,
-                            "note": "本机未调用图像/视频生成模型；画面为确定性排版卡与其静帧动效。",
-                        },
-                        "execution_snapshot_json": {"provider": "LOCAL_FFMPEG", "network_used": False},
-                        "adopted": False,
-                    },
+        def _run_beats() -> None:
+            for beat_id, requirement in sorted(needed.items(), key=lambda item: int(beats[item[0]]["ordinal"])):
+                if beat_id in existing:
+                    generated.append({"beat_id": beat_id, "reused": True, "candidate_id": str(existing[beat_id]["id"])})
+                    continue
+                beat = beats[beat_id]
+                frames = max(1, int(requirement["frames"]))
+                duration_seconds = frames * fps_den / fps_num
+                with repo_factory() as repo:
+                    body = _beat_card_text(
+                        repo,
+                        segment_ids=requirement["segment_ids"],
+                        intent=requirement["visual_intent"],
+                    )
+                    entities = [
+                        str(code) for code in (beat.get("entity_refs_json") or []) if str(code)
+                    ][:6]
+                    entity_line = ("实体：" + "、".join(entities)) if entities else ""
+                kicker = f"画面 {int(beat['ordinal']) + 1:02d} · {beat['code']}"
+                footer = " ｜ ".join([part for part in (entity_line, disclosure) if part])
+                generated_footer = " ｜ ".join([part for part in (entity_line, generated_disclosure) if part])
+                attempt: dict[str, Any] | None = None
+                declared_reason: str | None = None
+                if picture_probe.get("available"):
+                    try:
+                        attempt = _generated_beat_picture(
+                            runtime=picture_runtime,
+                            probe=picture_probe,
+                            video_id=video_id,
+                            beat_id=beat_id,
+                            beat=beat,
+                            kicker=kicker,
+                            footer=generated_footer,
+                            frames=frames,
+                            duration_seconds=duration_seconds,
+                            width=width,
+                            height=height,
+                            fps_num=fps_num,
+                            fps_den=fps_den,
+                        )
+                    except Exception as error:
+                        code = str(getattr(error, "code", type(error).__name__))
+                        # The failing frame is recorded with the beat: a bare error
+                        # class name ("ValueError") told the operator nothing about
+                        # which step of the picture path actually failed.
+                        failures.append(
+                            {
+                                "beat_id": beat_id,
+                                "stage": "picture-generation",
+                                "reason": code,
+                                "detail": _last_frames(error),
+                            }
+                        )
+                        attempt = None
+                        declared_reason = f"PICTURE_GENERATION_FAILED:{code}"
+                else:
+                    declared_reason = str(picture_probe.get("reason") or "PICTURE_GENERATION_UNAVAILABLE")
+                if attempt is None:
+                    attempt = _card_beat_picture(
+                        video_id=video_id,
+                        beat_id=beat_id,
+                        body=body,
+                        kicker=kicker,
+                        footer=footer,
+                        frames=frames,
+                        duration_seconds=duration_seconds,
+                        width=width,
+                        height=height,
+                        fps_num=fps_num,
+                        fps_den=fps_den,
+                    )
+                    if attempt.get("status") != "SUCCEEDED":
+                        failures.append({"beat_id": beat_id, "stage": "card", "reason": attempt.get("reason")})
+                        continue
+                    # A card produced because generation failed (or never ran) states
+                    # the real cause; only a card produced by configuration keeps the
+                    # card path's own declared reason.
+                    if declared_reason:
+                        attempt["fallback_reason"] = declared_reason
+                clip_path = Path(str(attempt["clip_path"]))
+                registered = media_service.import_file(
+                    project_id,
+                    clip_path,
+                    purpose="EXPLAINER_BEAT_CLIP",
+                    owner_type="EXPLAINER_VIDEO",
+                    owner_id=video_id,
+                    media_kind="VIDEO",
+                    stage="VISUAL_GENERATION",
                     actor="explainer-worker",
                 )
-                for edition in editions:
-                    if str(edition["id"]) not in timelines:
-                        continue
-                    existing_selection = repo.query_one(
-                        "SELECT id FROM explainer_beat_selections WHERE beat_id=? AND edition_id=? AND status='ACTIVE'",
-                        (beat_id, str(edition["id"])),
-                    )
-                    if existing_selection is not None:
-                        repo.update(
-                            "explainer_beat_selections",
-                            str(existing_selection["id"]),
-                            {"status": "SUPERSEDED"},
-                            actor="explainer-worker",
-                        )
-                    repo.insert(
-                        "explainer_beat_selections",
+                with repo_factory() as repo:
+                    candidate = repo.insert(
+                        "explainer_media_candidates",
                         {
                             "video_id": video_id,
                             "beat_id": beat_id,
-                            "edition_id": str(edition["id"]),
-                            "candidate_id": str(candidate["id"]),
+                            "variant_no": 1,
+                            "candidate_kind": "CREATIVE",
+                            "purpose": "VISUAL",
                             "media_asset_id": registered.get("media_asset_id"),
                             "media_version_id": registered.get("media_version_id"),
                             "media_sha256": registered.get("sha256"),
-                            "source_in_us": 0,
-                            "source_out_us": int(round(duration_seconds * 1_000_000)),
-                            "adoption_authority": "MACHINE_POLICY",
-                            "render_type_actual": "MOTION_STILL",
-                            "fallback_reason": "DETERMINISTIC_TYPESET_CARD_PATH",
-                            "status": "ACTIVE",
+                            "status": "READY",
+                            "render_type_planned": str(beat.get("render_type") or "STILL_MOTION"),
+                            "render_type_actual": str(attempt["actual_type"]),
+                            "fallback_reason": attempt.get("fallback_reason"),
+                            "lineage_json": attempt["lineage"],
+                            "execution_snapshot_json": attempt["execution_snapshot"],
+                            "adopted": False,
                         },
                         actor="explainer-worker",
                     )
-                repo.update(
-                    "explainer_media_candidates",
-                    str(candidate["id"]),
-                    {"adopted": True},
-                    actor="explainer-worker",
-                )
-                if str(beat.get("render_type")) != "MOTION_STILL":
+                    for edition in editions:
+                        if str(edition["id"]) not in timelines:
+                            continue
+                        existing_selection = repo.query_one(
+                            "SELECT id FROM explainer_beat_selections WHERE beat_id=? AND edition_id=? AND status='ACTIVE'",
+                            (beat_id, str(edition["id"])),
+                        )
+                        if existing_selection is not None:
+                            repo.update(
+                                "explainer_beat_selections",
+                                str(existing_selection["id"]),
+                                {"status": "SUPERSEDED"},
+                                actor="explainer-worker",
+                            )
+                        repo.insert(
+                            "explainer_beat_selections",
+                            {
+                                "video_id": video_id,
+                                "beat_id": beat_id,
+                                "edition_id": str(edition["id"]),
+                                "candidate_id": str(candidate["id"]),
+                                "media_asset_id": registered.get("media_asset_id"),
+                                "media_version_id": registered.get("media_version_id"),
+                                "media_sha256": registered.get("sha256"),
+                                "source_in_us": 0,
+                                "source_out_us": int(round(duration_seconds * 1_000_000)),
+                                "adoption_authority": "MACHINE_POLICY",
+                                "render_type_actual": str(attempt["actual_type"]),
+                                "fallback_reason": attempt.get("fallback_reason"),
+                                "status": "ACTIVE",
+                            },
+                            actor="explainer-worker",
+                        )
+                    repo.update(
+                        "explainer_media_candidates",
+                        str(candidate["id"]),
+                        {"adopted": True},
+                        actor="explainer-worker",
+                    )
+                    # The beat row must state what really happened, not what the
+                    # planner assumed before any picture existed.
                     repo.update(
                         "explainer_visual_beats",
                         beat_id,
                         {
-                            "actual_fallback_type": "STILL_MOTION",
-                            "fallback_reason": "PLANNED_VISUAL_DEGRADED_TO_DETERMINISTIC_CARD",
+                            "actual_fallback_type": str(attempt["actual_type"]),
+                            "fallback_reason": attempt.get("fallback_reason"),
                         },
                         actor="explainer-worker",
                     )
-            generated.append(
-                {
-                    "beat_id": beat_id,
-                    "candidate_id": str(candidate["id"]),
-                    "media_version_id": registered.get("media_version_id"),
-                    "frames": frames,
+                generated.append(
+                    {
+                        "beat_id": beat_id,
+                        "candidate_id": str(candidate["id"]),
+                        "media_version_id": registered.get("media_version_id"),
+                        "frames": frames,
+                        "source": str(attempt["lineage"].get("source") or ""),
+                        "actual_type": str(attempt["actual_type"]),
+                    }
+                )
+
+        session_cm: Any = None
+        if picture_probe.get("available") and picture_runtime is not None:
+            try:
+                session_cm = picture_runtime.session(owner_ref=f"explainer-visual-{video_id}")
+            except Exception as error:
+                picture_probe = {
+                    **{key: value for key, value in picture_probe.items() if key != "detail"},
+                    "available": False,
+                    "reason": "PICTURE_GPU_LEASE_FAILED",
+                    "detail": {"error": type(error).__name__},
                 }
-            )
+                session_cm = None
+        if session_cm is None:
+            _run_beats()
+        else:
+            with session_cm:
+                _run_beats()
         if not generated:
             return _blocked(
                 "没有任何画面段生成可用的画面候选",
                 "MEDIA_CANDIDATES_MISSING",
                 {"failures": failures[:5], "beat_count": len(needed)},
             )
-        degraded = sum(1 for item in generated if not item.get("reused"))
+        fresh = [item for item in generated if not item.get("reused")]
+        generated_count = sum(1 for item in fresh if item.get("source") == "LOCAL_GENERATED_IMAGE")
+        card_count = len(fresh) - generated_count
         return _passed(
-            f"已为 {len(generated)} 个画面段准备画面（新渲染 {degraded} 个），全部为本地确定性排版卡静帧动效，已记录降级原因。",
+            f"已为 {len(generated)} 个画面段准备画面（新生成 {len(fresh)} 个：本机模型生成 {generated_count} 个、确定性排版卡 {card_count} 个）。",
             {
                 "candidates": generated,
                 "failures": failures,
                 "beat_count": len(needed),
                 "planned_types": sorted({str(item.get("render_type")) for item in needed.values()}),
-                "actual_type": "MOTION_STILL",
-                "generation_model_used": False,
-                "disclosure": "画面为本地排版卡静帧动效，未调用图像或视频生成模型；I2V 降级已记录。",
+                "picture_source": picture_source,
+                "generation_probe": {key: value for key, value in picture_probe.items() if key != "detail"},
+                "generation_model_used": generated_count > 0,
+                "generated_beat_count": generated_count,
+                "typeset_card_beat_count": card_count,
+                "disclosure": (
+                    "画面由本机图像生成模型产出，运动为确定性推镜；生成失败或不可用的画面段已降级为排版卡并记录原因。"
+                    if generated_count
+                    else "本次没有调用图像生成模型，画面为确定性排版卡静帧动效。"
+                ),
             },
         )
 
@@ -2658,6 +3014,7 @@ def build_explainer_pipeline_handlers(
     asr: Any = None,
     work_root: Path | None = None,
     repo_factory_read: Callable[[], Any] | None = None,
+    picture_runtime: Any = None,
 ) -> dict[str, Callable[[dict[str, Any], Mapping[str, Any]], dict[str, Any]]]:
     """The seven production stages this module owns, keyed by stage code.
 
@@ -2691,7 +3048,11 @@ def build_explainer_pipeline_handlers(
         )
     if media_service is not None:
         handlers["VISUAL_GENERATION"] = make_visual_generation_handler(
-            repo_factory, settings=settings, media_service=media_service, work_root=resolved_work_root
+            repo_factory,
+            settings=settings,
+            media_service=media_service,
+            work_root=resolved_work_root,
+            picture_runtime=picture_runtime,
         )
         handlers["COMPOSITION_RENDER"] = make_composition_render_handler(
             repo_factory, settings=settings, media_service=media_service, work_root=resolved_work_root

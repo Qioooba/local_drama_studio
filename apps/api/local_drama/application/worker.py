@@ -19,6 +19,7 @@ from local_drama.application.configuration import ConfigurationService
 from local_drama.application.dialogue import DialogueService
 from local_drama.application.episode_front_half_actions import EpisodeFrontHalfActionService
 from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
+from local_drama.application.explainers.picture_generation import ExplainerPictureGenerationRuntime
 from local_drama.application.explainers.production_pipeline import build_explainer_pipeline_handlers
 from local_drama.application.explainers.runtime_adapters import (
     ExplainerRepositoryRead,
@@ -319,6 +320,11 @@ def _make_explainer_task_provider(
                     aligner=LocalForcedAlignerAdapter(worker.voxcpm_runtime),
                     asr=LocalAsrAdapter(worker.voxcpm_runtime),
                     work_root=worker.settings.work_root,
+                    picture_runtime=ExplainerPictureGenerationRuntime(
+                        worker.database,
+                        worker.settings,
+                        gpu_coordinator=worker.gpu_coordinator,
+                    ),
                 ),
             ),
             step_store=RepositoryExplainerStepStore(
@@ -1025,6 +1031,11 @@ class LocalMediaWorker:
                 aligner=LocalForcedAlignerAdapter(self.voxcpm_runtime),
                 asr=LocalAsrAdapter(self.voxcpm_runtime),
                 work_root=self.settings.work_root,
+                picture_runtime=ExplainerPictureGenerationRuntime(
+                    self.database,
+                    self.settings,
+                    gpu_coordinator=self.gpu_coordinator,
+                ),
             ),
         )
 
