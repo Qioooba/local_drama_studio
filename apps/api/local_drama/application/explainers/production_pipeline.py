@@ -2165,6 +2165,21 @@ def make_composition_render_handler(
                         continue
                     media_version_id = str(selection["media_version_id"])
                     has_audio[media_version_id] = False
+                    # The declared source window must be the *real media*, not the
+                    # placement's span.  Declaring ``source_out == span`` made the
+                    # renderer believe a short clip was long enough, so a placement
+                    # that outlives its media (the declared outro hold especially)
+                    # silently ran out of frames and failed the chunk frame check
+                    # instead of cloning the last frame the way the design says.
+                    media_row = repo.query_one(
+                        "SELECT duration_ms FROM media_versions WHERE id=?", (media_version_id,)
+                    )
+                    media_span_us = int(media_row["duration_ms"]) * 1000 if media_row and media_row["duration_ms"] else None
+                    if media_span_us is None or media_span_us <= 0:
+                        media_span_us = int(
+                            round(span * 1_000_000 * timeline["fps"].den / timeline["fps"].num)
+                        )
+                    source_in_us = int(selection.get("source_in_us") or 0)
                     clip = {
                         "clip_id": f"v-{len(clips):04d}",
                         "track": "VIDEO",
@@ -2173,14 +2188,14 @@ def make_composition_render_handler(
                         "media_sha256": str(selection["media_sha256"]),
                         "start_frame": int(placement["start_frame"]),
                         "end_frame_exclusive": int(placement["end_frame_exclusive"]),
-                        "source_in_us": 0,
-                        "source_out_us": int(round(span * 1_000_000 * timeline["fps"].den / timeline["fps"].num)),
+                        "source_in_us": source_in_us,
+                        "source_out_us": source_in_us + media_span_us,
                         "sample_start": None,
                         "sample_end_exclusive": None,
                         "beat_id": beat_id,
                         "narration_segment_id": str(placement["segment_id"]),
                         "render_type_planned": placement.get("render_type"),
-                        "render_type_actual": "MOTION_STILL",
+                        "render_type_actual": str(selection.get("render_type_actual") or "MOTION_STILL"),
                         "transition": {"kind": "CUT"},
                     }
                     clips.append(clip)
