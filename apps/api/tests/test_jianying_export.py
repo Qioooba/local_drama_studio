@@ -163,7 +163,7 @@ def test_jianying_export_manifest_hash_and_reuse_without_database_mutation(works
     manifest = json.loads((project_root / str(exported["manifest_rel_path"])).read_text(encoding="utf-8"))
     assert manifest["schema_version"] == "localdrama.timeline-export.v1"
     assert manifest["format"] == "jianying"
-    assert manifest["writer_version"] == 3
+    assert manifest["writer_version"] == 4
     assert manifest["export_hash"] == exported["export_hash"]
     assert manifest["media_copy"] == "BUNDLED"
     assert manifest["timeline_revision_id"] == timeline["id"]

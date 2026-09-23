@@ -296,11 +296,27 @@ class ExplainerProductionService:
         capability_probe: Any | None = None,
         workflow_service: Any | None = None,
         repository: ExplainerRepository | None = None,
+        settings: Any | None = None,
     ) -> None:
         self.database = database
         self._capability_probe = capability_probe
         self._workflow_service = workflow_service
         self._repository = repository
+        self._settings = settings
+
+    #: Explainer masters are generated at the configured proxy height (480p) and a
+    #: later super-resolution step lifts them to the delivery height.  The value is
+    #: read from the machine config, so an operator can change the canvas without a
+    #: code change; the domain default applies when no settings were injected.
+    def _generation_height(self) -> int:
+        from local_drama.domain.explainers.contracts import DEFAULT_GENERATION_HEIGHT
+
+        value = getattr(self._settings, "explainer_generation_height", None)
+        try:
+            height = int(value)
+        except (TypeError, ValueError):
+            return DEFAULT_GENERATION_HEIGHT
+        return height if height >= 64 else DEFAULT_GENERATION_HEIGHT
 
     # ------------------------------------------------------------------ helpers
     def _repo(self, connection: sqlite3.Connection) -> ExplainerRepository:
@@ -334,6 +350,66 @@ class ExplainerProductionService:
         channel_profile_version_id: str | None = None,
         actor: str = "local-user",
     ) -> dict[str, Any]:
+        """Create the one explainer video of a project in its own transaction.
+
+        Callers that must create the project and the video atomically (the
+        composite EXPLAINER creation command) use
+        :meth:`insert_video_in_transaction` instead, so the two writes cannot be
+        split across two independently committed transactions.
+        """
+
+        with self.database.transaction() as connection:
+            return self.insert_video_in_transaction(
+                connection,
+                project_id=project_id,
+                title=title,
+                topic=topic,
+                content_kind=content_kind,
+                input_kind=input_kind,
+                input_payload=input_payload,
+                duration_mode=duration_mode,
+                target_seconds=target_seconds,
+                tolerance_percent=tolerance_percent,
+                source_locale=source_locale,
+                automation_mode=automation_mode,
+                inference_mode=inference_mode,
+                research_mode=research_mode,
+                allowed_domains=allowed_domains,
+                channel_profile_id=channel_profile_id,
+                channel_profile_version_id=channel_profile_version_id,
+                actor=actor,
+            )
+
+    def insert_video_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        project_id: str,
+        title: str,
+        topic: str,
+        content_kind: str,
+        input_kind: str,
+        input_payload: Mapping[str, Any],
+        duration_mode: str,
+        target_seconds: int,
+        tolerance_percent: float,
+        source_locale: str,
+        automation_mode: str,
+        inference_mode: str,
+        research_mode: str,
+        allowed_domains: Sequence[str] = (),
+        channel_profile_id: str | None = None,
+        channel_profile_version_id: str | None = None,
+        actor: str = "local-user",
+        require_no_existing_video: bool = True,
+    ) -> dict[str, Any]:
+        """Validate and insert one explainer video inside the caller's transaction.
+
+        ``require_no_existing_video`` stays ``True`` for the ordinary single-video
+        API; the composite creation command passes ``False`` because it has just
+        created the project itself and re-checks the composite idempotency receipt.
+        """
+
         duration = DurationSpec(DurationMode(duration_mode), int(target_seconds), float(tolerance_percent))
         if content_kind not in {item.value for item in ContentKind}:
             raise ExplainerContractError("SCHEMA_INVALID", "内容类型不合法", {"content_kind": content_kind})
@@ -350,62 +426,61 @@ class ExplainerProductionService:
                 "SCHEMA_INVALID", "纯离线导入模式不能声明允许域名", {"allowed_domains": list(allowed_domains)}
             )
 
-        with self.database.transaction() as connection:
-            repo = self._repo(connection)
-            project = repo.project_row(project_id)
-            if str(project.get("product_kind") or ProductKind.DRAMA.value) != ProductKind.EXPLAINER.value:
-                raise ExplainerContractError(
-                    "INVALID_REQUEST",
-                    "该接口只创建解说作品；请先以 EXPLAINER 类型创建项目",
-                    {"project_id": project_id, "product_kind": project.get("product_kind")},
-                )
-            if repo.video_for_project(project_id) is not None:
-                raise ExplainerContractError(
-                    "INVALID_REQUEST",
-                    "一个解说项目默认对应一个解说作品；多语言/多画幅请创建 edition",
-                    {"project_id": project_id},
-                )
-            if not title or len(title) > 200:
-                raise ExplainerContractError("SCHEMA_INVALID", "标题必须是 1–200 个字符")
-
-            resolved_profile_version_id = channel_profile_version_id
-            if resolved_profile_version_id is None and channel_profile_id:
-                profile = repo.get("channel_profiles", channel_profile_id)
-                resolved_profile_version_id = profile.get("current_version_id")
-            if resolved_profile_version_id is not None:
-                profile_version = repo.get("channel_profile_versions", resolved_profile_version_id)
-                if str(profile_version.get("status")) not in {"DRAFT", "FROZEN"}:
-                    raise ExplainerContractError(
-                        "SCHEMA_INVALID", "栏目版本不可用", {"channel_profile_version_id": resolved_profile_version_id}
-                    )
-
-            video = repo.insert(
-                "explainer_videos",
-                {
-                    "project_id": project_id,
-                    "title": title,
-                    "topic": topic,
-                    "content_kind": content_kind,
-                    "source_locale": source_locale,
-                    "input_kind": input_kind,
-                    "input_payload_json": dict(input_payload),
-                    "duration_mode": duration.mode.value,
-                    "target_seconds": duration.target_seconds,
-                    "tolerance_percent": duration.tolerance_percent,
-                    "automation_mode": automation_mode,
-                    "inference_mode": inference_mode,
-                    "research_mode": research_mode,
-                    "research_allowed_domains_json": list(allowed_domains),
-                    "current_channel_profile_version_id": resolved_profile_version_id,
-                    "status": "DRAFT",
-                },
-                actor=actor,
+        repo = self._repo(connection)
+        project = repo.project_row(project_id)
+        if str(project.get("product_kind") or ProductKind.DRAMA.value) != ProductKind.EXPLAINER.value:
+            raise ExplainerContractError(
+                "INVALID_REQUEST",
+                "该接口只创建解说作品；请先以 EXPLAINER 类型创建项目",
+                {"project_id": project_id, "product_kind": project.get("product_kind")},
             )
-            connection.execute(
-                "UPDATE projects SET target_duration_ms = ?, updated_at = ? WHERE id = ?",
-                (duration.target_seconds * 1000, utc_now_iso(), project_id),
+        if require_no_existing_video and repo.video_for_project(project_id) is not None:
+            raise ExplainerContractError(
+                "INVALID_REQUEST",
+                "一个解说项目默认对应一个解说作品；多语言/多画幅请创建 edition",
+                {"project_id": project_id},
             )
-            return video
+        if not title or len(title) > 200:
+            raise ExplainerContractError("SCHEMA_INVALID", "标题必须是 1–200 个字符")
+
+        resolved_profile_version_id = channel_profile_version_id
+        if resolved_profile_version_id is None and channel_profile_id:
+            profile = repo.get("channel_profiles", channel_profile_id)
+            resolved_profile_version_id = profile.get("current_version_id")
+        if resolved_profile_version_id is not None:
+            profile_version = repo.get("channel_profile_versions", resolved_profile_version_id)
+            if str(profile_version.get("status")) not in {"DRAFT", "FROZEN"}:
+                raise ExplainerContractError(
+                    "SCHEMA_INVALID", "栏目版本不可用", {"channel_profile_version_id": resolved_profile_version_id}
+                )
+
+        video = repo.insert(
+            "explainer_videos",
+            {
+                "project_id": project_id,
+                "title": title,
+                "topic": topic,
+                "content_kind": content_kind,
+                "source_locale": source_locale,
+                "input_kind": input_kind,
+                "input_payload_json": dict(input_payload),
+                "duration_mode": duration.mode.value,
+                "target_seconds": duration.target_seconds,
+                "tolerance_percent": duration.tolerance_percent,
+                "automation_mode": automation_mode,
+                "inference_mode": inference_mode,
+                "research_mode": research_mode,
+                "research_allowed_domains_json": list(allowed_domains),
+                "current_channel_profile_version_id": resolved_profile_version_id,
+                "status": "DRAFT",
+            },
+            actor=actor,
+        )
+        connection.execute(
+            "UPDATE projects SET target_duration_ms = ?, updated_at = ? WHERE id = ?",
+            (duration.target_seconds * 1000, utc_now_iso(), project_id),
+        )
+        return video
 
     # ------------------------------------------------------------------ profile
     def create_channel_profile(
@@ -504,6 +579,13 @@ class ExplainerProductionService:
                             "execution_class": (resolved or {}).get("execution_class", "LOCAL") if isinstance(resolved, Mapping) else "LOCAL",
                             "reason": (resolved or {}).get("reason") if isinstance(resolved, Mapping) else None,
                             "fallbackable": capability in FALLBACKABLE_CAPABILITIES,
+                            # The canonical name and the concrete resolution source
+                            # are part of the frozen capability identity an operator
+                            # needs in order to answer "which model/tool does this
+                            # requirement really use".
+                            "canonical_capability": (resolved or {}).get("canonical_capability") if isinstance(resolved, Mapping) else None,
+                            "resolution": (resolved or {}).get("resolution") if isinstance(resolved, Mapping) else None,
+                            "source": (resolved or {}).get("source") if isinstance(resolved, Mapping) else None,
                         }
                     )
             entries.append(record)
@@ -596,21 +678,43 @@ class ExplainerProductionService:
                     # An independently clocked edition is supported; record it.
                     pass
 
+            # ``or`` is the wrong default operator here: an explicitly supplied
+            # ``0`` or ``[]`` is a legitimate instruction ("no repairs", "no
+            # fallback allowed"), and treating it as "not provided" widened the
+            # frozen authorization snapshot beyond what the caller granted.
             resolved_budget = dict(budget or {})
             budget_obj = Budget(
-                max_gpu_seconds=int(resolved_budget.get("max_gpu_seconds") or 36_000),
-                max_wall_seconds=int(resolved_budget.get("max_wall_seconds") or 43_200),
-                initial_candidates_per_ordinary_beat=int(resolved_budget.get("initial_candidates_per_ordinary_beat") or 1),
-                initial_candidates_per_key_identity=int(resolved_budget.get("initial_candidates_per_key_identity") or 2),
-                max_creative_repairs_per_beat=int(resolved_budget.get("max_creative_repairs_per_beat") or 2),
-                max_technical_retries_per_step=int(resolved_budget.get("max_technical_retries_per_step") or 2),
-                max_script_revisions=int(resolved_budget.get("max_script_revisions") or 0),
+                max_gpu_seconds=int(_explicit(resolved_budget, "max_gpu_seconds", 36_000)),
+                max_wall_seconds=int(_explicit(resolved_budget, "max_wall_seconds", 43_200)),
+                initial_candidates_per_ordinary_beat=int(
+                    _explicit(resolved_budget, "initial_candidates_per_ordinary_beat", 1)
+                ),
+                initial_candidates_per_key_identity=int(
+                    _explicit(resolved_budget, "initial_candidates_per_key_identity", 2)
+                ),
+                max_creative_repairs_per_beat=int(
+                    _explicit(resolved_budget, "max_creative_repairs_per_beat", 2)
+                ),
+                max_technical_retries_per_step=int(
+                    _explicit(resolved_budget, "max_technical_retries_per_step", 2)
+                ),
+                max_script_revisions=int(_explicit(resolved_budget, "max_script_revisions", 0)),
             )
             resolved_fallback = dict(fallback_policy or {})
             fallback = FallbackPolicy(
-                allowed_visual_fallbacks=tuple(resolved_fallback.get("allowed_visual_fallbacks") or ("I2V_TO_MOTION_STILL", "I2V_TO_INFORMATION_GRAPHIC")),
-                script_rewrite_policy=str(resolved_fallback.get("script_rewrite_policy") or "NO_AUTOMATIC_REWRITE"),
-                max_script_revisions=int(resolved_fallback.get("max_script_revisions") or budget_obj.max_script_revisions),
+                allowed_visual_fallbacks=tuple(
+                    _explicit(
+                        resolved_fallback,
+                        "allowed_visual_fallbacks",
+                        ("I2V_TO_MOTION_STILL", "I2V_TO_INFORMATION_GRAPHIC"),
+                    )
+                ),
+                script_rewrite_policy=str(
+                    _explicit(resolved_fallback, "script_rewrite_policy", "NO_AUTOMATIC_REWRITE")
+                ),
+                max_script_revisions=int(
+                    _explicit(resolved_fallback, "max_script_revisions", budget_obj.max_script_revisions)
+                ),
             )
 
             # Source material gate (design §5.2): a topic/import input must have
@@ -867,6 +971,19 @@ class ExplainerProductionService:
             actor=actor,
         )
         if fresh["plan_hash"] != plan_hash:
+            if not outputs:
+                # The frozen plan is defined by its outputs; a submission without
+                # them can only produce an opaque hash mismatch.  Say what is
+                # missing so the caller can resend the plan it preflighted.
+                raise ExplainerContractError(
+                    "PLAN_INPUTS_REQUIRED",
+                    "提交必须带上预检时冻结的完整计划输入（outputs/budget/fallback_policy）",
+                    {
+                        "submitted_plan_hash": plan_hash,
+                        "current_plan_hash": fresh["plan_hash"],
+                        "missing": ["outputs"],
+                    },
+                )
             raise ExplainerContractError(
                 ExplainerErrorCode.STALE_PLAN.value,
                 "计划已过期：输入、政策或能力发生变化，请基于新的预检结果重新提交",
@@ -886,6 +1003,22 @@ class ExplainerProductionService:
         with self.database.transaction() as connection:
             repo = self._repo(connection)
             video = repo.require_video_for_project(project_id)
+            # The frozen plan names its output editions, and every later stage needs
+            # the edition row to exist (language clock, canvas, subtitle mode).  The
+            # write belongs here, in the same transaction as the run that consumes
+            # it, so a submitted plan can never point at an edition that was never
+            # created.
+            if outputs:
+                from local_drama.application.explainers.production_pipeline import (
+                    ensure_editions_for_outputs,
+                )
+
+                ensure_editions_for_outputs(
+                    repo,
+                    video=video,
+                    outputs=outputs,
+                    generation_height=self._generation_height(),
+                )
             run = repo.insert(
                 "explainer_runs",
                 {
@@ -1077,16 +1210,38 @@ class ExplainerProductionService:
             "by_step": {str(step["planned_step_code"]): str(step["status"]) for step in steps},
         }
 
-    def start_run(self, *, project_id: str, plan_hash: str, idempotency_key: str, actor: str = "local-user") -> dict[str, Any]:
+    def start_run(
+        self,
+        *,
+        project_id: str,
+        plan_hash: str,
+        idempotency_key: str,
+        outputs: Sequence[Mapping[str, Any]] | None = None,
+        budget: Mapping[str, Any] | None = None,
+        fallback_policy: Mapping[str, Any] | None = None,
+        actor: str = "local-user",
+    ) -> dict[str, Any]:
         """Submit the plan and hand execution to the existing declarative workflow.
 
         The explainer graph is expressed as one automation workflow run with one
         batch item per step, so cancel/pause/resume/recovery keep using the
         existing job and workflow facilities instead of a parallel executor.
+
+        ``outputs`` / ``budget`` / ``fallback_policy`` are forwarded verbatim.  They
+        used to be dropped here while ``submit_run`` re-ran the preflight with an
+        *empty* output list, so the frozen plan hash could never match the submitted
+        one and every legitimate "check and one-click generate" ended in
+        ``409 STALE_PLAN`` with ``submitted_outputs=[]``.
         """
 
         submitted = self.submit_run(
-            project_id=project_id, plan_hash=plan_hash, idempotency_key=idempotency_key, actor=actor
+            project_id=project_id,
+            plan_hash=plan_hash,
+            idempotency_key=idempotency_key,
+            outputs=outputs,
+            budget=budget,
+            fallback_policy=fallback_policy,
+            actor=actor,
         )
         if submitted.get("idempotent_replay"):
             return submitted
@@ -1183,8 +1338,16 @@ class ExplainerProductionService:
                 elif normalized == "cancel":
                     workflow_result = self._workflow_service.cancel_run(str(workflow_run_id), actor=actor)
                 else:
+                    # ``resume_run`` is the HITL decision entry point: its vocabulary
+                    # is HUMAN_APPROVED / HUMAN_REJECTED.  Passing "CONTINUE" (the
+                    # internal action word) raised AUTOMATION_HITL_DECISION_INVALID
+                    # inside the workflow service, so the operator's 继续 click only
+                    # looked like it resumed while the run stayed PAUSED_HITL.
                     workflow_result = self._workflow_service.resume_run(
-                        str(workflow_run_id), decision="CONTINUE", note=reason or "USER_RESUME", actor=actor
+                        str(workflow_run_id),
+                        decision="HUMAN_APPROVED",
+                        note=reason or "USER_RESUME",
+                        actor=actor,
                     )
             except Exception as error:
                 workflow_result = {"error": type(error).__name__, "detail": str(error)[:200]}
@@ -1278,6 +1441,11 @@ class ExplainerProductionService:
                 "topic": video["topic"],
                 "content_kind": video["content_kind"],
                 "status": video["status"],
+                # The browser sent ``Number(overview.data?.video?.revision ?? 1)``
+                # as its expected revision; without this field a video at
+                # revision 3 always submitted a stale "1" and the server answered
+                # 409.  The real revision is part of the projection now.
+                "revision": int(video.get("revision") or 1),
                 "target_seconds": video["target_seconds"],
                 "duration_mode": video["duration_mode"],
                 "tolerance_percent": video["tolerance_percent"],
@@ -1285,6 +1453,8 @@ class ExplainerProductionService:
                 "inference_mode": video["inference_mode"],
                 "research_mode": video["research_mode"],
                 "channel_profile_version_id": video.get("current_channel_profile_version_id"),
+                "input_kind": video.get("input_kind"),
+                "source_locale": video.get("source_locale"),
             },
             "editions": editions,
             "beat_count": len(beats),
@@ -1309,3 +1479,20 @@ def _count(items: Sequence[Mapping[str, Any]], key: str) -> dict[str, int]:
         value = str(item.get(key) or "UNKNOWN")
         counts[value] = counts.get(value, 0) + 1
     return counts
+
+
+def _explicit(source: Mapping[str, Any], key: str, default: Any) -> Any:
+    """Default only for a *missing* or ``None`` field.
+
+    ``source.get(key) or default`` cannot tell "the caller did not send this" from
+    "the caller sent ``0``/``[]``", so an explicit zero budget or an empty fallback
+    list was silently replaced by the product default and the frozen authorization
+    snapshot grew without the caller asking for it.
+    """
+
+    if key not in source:
+        return default
+    value = source[key]
+    if value is None:
+        return default
+    return value

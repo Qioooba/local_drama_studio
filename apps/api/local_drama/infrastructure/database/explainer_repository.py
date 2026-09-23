@@ -546,6 +546,32 @@ class ExplainerRepository:
             ),
         )
 
+    def segment_in_scope(
+        self,
+        *,
+        video_id: str,
+        canonical_segment_id: str,
+        locale: str | None = None,
+        script_revision_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Resolve one segment inside an explicit locale/revision scope.
+
+        ``segment_by_canonical`` orders by ``ordinal`` alone, so a re-read request
+        could silently pick a segment from *another language* or an older revision
+        of the same canonical id.  A write command must name the scope it means.
+        """
+
+        sql = "SELECT * FROM narration_segments WHERE video_id = ? AND canonical_segment_id = ?"
+        parameters: list[Any] = [str(video_id), str(canonical_segment_id)]
+        if locale:
+            sql += " AND locale = ?"
+            parameters.append(str(locale))
+        if script_revision_id:
+            sql += " AND script_revision_id = ?"
+            parameters.append(str(script_revision_id))
+        sql += " ORDER BY ordinal DESC LIMIT 1"
+        return decode_row("narration_segments", self.query_one(sql, tuple(parameters)))
+
     def selected_takes(self, video_id: str, locale: str | None = None) -> list[dict[str, Any]]:
         sql = "SELECT * FROM narration_takes WHERE video_id = ? AND selected = 1"
         parameters: list[Any] = [video_id]
@@ -698,17 +724,156 @@ class ExplainerRepository:
         )
 
     def current_root_render(self, edition_id: str) -> dict[str, Any] | None:
-        return decode_row(
-            "composition_renders",
-            self.query_one(
+        """The edition's deliverable master: the ``FULL`` render when it exists.
+
+        A captioned edition owns two verified renders of the same composition: the
+        ``FULL`` master whose subtitles are burned into the picture, and the
+        ``EXPORT`` clean master produced afterwards for re-cutting.  Ordering by
+        ``revision_no`` alone therefore returned the *clean* render as the root as
+        soon as the package run had produced it, and every reader that asks for
+        "the current film" — review playback, composition QC, and the publication
+        package's burned master — silently got the clean picture instead.  The
+        burned master is the film the edition declares, so it is preferred
+        explicitly and the newest verified render is only the fallback for
+        editions that have no ``FULL`` render.
+        """
+
+        row = self.query_one(
+            """
+            SELECT * FROM composition_renders
+            WHERE edition_id = ? AND integrity_status = 'VERIFIED' AND render_kind = 'FULL'
+            ORDER BY revision_no DESC LIMIT 1
+            """,
+            (edition_id,),
+        )
+        if row is None:
+            row = self.query_one(
                 """
                 SELECT * FROM composition_renders
                 WHERE edition_id = ? AND integrity_status = 'VERIFIED'
                 ORDER BY revision_no DESC LIMIT 1
                 """,
                 (edition_id,),
-            ),
+            )
+        return decode_row("composition_renders", row)
+
+    def require_render_for_edition(
+        self,
+        *,
+        edition_id: str,
+        render_id: str | None,
+        require_deliverable: bool = True,
+    ) -> dict[str, Any] | None:
+        """Resolve a render **inside one edition**, or refuse it explicitly.
+
+        A caller that names a ``render_id`` used to get it through a plain
+        ``find``, so a render belonging to another edition, video or project could
+        be bound into this edition's publication package: the per-column foreign
+        keys prove each row exists, never that they belong to the same workspace.
+
+        The join walks render → composition revision → edition → video → project,
+        so ownership is proved rather than assumed.  ``None`` means "the caller did
+        not name a render"; a named render that does not belong here raises
+        ``INVALID_REQUEST`` instead of silently falling back to "the latest one".
+        """
+
+        if render_id is None:
+            return None
+        row = self.query_one(
+            """
+            SELECT r.* FROM composition_renders r
+            JOIN composition_revisions c ON c.id = r.composition_revision_id
+            JOIN explainer_editions e ON e.id = r.edition_id
+            JOIN explainer_videos v ON v.id = e.video_id
+            WHERE r.id = ?
+              AND r.edition_id = ?
+              AND c.edition_id = ?
+              AND e.video_id = v.id
+              AND e.id = c.edition_id
+            """,
+            (str(render_id), str(edition_id), str(edition_id)),
         )
+        if row is None:
+            raise ExplainerContractError(
+                "INVALID_REQUEST",
+                "指定的渲染版本不属于当前输出版本，已拒绝，不会退回“最新版本”",
+                {"edition_id": str(edition_id), "render_id": str(render_id)},
+            )
+        render = decode_row("composition_renders", row)
+        if require_deliverable:
+            problems: list[dict[str, Any]] = []
+            integrity = str(render.get("integrity_status") or "")
+            status = str(render.get("status") or "")
+            if integrity != "VERIFIED":
+                problems.append(
+                    {
+                        "code": "RENDER_NOT_VERIFIED",
+                        "message": "该渲染版本尚未通过完整性校验，不能作为可交付来源",
+                        "integrity_status": integrity,
+                    }
+                )
+            if status not in {"READY", "SUCCEEDED", "VERIFIED"}:
+                problems.append(
+                    {
+                        "code": "RENDER_NOT_READY",
+                        "message": "该渲染版本还没有完成",
+                        "status": status,
+                    }
+                )
+            if not render.get("manifest_hash"):
+                problems.append(
+                    {
+                        "code": "RENDER_MANIFEST_MISSING",
+                        "message": "该渲染版本没有冻结 manifest hash",
+                    }
+                )
+            if problems:
+                raise ExplainerContractError(
+                    "RENDER_NOT_DELIVERABLE",
+                    "指定的渲染版本不能作为可交付来源",
+                    {"edition_id": str(edition_id), "render_id": str(render_id), "problems": problems},
+                )
+        return render
+
+    def current_review_target(self, edition_id: str) -> dict[str, Any]:
+        """The single review target every read model and decision must agree on.
+
+        The QC read path used to query ``EDITION`` while the human decision wrote
+        ``COMPOSITION_RENDER``, so a confirmation never appeared after a refresh;
+        and the video projection carried no ``revision``, so the browser fell back
+        to ``?? 1`` and manufactured a stale-revision conflict.  This DTO is the one
+        place both sides read.
+        """
+
+        edition = self.get("explainer_editions", edition_id)
+        video = self.get("explainer_videos", str(edition["video_id"]))
+        render = self.current_root_render(edition_id)
+        composition_revision_id = None
+        if render is not None:
+            composition_revision_id = str(render.get("composition_revision_id") or "") or None
+        if composition_revision_id is None:
+            composition = self.latest_composition(edition_id)
+            composition_revision_id = None if composition is None else str(composition["id"])
+        return {
+            "project_id": str(video["project_id"]),
+            "video_id": str(video["id"]),
+            "video_revision": int(video.get("revision") or 1),
+            "edition_id": edition_id,
+            "edition_revision": int(edition.get("revision") or 1),
+            "frozen_script_revision_id": edition.get("frozen_script_revision_id"),
+            "render_id": None if render is None else str(render["id"]),
+            "render_sha256": None if render is None else render.get("sha256"),
+            "render_integrity_status": None if render is None else render.get("integrity_status"),
+            "render_status": None if render is None else render.get("status"),
+            "composition_revision_id": composition_revision_id,
+            "manifest_hash": None if render is None else render.get("manifest_hash"),
+            "media_version_id": None if render is None else render.get("media_version_id"),
+            "render_rel_path": None if render is None else render.get("rel_path"),
+            "frame_count": None if render is None else render.get("frame_count"),
+            "duration_ms": None if render is None else render.get("duration_ms"),
+            "has_render": render is not None,
+            "empty_state": None if render is not None else "NO_VERIFIED_RENDER",
+        }
 
     def import_episode_render_to_composition(
         self,

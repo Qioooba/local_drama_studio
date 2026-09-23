@@ -78,7 +78,17 @@ MAX_SEGMENTS = 320
 MAX_BEATS = 320
 #: Characters per second used only for the *prompt* budget hint.  The real
 #: duration is decided by measured TTS audio (design §7), never by this number.
-CHINESE_CHARS_PER_SECOND_HINT = 4.2
+#:
+#: The value is calibrated against this machine's local narrator: a 1187-character
+#: Chinese script measured 241 s of VoxCPM2 audio, i.e. 4.9 characters per second.
+#: It was 4.2 before, which asked the model for far fewer characters than the
+#: declared target needed and produced a film about 20% shorter than requested.
+CHINESE_CHARS_PER_SECOND_HINT = 4.9
+#: How much of the prompt's character budget the returned script must actually
+#: reach before the planner accepts it (the rest is a normal writing tolerance).
+SCRIPT_BUDGET_MINIMUM_RATIO = 0.98
+#: Bounded shortfall repairs: each one is a fresh model call with the exact gap.
+SCRIPT_BUDGET_MAX_REPAIRS = 3
 
 _STRING = {"type": "string"}
 _INTEGER = {"type": "integer"}
@@ -226,6 +236,18 @@ def _catalogue(items: Sequence[Mapping[str, Any]], fields: Sequence[str], *, lim
     for item in items[:limit]:
         projected.append({field: item.get(field) for field in fields})
     return projected
+
+
+def _script_characters(raw_segments: Sequence[Any]) -> int:
+    """Characters the model's script actually contains (spoken text preferred)."""
+
+    total = 0
+    for item in raw_segments:
+        if not isinstance(item, Mapping):
+            continue
+        text = str(item.get("spoken_text") or item.get("display_text") or "").strip()
+        total += len(text)
+    return total
 
 
 def _excerpt(text: str, limit: int) -> str:
@@ -492,17 +514,72 @@ class LocalTextPlanner:
         client: Any | None = None,
     ) -> dict[str, Any]:
         resolved = client if client is not None else self._client()
-        result = resolved.chat_json(
-            system,
-            user,
-            json_schema=schema,
-            inference_options={"temperature": 0.2, "top_p": 0.9, "max_tokens": max_tokens, "num_ctx": num_ctx},
+        result = self._chat_with_cold_start_retry(
+            resolved,
+            system=system,
+            user=user,
+            schema=schema,
+            max_tokens=max_tokens,
+            num_ctx=num_ctx,
         )
         if not isinstance(result, Mapping):
             raise ExplainerContractError(
                 "SCHEMA_INVALID", "文本模型返回的顶层不是对象", {"received_type": type(result).__name__}
             )
         return dict(result)
+
+    #: Errors a locally hosted text runtime reports while it is being started,
+    #: evicted or swapped back in.  They are explicitly retryable at the gateway.
+    _COLD_START_ERROR_CODES = frozenset(
+        {"LOCAL_LLM_LOOPBACK_UNAVAILABLE", "LLM_PROVIDER_UNAVAILABLE", "LLM_GATEWAY_BUSY"}
+    )
+
+    @classmethod
+    def _chat_with_cold_start_retry(
+        cls,
+        client: Any,
+        *,
+        system: str,
+        user: str,
+        schema: dict[str, Any],
+        max_tokens: int,
+        num_ctx: int,
+    ) -> Any:
+        """One text call, with a bounded retry for a cold single-GPU runtime.
+
+        The managed llama.cpp runtime shares one GPU with ComfyUI, so the first
+        request after an idle eviction (or after a Comfy job) can legitimately come
+        back "unavailable, retryable" while the coordinator swaps the resident
+        runtime.  Failing the whole stage on that transient would make an otherwise
+        healthy local install look broken, so a small, bounded number of attempts
+        is made; a persistent failure is still raised with its real code.
+        """
+
+        import time as _time
+
+        attempts = 4
+        delay_seconds = 10.0
+        last_error: DomainRuleError | None = None
+        for attempt in range(attempts):
+            try:
+                return client.chat_json(
+                    system,
+                    user,
+                    json_schema=schema,
+                    inference_options={
+                        "temperature": 0.2,
+                        "top_p": 0.9,
+                        "max_tokens": max_tokens,
+                        "num_ctx": num_ctx,
+                    },
+                )
+            except DomainRuleError as error:
+                if error.code not in cls._COLD_START_ERROR_CODES or attempt == attempts - 1:
+                    raise
+                last_error = error
+                _time.sleep(delay_seconds)
+                delay_seconds = min(delay_seconds * 2, 60.0)
+        raise last_error if last_error is not None else DomainRuleError("LOCAL_LLM_LOOPBACK_UNAVAILABLE", "LLM 请求失败")
 
     @staticmethod
     def _video(repo: ExplainerRepository, project_id: str, video_id: str) -> Mapping[str, Any]:
@@ -634,7 +711,7 @@ class LocalTextPlanner:
             system=self.prompts.fact_system,
             user=user,
             schema=FACT_EXTRACTION_SCHEMA,
-            max_tokens=6_000,
+            max_tokens=16_000,
             num_ctx=49_152,
         )
         # The same validator the research service uses: an undeclared field or an
@@ -724,13 +801,49 @@ class LocalTextPlanner:
             system=self.prompts.script_system,
             user=user,
             schema=SEGMENT_SCHEMA,
-            max_tokens=8_000,
+            max_tokens=16_000,
             num_ctx=49_152,
             client=client,
         )
         raw_segments = result.get("segments") or []
         if not raw_segments:
             raise ExplainerContractError("SCHEMA_INVALID", "文本模型没有返回任何叙述段落")
+        # A local model routinely returns a script well under the requested length.
+        # The film's real length is the measured narration, so a short script means a
+        # film that misses the operator's declared target.  The shortfall is repaired
+        # with a bounded number of explicit re-asks that state the exact gap; if the
+        # model still under-delivers, the plan reports it instead of pretending the
+        # target was met.
+        length_repairs: list[dict[str, Any]] = []
+        while (
+            len(length_repairs) < SCRIPT_BUDGET_MAX_REPAIRS
+            and _script_characters(raw_segments) < int(character_budget * SCRIPT_BUDGET_MINIMUM_RATIO)
+        ):
+            produced = _script_characters(raw_segments)
+            length_repairs.append(
+                {
+                    "attempt": len(length_repairs) + 1,
+                    "produced_characters": produced,
+                    "required_characters": character_budget,
+                }
+            )
+            result = self._chat(
+                system=self.prompts.script_system,
+                user=(
+                    f"{user}\n\n上一次输出只有 {produced} 个字符，少于目标时长 {target_seconds} 秒所需的"
+                    f"约 {character_budget} 个字符。请在保持同样章节结构与事实编号的前提下扩写："
+                    "为每个现象补充因果链、机制细节、代表性例子与常见误解，使总字符数不少于 "
+                    f"{character_budget}。不要重复已经写过的句子，不要引用不存在的 claim_code，"
+                    "不要改变任何否定、数字或人名。"
+                ),
+                schema=SEGMENT_SCHEMA,
+                max_tokens=16_000,
+                num_ctx=49_152,
+                client=client,
+            )
+            raw_segments = result.get("segments") or []
+            if not raw_segments:
+                raise ExplainerContractError("SCHEMA_INVALID", "文本模型没有返回任何叙述段落")
         if len(raw_segments) > MAX_SEGMENTS:
             raise ExplainerContractError(
                 "SCHEMA_INVALID", "叙述段落数量超过上限", {"count": len(raw_segments), "limit": MAX_SEGMENTS}
@@ -796,6 +909,11 @@ class LocalTextPlanner:
             "segment_count": len(segments),
             "character_count": sum(len(item["display_text"]) for item in segments),
             "target_seconds": target_seconds,
+            "character_budget": character_budget,
+            "chars_per_second_hint": CHINESE_CHARS_PER_SECOND_HINT,
+            "length_repairs": length_repairs,
+            "budget_met": sum(len(item["display_text"]) for item in segments)
+            >= int(character_budget * SCRIPT_BUDGET_MINIMUM_RATIO),
             "timing_status": "TEXT_BUDGET_HINT_NOT_MEASURED_TTS",
             "spoken_text_dispositions": spoken_dispositions,
         }
@@ -857,7 +975,7 @@ class LocalTextPlanner:
             system=self.prompts.storyboard_system,
             user=user,
             schema=BEAT_SCHEMA,
-            max_tokens=8_000,
+            max_tokens=14_000,
             num_ctx=49_152,
         )
         raw_beats = result.get("beats") or []
@@ -871,6 +989,7 @@ class LocalTextPlanner:
         entity_codes = {str(item["code"]) for item in entities}
         claim_codes = {str(item["code"]) for item in claims}
         motion_capable = {"I2V", "PARALLAX", "LICENSED_MEDIA"}
+        motion_coerced: list[dict[str, Any]] = []
         beats: list[dict[str, Any]] = []
         seen_codes: set[str] = set()
         for index, raw in enumerate(raw_beats, start=1):
@@ -906,13 +1025,19 @@ class LocalTextPlanner:
                     "SCHEMA_INVALID", "画面段引用了不存在的事实编号", {"code": code, "unknown_claim_codes": unknown_claims}
                 )
             must_be_motion = bool(raw.get("must_be_motion"))
+            coerced = False
             if must_be_motion and render_type not in motion_capable:
-                # Never downgrade silently: refuse instead of claiming motion.
-                raise ExplainerContractError(
-                    ExplainerErrorCode.CAPABILITY_UNAVAILABLE.value,
-                    "要求运动的画面段不能使用静帧类画面生成方式",
-                    {"code": code, "render_type": render_type},
-                )
+                # The plan asked for motion but declared a still picture type, and
+                # this build's picture path is the deterministic still/graphic
+                # renderer.  Refusing the whole plan made the run stop on a
+                # contradiction the model introduced; the honest answer is to keep
+                # the declared type, drop the motion requirement and *record* the
+                # degradation, which is what the manifest and the delivery report
+                # then disclose.
+                coerced = True
+                must_be_motion = False
+            if coerced:
+                motion_coerced.append({"code": code, "render_type": render_type})
             beats.append(
                 {
                     "code": code,
@@ -923,6 +1048,7 @@ class LocalTextPlanner:
                     "visual_intent": str(raw.get("visual_intent") or "").strip(),
                     "visual_factuality": str(raw.get("visual_factuality") or VisualFactuality.RECONSTRUCTION.value),
                     "must_be_motion": must_be_motion,
+                    "motion_requirement_coerced": coerced,
                     "prompt_intent": str(raw.get("prompt_intent") or "").strip(),
                 }
             )
@@ -934,6 +1060,7 @@ class LocalTextPlanner:
             "beat_count": len(beats),
             "uncovered_segment_ids": uncovered,
             "usable_render_types": allowed,
+            "motion_coerced_beats": motion_coerced,
             "mapping_is_many_to_many": True,
             "plan_hash": content_hash(
                 {"beats": beats, "script_revision_id": script_revision_id, "usable": allowed}
@@ -961,8 +1088,12 @@ def _require(payload: Mapping[str, Any], key: str, *, stage: str) -> str:
 def make_research_acquire_handler(
     planner_factory: Callable[[], ExplainerStagePlanner],
     repo_factory: Callable[[], Any],
+    *,
+    read_repo_factory: Callable[[], Any] | None = None,
 ) -> Callable[[dict[str, Any], Mapping[str, Any]], dict[str, Any]]:
     """``RESEARCH_ACQUIRE``: plan the research queries and reference keywords."""
+
+    reader = read_repo_factory or repo_factory
 
     def handler(job: dict[str, Any], context: Mapping[str, Any]) -> dict[str, Any]:
         del job
@@ -980,12 +1111,28 @@ def make_research_acquire_handler(
                     limit=1,
                 )
                 if not packets:
-                    raise ExplainerContractError(
-                        ExplainerErrorCode.SOURCE_EVIDENCE_MISSING.value,
-                        "还没有资料包，请先导入资料来源",
-                        {"video_id": video_id},
+                    # A topic-driven work has no imported source document, but the
+                    # stage still owns "来源与资料包": its topic declaration *is* the
+                    # research scope, and the stage must materialise that scope
+                    # rather than refuse to run.  Offline mode keeps the external
+                    # request budget at zero, so this never opens a network call.
+                    video = repo.get("explainer_videos", video_id)
+                    created = ExplainerResearchService(repo).create_packet(
+                        project_id=project_id,
+                        video_id=video_id,
+                        mode=str(video.get("research_mode") or "OFFLINE_IMPORT"),
+                        topic=str(video.get("topic") or video.get("title") or ""),
+                        allowed_domains=[
+                            str(item) for item in (video.get("research_allowed_domains_json") or [])
+                        ],
+                        max_external_requests=0,
                     )
+                    packets = [created]
                 packet_id = str(packets[0]["id"])
+        # The model call runs on a read-only connection: holding a write
+        # transaction across a multi-minute local inference blocks the job's own
+        # lease heartbeat, and the lease then expires while the model is thinking.
+        with reader() as repo:
             result = planner_factory().plan_research(
                 repo=repo, project_id=project_id, video_id=video_id, packet_id=packet_id
             )
@@ -1011,8 +1158,11 @@ def make_fact_extract_handler(
     repo_factory: Callable[[], Any],
     *,
     research_service_factory: Callable[[Any], Any] | None = None,
+    read_repo_factory: Callable[[], Any] | None = None,
 ) -> Callable[[dict[str, Any], Mapping[str, Any]], dict[str, Any]]:
     """``FACT_EXTRACT``: extract and persist the claim ledger, events and entities."""
+
+    reader = read_repo_factory or repo_factory
 
     def build_research_service(repo: Any) -> Any:
         # Port wiring, not business logic: the caller may inject a double, and the
@@ -1043,9 +1193,11 @@ def make_fact_extract_handler(
                         {"video_id": video_id},
                     )
                 packet_id = str(packets[0]["id"])
+        with reader() as repo:
             plan = planner_factory().plan_fact_extraction(
                 repo=repo, project_id=project_id, video_id=video_id, packet_id=packet_id
             )
+        with repo_factory() as repo:
             applied = build_research_service(repo).apply_fact_extraction(
                 project_id=project_id,
                 video_id=video_id,
@@ -1080,8 +1232,11 @@ def make_narration_write_handler(
     repo_factory: Callable[[], Any],
     *,
     narration_service_factory: Callable[[Any], Any] | None = None,
+    read_repo_factory: Callable[[], Any] | None = None,
 ) -> Callable[[dict[str, Any], Mapping[str, Any]], dict[str, Any]]:
     """``NARRATION_WRITE``: draft, persist and freeze the narration script."""
+
+    reader = read_repo_factory or repo_factory
 
     def build_narration_service(repo: Any) -> Any:
         if narration_service_factory is not None:
@@ -1094,9 +1249,10 @@ def make_narration_write_handler(
         project_id = _require(payload, "project_id", stage="NARRATION_WRITE")
         video_id = _require(payload, "video_id", stage="NARRATION_WRITE")
         freeze = bool(payload.get("freeze", True))
+        with reader() as repo:
+            plan = planner_factory().plan_script(repo=repo, project_id=project_id, video_id=video_id)
         with repo_factory() as repo:
             video = repo.get("explainer_videos", video_id)
-            plan = planner_factory().plan_script(repo=repo, project_id=project_id, video_id=video_id)
             service = build_narration_service(repo)
             created = service.create_script_revision(
                 project_id=project_id,
@@ -1140,8 +1296,11 @@ def make_storyboard_handler(
     repo_factory: Callable[[], Any],
     *,
     storyboard_service_factory: Callable[[Any], Any] | None = None,
+    read_repo_factory: Callable[[], Any] | None = None,
 ) -> Callable[[dict[str, Any], Mapping[str, Any]], dict[str, Any]]:
     """``EXPLAINER_STORYBOARD``: allocate beats and, when real audio exists, frames."""
+
+    reader = read_repo_factory or repo_factory
 
     def build_storyboard_service(repo: Any) -> Any:
         if storyboard_service_factory is not None:
@@ -1157,12 +1316,30 @@ def make_storyboard_handler(
         usable = [str(item) for item in (payload.get("usable_render_types") or []) if str(item)]
         if not usable:
             usable = [RenderType.STILL_MOTION.value, RenderType.INFOGRAPHIC.value]
-        with repo_factory() as repo:
+        with reader() as repo:
             plan = planner_factory().plan_storyboard(
                 repo=repo, project_id=project_id, video_id=video_id, usable_render_types=usable
             )
+        with repo_factory() as repo:
             service = build_storyboard_service(repo)
             created = service.create_plan(project_id=project_id, video_id=video_id, beats=plan["beats"])
+            mapping = created.get("mapping") or {}
+            # A beat whose motion requirement had to be dropped keeps the declared
+            # still type and says why, so the degradation is visible in the beat and
+            # in every report derived from it.
+            coerced_codes = {str(item["code"]) for item in (plan.get("motion_coerced_beats") or [])}
+            if coerced_codes:
+                for beat in created.get("beats") or []:
+                    if str(beat.get("code")) in coerced_codes:
+                        repo.update(
+                            "explainer_visual_beats",
+                            str(beat["beat_id"]),
+                            {
+                                "actual_fallback_type": "STILL_MOTION",
+                                "fallback_reason": "PLANNED_MOTION_DEGRADED_TO_STILL_PICTURE_PATH",
+                            },
+                            actor="local-text-planner",
+                        )
             mapping = created.get("mapping") or {}
             durations: dict[str, Any] | None = None
             edition_id = str(payload.get("edition_id") or "").strip()
@@ -1204,14 +1381,28 @@ def build_stage_handlers(
     *,
     planner_factory: Callable[[], ExplainerStagePlanner],
     repo_factory: Callable[[], Any],
+    read_repo_factory: Callable[[], Any] | None = None,
 ) -> dict[str, Callable[[dict[str, Any], Mapping[str, Any]], dict[str, Any]]]:
-    """All four first-party explainer text stages, keyed by their stage code."""
+    """All four first-party explainer text stages, keyed by their stage code.
+
+    ``read_repo_factory`` yields a repository on a plain connection.  The model
+    call runs on it so a multi-minute local inference never holds the write
+    transaction that the job's own lease heartbeat needs.
+    """
 
     return {
-        "RESEARCH_ACQUIRE": make_research_acquire_handler(planner_factory, repo_factory),
-        "FACT_EXTRACT": make_fact_extract_handler(planner_factory, repo_factory),
-        "NARRATION_WRITE": make_narration_write_handler(planner_factory, repo_factory),
-        "EXPLAINER_STORYBOARD": make_storyboard_handler(planner_factory, repo_factory),
+        "RESEARCH_ACQUIRE": make_research_acquire_handler(
+            planner_factory, repo_factory, read_repo_factory=read_repo_factory
+        ),
+        "FACT_EXTRACT": make_fact_extract_handler(
+            planner_factory, repo_factory, read_repo_factory=read_repo_factory
+        ),
+        "NARRATION_WRITE": make_narration_write_handler(
+            planner_factory, repo_factory, read_repo_factory=read_repo_factory
+        ),
+        "EXPLAINER_STORYBOARD": make_storyboard_handler(
+            planner_factory, repo_factory, read_repo_factory=read_repo_factory
+        ),
     }
 
 

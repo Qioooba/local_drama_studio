@@ -216,6 +216,9 @@ export type PipelineRun = {
   draft: PipelineDraft;
   quality_report: PipelineQualityReport;
   apply_state: "NOT_APPLIED" | "APPLIED";
+  /** PR-05: which draft revision was applied, and where the apply watermark sits. */
+  applied_revision_hash?: string | null;
+  applied_episode_numbers?: number[];
   applied_sections: string[];
   applied_at?: string | null;
   supersedes_run_id?: string | null;
@@ -333,7 +336,7 @@ export async function continuePipelineAnalysis(
   expectedRevision: number,
   expectedSourceSha256: string,
   expectedNextWindowIndex?: number,
-): Promise<{ run: PipelineRun }> {
+): Promise<{ run: PipelineRun; job_state?: string | null; recovery_action?: string | null }> {
   return requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/pipeline/${encodeURIComponent(runId)}:continue-analysis`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

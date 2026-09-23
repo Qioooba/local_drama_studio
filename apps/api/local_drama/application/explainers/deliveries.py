@@ -900,8 +900,16 @@ class ExplainerDeliveryService:
         zip_sha256: str | None = None,
         rel_path: str | None = None,
         byte_size: int | None = None,
+        package_id: str | None = None,
     ) -> dict[str, Any]:
-        """Persist the FULL file list first, then mark the package READY or BLOCKED."""
+        """Persist the FULL file list first, then mark the package READY or BLOCKED.
+
+        ``package_id`` names an existing ``BUILDING`` row to fill in.  The export
+        command durably records the operator's intent before any worker is asked to
+        build it, so the worker must complete *that* row rather than insert a second
+        one: otherwise one click leaves an eternally ``BUILDING`` package behind
+        while the real bundle hides under a different id.
+        """
 
         warnings: list[str] = []
         metadata_payload = dict(metadata or {})
@@ -1005,30 +1013,38 @@ class ExplainerDeliveryService:
                 "media_regenerated_for_packaging": False,
             }
         )
-        package = self.repo.insert(
-            "publication_packages",
-            {
-                "video_id": video_id,
-                "project_id": project_id,
-                "edition_id": edition_id,
-                "render_id": render_id,
-                "composition_revision_id": composition_revision_id,
-                "manifest_hash": files_hash,
-                "platform_code": platform_code,
-                "platform_preset_version": preset_version_value,
-                "preset_verified_at": preset_verified_at_value,
-                "status": PublicationStatus.BUILDING.value,
-                "rel_path": rel_path,
-                "zip_sha256": None if zip_sha256 is None else str(zip_sha256),
-                "byte_size": None if byte_size is None else int(byte_size),
-                "files_json": file_list,
-                "license_scope_json": license_result["license_scope"],
-                "license_blockers_json": blockers,
-                "ai_disclosure_json": disclosure_payload,
-                "metadata_json": metadata_payload,
-                "requested_territories_json": [str(item) for item in intended_territories],
-            },
-        )
+        payload_values = {
+            "video_id": video_id,
+            "project_id": project_id,
+            "edition_id": edition_id,
+            "render_id": render_id,
+            "composition_revision_id": composition_revision_id,
+            "manifest_hash": files_hash,
+            "platform_code": platform_code,
+            "platform_preset_version": preset_version_value,
+            "preset_verified_at": preset_verified_at_value,
+            "status": PublicationStatus.BUILDING.value,
+            "rel_path": rel_path,
+            "zip_sha256": None if zip_sha256 is None else str(zip_sha256),
+            "byte_size": None if byte_size is None else int(byte_size),
+            "files_json": file_list,
+            "license_scope_json": license_result["license_scope"],
+            "license_blockers_json": blockers,
+            "ai_disclosure_json": disclosure_payload,
+            "metadata_json": metadata_payload,
+            "requested_territories_json": [str(item) for item in intended_territories],
+        }
+        if package_id:
+            existing = self.repo.get("publication_packages", str(package_id))
+            if str(existing.get("edition_id")) != str(edition_id):
+                raise ExplainerContractError(
+                    "INVALID_REQUEST",
+                    "待完成的发布包不属于该输出版本",
+                    {"package_id": str(package_id), "edition_id": edition_id},
+                )
+            package = self.repo.update("publication_packages", str(package_id), payload_values)
+        else:
+            package = self.repo.insert("publication_packages", payload_values)
         publishable = not blockers and (zip_sha256 is not None)
         if blockers:
             status = PublicationStatus.BLOCKED.value

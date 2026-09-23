@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -19,6 +20,12 @@ from local_drama.domain.errors import DomainRuleError
 def test_session_stage_projection_covers_audio_finalize_and_timeline_assembly() -> None:
     assert _stage_for_action("TTS_FINALIZE") == "AUDIO_SUBTITLE"
     assert _stage_for_action("TIMELINE_ASSEMBLY") == "TIMELINE_PREVIEW"
+
+
+def _seconds_ago(seconds: int) -> str:
+    """A real UTC timestamp ``seconds`` in the past, in the service's storage format."""
+
+    return (datetime.now(timezone.utc) - timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _create_session(workspace, database, *, code: str, episode_count: int, max_parallel: int = 1):
@@ -348,9 +355,13 @@ def test_exception_gate_blocks_only_its_episode_and_frees_capacity_for_next(
             "SELECT id,episode_id FROM production_session_items WHERE session_id=? ORDER BY ordinal",
             (session["id"],),
         ).fetchall()
+        # A session that is genuinely running *now*: the duration budget is measured
+        # from ``started_at`` (default limit 24h), so a hard-coded past timestamp
+        # would make every item fail the budget gate before the exception gate under
+        # test was ever reached.
         connection.execute(
             "UPDATE production_sessions SET status='RUNNING',started_at=?,revision=revision+1 WHERE id=?",
-            ("2026-09-21T00:00:00Z", session["id"]),
+            (_seconds_ago(60), session["id"]),
         )
         connection.execute(
             """UPDATE production_session_items

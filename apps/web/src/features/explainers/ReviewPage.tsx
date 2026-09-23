@@ -19,7 +19,17 @@ import {
 } from "../../generated/api";
 import { stableIdempotencyKey } from "../../services/commandId";
 import { queryKeys } from "../../query/queryKeys";
-import { AuthorityBadge, InlineError, InlineOk, MediaPlaceholder, Panel, SettingRow, StateNotice, type PageState } from "./components";
+import { AuthorityBadge, InlineError, InlineOk, Panel, SettingRow, StateNotice, type PageState } from "./components";
+import {
+  NarrationPlayer,
+  RenderPlayer,
+  ReviewTimeline,
+  clampFrame,
+  frameForMs,
+  lanesFromManifest,
+  useSortedIssues,
+  type RenderMedia,
+} from "./media";
 import { SEVERITY_LABELS, coverageRows, formatMs, issueSeverityTone, localeLabel, subtitleModeLabel } from "./viewModels";
 import { useExplainerEditions, useExplainerOverview, useExplainerQc, useExplainerRun } from "./useExplainerQueries";
 import "./explainers.css";
@@ -33,22 +43,35 @@ export function ExplainerReviewPage() {
   const editionList = (editions.data?.editions ?? []) as Array<Record<string, unknown>>;
   const editionId = searchParams.get("edition") ?? (editionList[0] ? String(editionList[0].id) : null);
   const activeEdition = editionList.find((edition) => String(edition.id) === editionId) ?? editionList[0] ?? null;
-  const qc = useExplainerQc(editionId, null);
+  const renderMedia = (activeEdition?.current_render as RenderMedia | null) ?? null;
+  const qc = useExplainerQc(editionId, renderMedia?.id ?? null);
   const latestRun = overview.data?.latest_run ?? null;
   const run = useExplainerRun(latestRun?.id ?? null);
-  const [frame, setFrame] = useState(0);
+  const [requestedFrame, setRequestedFrame] = useState(0);
+  const [playheadFrame, setPlayheadFrame] = useState(0);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
 
   const issues = ((qc.data?.open_issues ?? []) as Array<Record<string, unknown>>).concat(
     ((qc.data?.issues ?? []) as Array<Record<string, unknown>>).filter(
       (issue) => !(qc.data?.open_issues ?? []).some((open) => String((open as Record<string, unknown>).id) === String(issue.id)),
     ),
   );
+  const issueList = useSortedIssues(issues, { pageSize: 8 });
   const selectedIssueId = searchParams.get("issue");
-  const selectedIssue = issues.find((issue) => String(issue.id) === selectedIssueId) ?? issues[0] ?? null;
+  const selectedIssue =
+    issueList.sorted.find((issue) => String(issue.id) === selectedIssueId) ?? issueList.sorted[0] ?? null;
 
   const coverage = coverageRows(qc.data?.coverage as Record<string, unknown> | undefined);
+  const timelineLanes = useMemo(
+    () =>
+      lanesFromManifest((activeEdition?.composition_items ?? []) as Array<Record<string, unknown>>, {
+        fpsNum: Number((activeEdition?.composition as Record<string, unknown> | null)?.fps_num ?? 0),
+        fpsDen: Number((activeEdition?.composition as Record<string, unknown> | null)?.fps_den ?? 0),
+      }),
+    [activeEdition],
+  );
 
   const render = useMutation({
     mutationFn: async () => {
@@ -58,16 +81,57 @@ export function ExplainerReviewPage() {
         { freeze: true, confirm: false },
         stableIdempotencyKey("explainer-render-plan", { editionId }),
       );
-      return startExplainerRender(
+      const planRecord = plan as Record<string, unknown>;
+      const planStatus = String(planRecord.status ?? "");
+      // Only READY_TO_START may be confirmed.  The previous implementation sent
+      // confirm=true for *any* resolved plan response — including
+      // ``{status: "BLOCKED", would_create_jobs: false}`` — and then displayed
+      // "已提交分块渲染" for it.
+      if (planStatus === "BLOCKED" || planStatus === "CAPABILITY_UNAVAILABLE") {
+        return { outcome: "BLOCKED" as const, plan: planRecord };
+      }
+      if (planStatus !== "READY_TO_START") {
+        return { outcome: "UNEXPECTED" as const, plan: planRecord };
+      }
+      const submitted = await startExplainerRender(
         editionId,
-        { freeze: true, confirm: true, composition_revision_id: (plan as Record<string, unknown>).composition_revision_id ?? null },
-        stableIdempotencyKey("explainer-render", { editionId, composition: (plan as Record<string, unknown>).composition_revision_id }),
+        { freeze: true, confirm: true, composition_revision_id: planRecord.composition_revision_id ?? null },
+        stableIdempotencyKey("explainer-render", { editionId, composition: planRecord.composition_revision_id }),
       );
+      return { outcome: "SUBMITTED" as const, submitted: submitted as Record<string, unknown> };
     },
     onSuccess: async (result) => {
-      setError(null);
-      setFeedback(`已提交分块渲染（manifest ${String((result as Record<string, unknown>).manifest_hash ?? "").slice(0, 12)}…）。`);
       await queryClient.invalidateQueries({ queryKey: queryKeys.explainers.all });
+      if (result.outcome === "BLOCKED") {
+        const blockers = (result.plan.blockers as Array<Record<string, unknown>> | undefined) ?? [];
+        setFeedback(null);
+        setError(
+          `渲染被阻塞，未提交任何任务：${blockers.map((item) => String(item.message ?? "")).join("；") || "缺少可渲染的前置条件"}`,
+        );
+        return;
+      }
+      if (result.outcome === "UNEXPECTED") {
+        setFeedback(null);
+        setError(`渲染预检返回了未预期的状态 ${String(result.plan.status ?? "")}，未提交。`);
+        return;
+      }
+      const submitted = result.submitted;
+      const jobId = submitted.job_id ? String(submitted.job_id) : "";
+      if (submitted.status === "ACCEPTED" && jobId) {
+        setError(null);
+        setFeedback(`已受理分块渲染任务 ${jobId}（manifest ${String(submitted.manifest_hash ?? "").slice(0, 12)}…）。`);
+        return;
+      }
+      // A stage with no registered worker reports CAPABILITY_UNAVAILABLE and creates
+      // nothing; it must never be shown as "已提交".
+      setFeedback(null);
+      setError(
+        `渲染未被接受（${String(submitted.status ?? submitted.reason ?? "未知")}）：${
+          submitted.detail && typeof submitted.detail === "object"
+            ? String((submitted.detail as Record<string, unknown>).note ?? "")
+            : ""
+        }`,
+      );
     },
     onError: (mutationError) => setError(mutationError instanceof Error ? mutationError.message : String(mutationError)),
   });
@@ -99,18 +163,29 @@ export function ExplainerReviewPage() {
   });
 
   const decide = useMutation({
-    mutationFn: async ({ kind }: { kind: "HUMAN_APPROVED" | "REJECTED" | "PUBLICATION_AUTHORIZED" | "CHANGES_REQUESTED" }) => {
+    mutationFn: async ({
+      kind,
+      intervals,
+    }: {
+      kind: "HUMAN_APPROVED" | "REJECTED" | "PUBLICATION_AUTHORIZED" | "CHANGES_REQUESTED";
+      intervals: number[][];
+    }) => {
       if (!editionId) throw new Error("选择一个输出版本");
-      const subjectHash = String(selectedIssue?.subject_hash ?? (activeEdition?.current_render as Record<string, unknown> | null)?.sha256 ?? "");
-      if (!subjectHash) throw new Error("该版本还没有可绑定的内容哈希，不能登记决定");
+      // The confirmation subject comes from the *current render* alone.  The old
+      // code merged the selected issue's hash first, so confirming the film could
+      // submit a narration issue's hash against a render id — the server correctly
+      // answered STALE_REVISION while the operator believed they had confirmed the
+      // film they were looking at.
+      if (!renderMedia) throw new Error("该版本还没有可确认的成片；没有媒体就不能登记“确认成片”");
+      if (!renderMedia.sha256) throw new Error("当前成片还没有内容哈希，不能登记决定");
       return recordExplainerDecision(editionId, {
         decision_kind: kind,
         subject_kind: "COMPOSITION_RENDER",
-        subject_revision_id: String((activeEdition?.current_render as Record<string, unknown> | null)?.id ?? editionId),
-        subject_hash: subjectHash,
+        subject_revision_id: renderMedia.id,
+        subject_hash: renderMedia.sha256,
         actor: "local-user",
-        reviewed_intervals: [],
-        note: "在说明中记录的审阅范围与结论。",
+        reviewed_intervals: intervals,
+        note: reviewNote,
       });
     },
     onSuccess: async (_result, variables) => {
@@ -125,6 +200,13 @@ export function ExplainerReviewPage() {
     onError: (mutationError) => setError(mutationError instanceof Error ? mutationError.message : String(mutationError)),
   });
 
+  const currentIntervals = (): number[][] => {
+    if (!playheadFrame && !requestedFrame) return [[0, 0]];
+    const start = Math.min(playheadFrame, requestedFrame);
+    const end = Math.max(playheadFrame, requestedFrame);
+    return [[start, end]];
+  };
+
   const exportPackage = useMutation({
     mutationFn: async () => {
       if (!editionId) throw new Error("选择一个输出版本");
@@ -136,7 +218,18 @@ export function ExplainerReviewPage() {
     },
     onSuccess: async (result) => {
       setError(null);
-      setFeedback(`已开始构建发布包 ${String((result as Record<string, unknown>).status ?? "")}。全球导出请求不代表所选资产已取得全球许可，预检仍会判定。`);
+      const record = result as Record<string, unknown>;
+      const accepted = String(record.status ?? "") === "ACCEPTED";
+      const packageId = record.package_id ? String(record.package_id) : "";
+      if (accepted && packageId) {
+        setFeedback(`发布包已受理 ${packageId}；全球导出请求不代表所选资产已取得全球许可，预检仍会判定。`);
+      } else if (String(record.status ?? "") === "CAPABILITY_UNAVAILABLE") {
+        setFeedback(null);
+        setError(`导出未被接受：${String(record.reason ?? "")}。没有创建发布包。`);
+      } else {
+        setFeedback(null);
+        setError(`导出未产生发布包（${String(record.status ?? "未知")}）。`);
+      }
       await queryClient.invalidateQueries({ queryKey: queryKeys.explainers.all });
     },
     onError: (mutationError) => setError(mutationError instanceof Error ? mutationError.message : String(mutationError)),
@@ -204,37 +297,38 @@ export function ExplainerReviewPage() {
 
     <div className="explainer-grid">
       <div className="explainer-stack">
-        <Panel title="完整成片播放器" subtitle="逐帧前进/后退需要真实成片；这里不伪造画面。">
-          <MediaPlaceholder
-            label="成片预览"
-            detail={activeEdition?.current_render ? `渲染版本 ${String((activeEdition.current_render as Record<string, unknown>).id ?? "").slice(0, 8)}…` : "尚未渲染"}
+        <Panel title="完整成片播放器" subtitle="逐帧前进/后退绑定真实成片；不伪造画面。">
+          <RenderPlayer
+            media={renderMedia}
+            seekToFrame={requestedFrame}
+            onFrameChange={setPlayheadFrame}
           />
           <div className="explainer-actions" style={{ marginTop: 10 }}>
-            <button type="button" onClick={() => setFrame((value) => Math.max(0, value - 1))}>前一帧</button>
-            <button type="button" onClick={() => setFrame((value) => value + 1)}>后一帧</button>
-            <span className="badge">帧 {frame} · {formatMs(frame * 40)}</span>
+            <button
+              type="button"
+              disabled={!renderMedia?.playable}
+              onClick={() => setRequestedFrame((value) => clampFrame(value - 1, renderMedia?.frame_count))}
+            >
+              前一帧
+            </button>
+            <button
+              type="button"
+              disabled={!renderMedia?.playable}
+              onClick={() => setRequestedFrame((value) => clampFrame(value + 1, renderMedia?.frame_count))}
+            >
+              后一帧
+            </button>
+            <button type="button" disabled={!renderMedia?.playable} onClick={() => setRequestedFrame(0)}>回到首帧</button>
+            <span className="badge">
+              目标帧 {requestedFrame}
+              {renderMedia?.frame_count ? ` / ${Number(renderMedia.frame_count) - 1}` : ""} · 实际帧 {playheadFrame}
+            </span>
           </div>
-          <div className="explainer-timeline">
-            <div className="explainer-timeline-lane">
-              <span>画面</span>
-              <div className="explainer-timeline-clips">
-                <b style={{ flex: 1 }}>起始</b><b style={{ flex: 2 }}>主体</b><b style={{ flex: 1 }}>收束</b>
-              </div>
-            </div>
-            <div className="explainer-timeline-lane">
-              <span>旁白</span>
-              <div className="explainer-timeline-clips audio"><b style={{ flex: 4 }}>{localeLabel(String(activeEdition?.voice_locale ?? ""))}旁白</b></div>
-            </div>
-            <div className="explainer-timeline-lane">
-              <span>音乐</span>
-              <div className="explainer-timeline-clips bgm"><b style={{ flex: 2 }}>背景音乐</b><b style={{ flex: 1 }}>结尾</b></div>
-            </div>
-            <div className="explainer-timeline-lane">
-              <span>字幕</span>
-              <div className="explainer-timeline-clips sub"><b style={{ flex: 1 }}>cue</b><b style={{ flex: 1 }}>cue</b><b style={{ flex: 1 }}>cue</b></div>
-            </div>
-          </div>
-          <p className="explainer-note">时间轴为结构示意；真实帧/PTS 由冻结的 RenderManifest 决定。</p>
+          <p className="explainer-note">
+            按钮按冻结 manifest 的有理数帧率换算时间；浏览器对压缩关键帧的 seek 不保证逐帧精确，
+            所以“实际帧”来自解码器的进度事件，而不是先写成目标帧已显示。
+          </p>
+          <ReviewTimeline lanes={timelineLanes} busy={editions.isPending} />
         </Panel>
 
         <Panel title="审查覆盖范围" subtitle="不同检测分别陈述，不把抽样写成逐帧人工审核。">
@@ -270,8 +364,13 @@ export function ExplainerReviewPage() {
               </span>
             ))}
           </div>
-          {issues.length === 0 ? <p className="muted">没有记录到问题。issues 为空不等于检测已运行。</p> : issues.slice(0, 8).map((issue) => (
-            <div className={`explainer-issue-row${String(issue.severity) === "BLOCKER" ? " danger" : ""}`} key={String(issue.id)}>
+          {issues.length === 0 ? <p className="muted">没有记录到问题。issues 为空不等于检测已运行。</p> : issueList.visible.map((issue) => (
+            <div
+              className={`explainer-issue-row${String(issue.severity) === "BLOCKER" ? " danger" : ""}${
+                selectedIssue && String(selectedIssue.id) === String(issue.id) ? " selected" : ""
+              }`}
+              key={String(issue.id)}
+            >
               <span className="explainer-issue-mark">!</span>
               <div>
                 <p>{String(issue.observed || issue.issue_kind)}</p>
@@ -282,16 +381,36 @@ export function ExplainerReviewPage() {
                 <button
                   type="button"
                   className="explainer-source-link"
-                  onClick={() => setSearchParams((params) => {
-                    params.set("issue", String(issue.id));
-                    return params;
-                  })}
+                  onClick={() => {
+                    setSearchParams((params) => {
+                      params.set("issue", String(issue.id));
+                      return params;
+                    });
+                    // Selecting an issue also moves the player's evidence position.
+                    if (issue.start_ms !== null && issue.start_ms !== undefined && renderMedia?.fps_num && renderMedia?.fps_den) {
+                      const frame = frameForMs(Number(issue.start_ms), renderMedia.fps_num, renderMedia.fps_den);
+                      if (frame !== null) setRequestedFrame(clampFrame(frame, renderMedia.frame_count));
+                    }
+                  }}
                 >
                   定位并处理 →
                 </button>
               </div>
             </div>
           ))}
+          {/* Every issue must be reachable; the list used to be ``slice(0, 8)`` with a
+              count badge taken from *all* issues, so "阻塞 12" hid four of them. */}
+          {issueList.hiddenCount > 0 ? (
+            <div className="explainer-actions">
+              <button type="button" onClick={issueList.showMore}>
+                查看余下 {Math.min(8, issueList.hiddenCount)} 项（共 {issueList.sorted.length} 项）
+              </button>
+              <button type="button" onClick={issueList.showAll}>显示全部 {issueList.sorted.length} 项</button>
+              <span className="badge">已显示 {issueList.visible.length} / {issueList.sorted.length}</span>
+            </div>
+          ) : issueList.sorted.length > 0 ? (
+            <p className="muted">已显示全部 {issueList.sorted.length} 项问题（按严重度、时间、ID 稳定排序）。</p>
+          ) : null}
           {selectedIssue ? (
             <div className="explainer-note">
               <strong>建议修复：</strong>{String(selectedIssue.suggested_repair || "按根因节点生成新版本，并重查受影响下游。")}
@@ -307,16 +426,56 @@ export function ExplainerReviewPage() {
         </Panel>
 
         <Panel title="人工确认与发布授权" subtitle="三种决定分开记录，互不代替。">
+          <label className="explainer-field">
+            审阅范围（帧区间 {playheadFrame}–{requestedFrame}）
+            <span className="muted">决定会绑定当前成片的 kind/id/hash 与该帧区间。</span>
+          </label>
+          <label className="explainer-field">
+            审查说明
+            <textarea
+              value={reviewNote}
+              onChange={(event) => setReviewNote(event.target.value)}
+              rows={3}
+              placeholder="例如：全片通看一遍；第 3 分钟旁白节奏偏快，其余可接受。"
+            />
+          </label>
           <div className="explainer-actions">
-            <button type="button" disabled={decide.isPending} onClick={() => decide.mutate({ kind: "HUMAN_APPROVED" })}>确认当前成片</button>
-            <button type="button" disabled={decide.isPending} onClick={() => decide.mutate({ kind: "CHANGES_REQUESTED" })}>要求修改</button>
-            <button type="button" disabled={decide.isPending} onClick={() => decide.mutate({ kind: "PUBLICATION_AUTHORIZED" })}>记录发布授权</button>
+            <button
+              type="button"
+              disabled={decide.isPending || !renderMedia?.playable}
+              onClick={() => decide.mutate({ kind: "HUMAN_APPROVED", intervals: currentIntervals() })}
+            >
+              确认当前成片
+            </button>
+            <button
+              type="button"
+              disabled={decide.isPending}
+              onClick={() => decide.mutate({ kind: "CHANGES_REQUESTED", intervals: currentIntervals() })}
+            >
+              要求修改
+            </button>
+            <button
+              type="button"
+              disabled={decide.isPending || !renderMedia?.playable}
+              onClick={() => decide.mutate({ kind: "PUBLICATION_AUTHORIZED", intervals: currentIntervals() })}
+            >
+              记录发布授权
+            </button>
           </div>
+          <SettingRow
+            label="决定主体"
+            value={
+              renderMedia
+                ? `${renderMedia.id.slice(0, 8)}… · ${String(renderMedia.sha256 ?? "").slice(0, 12)}…`
+                : "没有可确认的成片"
+            }
+          />
           <SettingRow label="机器检查" value={qc.data?.machine_decision ? "政策接受（自动）" : "尚未产生"} />
           <SettingRow label="人工确认" value={qc.data?.human_decision ? String((qc.data.human_decision as Record<string, unknown>).actor ?? "已记录") : "尚未记录"} />
           <SettingRow label="发布授权" value={qc.data?.publication_decision ? "已记录" : "尚未记录"} />
           <p className="explainer-note">
             机器政策接受只声明规则、阈值与检测证据，不等于人工审阅，也不构成发布授权；HTTP 客户端不能自填机器接受。
+            没有可播放成片时不提供无条件的“确认成片”成功路径。
           </p>
         </Panel>
 

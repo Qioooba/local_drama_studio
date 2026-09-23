@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from local_drama.domain.errors import DomainRuleError
-from local_drama.domain.explainers.contracts import utc_now_iso
+from local_drama.domain.explainers.contracts import ExplainerContractError, utc_now_iso
 from local_drama.infrastructure.database.explainer_repository import ExplainerRepository
 
 #: The job type a queue-dispatched explainer stage job carries.
@@ -63,6 +63,16 @@ EXPLAINER_TASK_CODES: tuple[str, ...] = (
     "FACT_EXTRACT",
     "NARRATION_WRITE",
     "RESEARCH_ACQUIRE",
+    # The production stages that turn the frozen plan into a finished film.  They
+    # are part of the same dispatch family so one workflow item can execute exactly
+    # one planned step without a second queue.
+    "IDENTITY_ASSETS",
+    "NARRATION_TTS",
+    "NARRATION_ALIGN",
+    "VISUAL_GENERATION",
+    "SUBTITLE_BUILD",
+    "COMPOSITION_RENDER",
+    "EXPLAINER_EXPORT",
 )
 
 #: The only stage code allowed to carry a machine policy acceptance.
@@ -446,11 +456,19 @@ def run_explainer_task(
                 video_id=video_id,
                 semantic_inputs=semantic_inputs,
             )
+            # The verdict has three outcomes, not two.  A verdict that asks for an
+            # operator (``workflow_effect=REQUEST_HUMAN``) is the designed pause of
+            # a review-first run, not a terminal failure of the step: reporting it as
+            # FAIL made the projection show "终止失败" for a run that was merely
+            # waiting for the human approval it went on to receive.
+            accepted = bool(decision.get("accepted"))
+            requests_human = str(decision.get("workflow_effect") or "") == "REQUEST_HUMAN"
+            verdict_status = "PASS" if accepted else ("NEEDS_HITL" if requests_human else "FAIL")
             report = {
-                "status": "PASS" if decision.get("accepted") else "FAIL",
+                "status": verdict_status,
                 "machine_check": {
-                    "status": "PASS" if decision.get("accepted") else "FAIL",
-                    "ok": bool(decision.get("accepted")),
+                    "status": verdict_status,
+                    "ok": accepted,
                     "workflow_effect": str(decision.get("workflow_effect") or ""),
                     "rule_version": str(decision.get("rule_version") or ""),
                     "policy_processor": str(decision.get("policy_processor") or ""),
@@ -482,6 +500,13 @@ def run_explainer_task(
                 "CANCELLED" if error.code == "JOB_CANCELLED" else "RETRYABLE_FAILED",
                 blocker_code=error.code,
             )
+        raise
+    except ExplainerContractError as error:
+        # The explainer domain's own contract error is a business failure like any
+        # other: it must settle the step projection before it leaves this module, or
+        # the run keeps a step that is "running" with nothing behind it.
+        if step_store is not None and step_binding_id:
+            step_store.mark_step(step_binding_id, "RETRYABLE_FAILED", blocker_code=error.code)
         raise
     if cancelled():
         if step_store is not None and step_binding_id:

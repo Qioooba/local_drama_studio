@@ -591,6 +591,88 @@ def test_authorized_pipeline_apply_continues_in_backend_after_restart_and_replay
     assert replay["run"]["revision"] == applied["revision"]
 
 
+def test_auto_authorized_continuation_gets_its_own_apply_job_for_the_new_revision(
+    workspace, database, mock_story_pipeline_ai,
+) -> None:
+    """PR-05: the second authorized batch must not replay the first batch's apply job.
+
+    The continuation job key was ``pipeline-apply:{run_id}``, so after batch 1 was
+    applied the key replayed batch 1's already-SUCCEEDED job: the new revision's
+    episodes were never applied, and the authorization then refused the draft as
+    changed.  Each authorized revision now gets its own dependency job.
+    """
+
+    del mock_story_pipeline_ai
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="pipeline_authorized_batches",
+        title="Authorized batches",
+        episode_count=1,
+        aspect_ratio="9:16",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=60_000,
+        allow_unconfigured_capabilities=True,
+    )
+    project_id = str(project["id"])
+    service = build_pipeline_orchestrator(database, workspace)
+    run = service.start_pipeline(
+        project_id,
+        raw_text="# 第一章\n\n林渊进入山谷寻找古剑，发现守门人并决定继续前行。",
+        application_authorization={
+            "endpoint": "APPLY_SELECTED_SECTIONS",
+            "sections": ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"],
+        },
+    )
+    first_apply_job = str(run["apply_continuation"]["job_id"])
+    assert first_apply_job
+
+    assert LocalMediaWorker(database, workspace).run_once("pipeline-b1", ["CPU"]) is not None
+    applied = service.get_pipeline(project_id, run["run_id"])
+    with database.connect() as connection:
+        jobs = connection.execute(
+            "SELECT id FROM jobs WHERE subject_id=? AND type IN (SELECT code FROM job_stage_definitions WHERE code='STORY_PIPELINE')",
+            (run["run_id"],),
+        ).fetchall()
+    del jobs
+    with database.transaction() as connection:
+        # The second batch publishes a NEW draft revision under the same grant; the
+        # previous revision stays recorded as the applied one.
+        row = connection.execute(
+            "SELECT draft_json FROM pipeline_runs WHERE id=?", (run["run_id"],)
+        ).fetchone()
+        previous_draft = json.loads(str(row["draft_json"]))
+        applied_hash = service._draft_revision_hash(previous_draft)  # noqa: SLF001
+        previous_draft["story_plan"]["episodes"].append(
+            {"number": 2, "code": "EP02", "title": "第二集", "summary": "续接批次新增的一集。"}
+        )
+        connection.execute(
+            """UPDATE pipeline_runs SET draft_json=?,apply_state='APPLIED',applied_revision_hash=?,
+            applied_episode_numbers_json='[1]',revision=revision+1 WHERE id=?""",
+            (json.dumps(previous_draft, ensure_ascii=False), applied_hash, run["run_id"]),
+        )
+    del applied
+
+    continuation = service.continue_authorized_application(run["run_id"])
+    new_apply_job = str(continuation["run"]["apply_continuation"]["job_id"])
+    # A continuation click that finds a newer revision re-scopes the authorization and
+    # hands the new revision its own command.
+    assert continuation.get("idempotent_replay") is not True
+    assert new_apply_job and new_apply_job != first_apply_job
+    assert continuation["run"]["apply_state"] == "APPLIED"
+    # The new revision's command is a real, durable, independently replayable Job.
+    with database.connect() as connection:
+        staged = connection.execute(
+            "SELECT type,state,input_snapshot_json,idempotency_key FROM jobs WHERE id=?",
+            (new_apply_job,),
+        ).fetchone()
+    assert staged is not None
+    assert str(staged["state"]) in {"QUEUED", "CLAIMED", "RUNNING", "SUCCEEDED"}
+    assert str(staged["idempotency_key"]).startswith(f"pipeline-apply:{run['run_id']}:")
+    assert json.loads(str(staged["input_snapshot_json"]))["authorized_sections"] == [
+        "STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"
+    ]
+
+
 def test_authorized_source_pipeline_hands_off_once_to_durable_whole_drama_session(
     workspace, database, mock_story_pipeline_ai, monkeypatch,
 ) -> None:
@@ -764,6 +846,521 @@ def test_pipeline_apply_preview_preserves_produced_episode_and_reports_context_c
     assert impact["produced_episode_context_changes"] == ["EPISODE_001"]
     assert impact["requires_confirmation"] is True
     assert _project_counts(database, str(project["id"])) == before
+
+
+def _long_second_chapter_text() -> str:
+    """The audit's manuscript: a short chapter 1 plus a 31,500-character chapter 2.
+
+    ``_LONG_UNIT_SLICE_CHARACTERS`` is 3,500, so this chapter becomes several
+    bounded input windows of the SAME episode unit.
+    """
+
+    paragraph = "第二段正文，" * 100  # 600 characters
+    long_chapter = "\n\n".join(f"{paragraph}{index:03d}" for index in range(52))  # ~31,300 characters
+    return f"# 第一章 短章\n\n第一章正文。\n\n# 第二章 长章\n\n{long_chapter}"
+
+
+def test_one_long_chapter_yields_several_windows_but_one_unit() -> None:
+    """PR-01: windows are a model-batch unit; the episode unit stays single."""
+
+    specs = PipelineOrchestratorService._episode_specs(_long_second_chapter_text())
+    numbers = [int(spec["number"]) for spec in specs]
+    # The second chapter really is split into several bounded input windows...
+    assert numbers.count(2) >= 2, numbers
+    assert numbers[0] == 1
+    # ...but every window still reports the SAME unit number, and the windows of
+    # that unit cover the whole chapter contiguously.
+    unit_two = [spec for spec in specs if int(spec["number"]) == 2]
+    assert [int(spec["window_index"]) for spec in unit_two] == list(range(1, len(unit_two) + 1))
+    assert {int(spec["window_count"]) for spec in unit_two} == {len(unit_two)}
+    assert int(unit_two[0]["source_start_paragraph"]) < int(unit_two[-1]["source_end_paragraph"])
+    merged = PipelineOrchestratorService._merge_unit_windows(
+        [{"number": number, "title": f"第{number}集"} for number in numbers], specs
+    )
+    assert [int(item["number"]) for item in merged] == [1, 2]
+    assert len(merged[1]["source_windows"]) == len(unit_two)
+    assert merged[1]["source_character_count"] > int(unit_two[0]["source_character_count"])
+
+
+def test_a_long_chapter_is_one_episode_in_the_draft_and_applies(
+    workspace, database, mock_story_pipeline_ai,
+) -> None:
+    """The audit reproduction: preview says ``can_apply`` and apply must succeed.
+
+    Before the fix the draft carried four window-level episodes numbered
+    ``[1, 2, 2, 2]``; preview reported ``can_apply=true`` and the real apply raised
+    ``sqlite3.IntegrityError: UNIQUE constraint failed: episodes.season_id,
+    episodes.code``.
+    """
+
+    del mock_story_pipeline_ai
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="pipe_long_chapter",
+        title="长章分集",
+        episode_count=1,
+        aspect_ratio="9:16",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=120_000,
+        allow_unconfigured_capabilities=True,
+    )
+    project_id = str(project["id"])
+    source_text = _long_second_chapter_text()
+    before = _project_counts(database, project_id)
+
+    with TestClient(create_app(workspace)) as client:
+        started = client.post(
+            f"/api/v1/projects/{project_id}/pipeline:start",
+            json={
+                "raw_text": source_text,
+                "visual_style": "国风仙侠 电影级写实 (Cinematic Realistic)",
+                "target_episode_duration_seconds": 120,
+            },
+        )
+        assert started.status_code == 200, started.text
+        run = started.json()["run"]
+        assert LocalMediaWorker(database, workspace).run_once("story-pipeline-long", ["CPU"]) is not None
+        draft_run = client.get(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}"
+        ).json()["run"]
+        assert draft_run["state"] == "SUCCEEDED"
+        draft = draft_run["draft"]
+        episodes = draft["story_plan"]["episodes"]
+        numbers = [int(item["number"]) for item in episodes]
+        codes = [str(item["code"]) for item in episodes]
+        # One episode per unit, and never a duplicate number or code.
+        assert numbers == [1, 2], numbers
+        assert len(set(numbers)) == len(numbers)
+        assert len(set(codes)) == len(codes)
+        assert draft_run["quality_report"]["status"] in {"READY", "REVIEW_REQUIRED"}
+        assert all(check["passed"] for check in draft_run["quality_report"]["checks"] if check["severity"] == "BLOCKER")
+        # The completed windows of the long unit are all mapped onto the planned
+        # episode, so nothing was dropped by the aggregation.
+        coverage = draft["source_coverage"]
+        assert coverage["status"] == "FULL"
+        assert {int(item["unit_number"]) for item in coverage["completed_ranges"]} == {1, 2}
+        assert len([item for item in coverage["completed_ranges"] if int(item["unit_number"]) == 2]) >= 2
+        # The merged episode keeps the WHOLE chapter range, not just its last window.
+        second = next(item for item in episodes if int(item["number"]) == 2)
+        window_two = [item for item in coverage["completed_ranges"] if int(item["unit_number"]) == 2]
+        assert int(second["source_start_paragraph"]) == min(int(item["start_paragraph"]) for item in window_two)
+        assert int(second["source_end_paragraph"]) == max(int(item["end_paragraph"]) for item in window_two)
+
+        preview = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:apply-preview",
+            json={"expected_revision": draft_run["revision"], "sections": ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"]},
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["can_apply"] is True, preview.json()
+        applied = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:apply",
+            json={
+                "expected_revision": draft_run["revision"],
+                "sections": ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"],
+                "expected_impact_sha256": preview.json()["impact"]["impact_sha256"],
+            },
+        )
+        assert applied.status_code == 200, applied.text
+        created = applied.json()["created"]
+        # Two units, but unit 1 is the project's own initial episode: exactly one new
+        # episode row, never one per input window.
+        assert created["episodes"] == 1, created
+
+    with database.connect() as connection:
+        rows = connection.execute(
+            """SELECT e.code, e.number, e.source_range_json FROM episodes e
+            JOIN seasons s ON s.id=e.season_id WHERE s.project_id=? ORDER BY e.number""",
+            (project_id,),
+        ).fetchall()
+    codes = [str(row["code"]) for row in rows]
+    assert len(codes) == len(set(codes)), codes
+    assert len(rows) == 2, codes
+    # The long chapter's episode keeps the whole chapter range, not just the last
+    # window's slice, so the second half of the manuscript is not silently lost.
+    second_range = json.loads(str(rows[1]["source_range_json"]))
+    assert int(second_range["start_paragraph"]) < int(second_range["end_paragraph"]), second_range
+    counts = _project_counts(database, project_id)
+    assert counts["episodes"] == 2
+    assert counts["episodes"] > before["episodes"]
+
+
+def test_a_failed_continuation_is_requeued_instead_of_reporting_queued(
+    workspace, database, mock_story_pipeline_ai, monkeypatch,
+) -> None:
+    """PR-04: a continuation replay must reflect the Job's LIVE state.
+
+    The audit's sequence was: batch 1 succeeds, ``continue`` runs batch 2, an
+    injected model error fails batch 2, and ``continue`` is called again.  The
+    command key ``pipeline-continue:{run}:{next_window}`` had not advanced, so the
+    idempotency layer replayed the ORIGINAL response — which still said QUEUED — and
+    the caller wrote the run back to RUNNING while the Job stayed FAILED.
+    ``JobService.claim()`` then returned ``None`` and ``retry_pipeline`` refused
+    (it requires FAILED), so the workbench was permanently occupied.
+    """
+
+    del mock_story_pipeline_ai
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="pipe_continue_retry",
+        title="续接失败重试",
+        episode_count=1,
+        aspect_ratio="9:16",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=120_000,
+        allow_unconfigured_capabilities=True,
+    )
+    project_id = str(project["id"])
+    chapter_count = 61
+    source_text = "\n\n".join(
+        f"# 第{index}章\n\n第{index}章正文，尾部事件-{index}。" for index in range(1, chapter_count + 1)
+    )
+    service = build_pipeline_orchestrator(database, workspace)
+    with TestClient(create_app(workspace)) as client:
+        started = client.post(
+            f"/api/v1/projects/{project_id}/pipeline:start",
+            json={
+                "raw_text": source_text,
+                "visual_style": "国风仙侠 电影级写实 (Cinematic Realistic)",
+                "target_episode_duration_seconds": 120,
+            },
+        )
+        assert started.status_code == 200, started.text
+        run = started.json()["run"]
+        assert LocalMediaWorker(database, workspace).run_once("story-retry-batch-1", ["CPU"]) is not None
+        first = client.get(f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}").json()["run"]
+        assert first["state"] == "SUCCEEDED"
+        coverage = first["draft"]["source_coverage"]
+        cursor = first["analysis_cursor"]
+
+        queued = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:continue-analysis",
+            json={
+                "expected_revision": first["revision"],
+                "expected_source_sha256": coverage["source_sha256"],
+                "expected_next_window_index": cursor["next_window_index"],
+            },
+        )
+        assert queued.status_code == 200, queued.text
+        second_job_id = str(queued.json()["run"]["job_id"])
+        assert second_job_id
+
+        # The second batch fails for a retryable reason.
+        def failing_generate(self, **kwargs):
+            del self, kwargs
+            raise DomainRuleError("PIPELINE_LLM_GENERATION_FAILED", "注入的可恢复模型异常")
+
+        monkeypatch.setattr(FullStoryAIGenerationService, "generate", failing_generate)
+        assert LocalMediaWorker(database, workspace).run_once("story-retry-batch-2", ["CPU"]) is not None
+        failed = client.get(f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}").json()["run"]
+        assert failed["state"] == "FAILED", failed["state"]
+        with database.connect() as connection:
+            live_job_state = str(
+                connection.execute("SELECT state FROM jobs WHERE id=?", (second_job_id,)).fetchone()["state"]
+            )
+        assert live_job_state in {"FAILED", "NEEDS_ATTENTION"}, live_job_state
+
+        # The user clicks continue again on the same cursor.
+        retried = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:continue-analysis",
+            json={
+                "expected_revision": failed["revision"],
+                "expected_source_sha256": coverage["source_sha256"],
+                "expected_next_window_index": cursor["next_window_index"],
+            },
+        )
+        assert retried.status_code == 200, retried.text
+        body = retried.json()["run"]
+        # The response reports the Job's REAL state, and the batch was requeued.
+        assert body["job_state"] in {"QUEUED", "CLAIMED", "RUNNING"}, body
+        assert body["recovery_action"] == "RETRIED_FAILED_BATCH", body
+        assert body["state"] == "RUNNING"
+        with database.connect() as connection:
+            requeued = connection.execute("SELECT state FROM jobs WHERE id=?", (second_job_id,)).fetchone()
+        assert str(requeued["state"]) in {"QUEUED", "CLAIMED", "RUNNING"}, str(requeued["state"])
+        # The retry really cleared the previous failure and made the batch claimable.
+        with database.connect() as connection:
+            cleared = connection.execute(
+                "SELECT cancel_requested_at, last_error_code FROM jobs WHERE id=?", (second_job_id,)
+            ).fetchone()
+        assert cleared["cancel_requested_at"] is None
+    assert service is not None
+
+
+def test_a_run_is_reconciled_when_its_job_died(
+    workspace, database, mock_story_pipeline_ai,
+) -> None:
+    """A RUNNING projection must converge on its Job's terminal state.
+
+    The audit's run could not be retried because ``retry_pipeline`` requires
+    ``FAILED`` while the projection stayed ``RUNNING`` forever.
+    """
+
+    del mock_story_pipeline_ai
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="pipe_reconcile",
+        title="状态对账",
+        episode_count=1,
+        aspect_ratio="9:16",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=120_000,
+        allow_unconfigured_capabilities=True,
+    )
+    project_id = str(project["id"])
+    service = build_pipeline_orchestrator(database, workspace)
+    with TestClient(create_app(workspace)) as client:
+        started = client.post(
+            f"/api/v1/projects/{project_id}/pipeline:start",
+            json={
+                "raw_text": "# 第一章 归来\n\n林渊握紧照骨古剑，凝视远处的九转金丹，决定逆天改命。",
+                "visual_style": "国风仙侠 电影级写实 (Cinematic Realistic)",
+                "target_episode_duration_seconds": 120,
+            },
+        )
+        assert started.status_code == 200, started.text
+        run = started.json()["run"]
+        job_id = str(run["job_id"])
+        # Simulate a Job that died without the run's projection being updated.
+        with database.transaction() as connection:
+            connection.execute(
+                "UPDATE jobs SET state='FAILED',last_error_code='PIPELINE_LLM_GENERATION_FAILED',last_error_detail_redacted='模型异常' WHERE id=?",
+                (job_id,),
+            )
+            connection.execute("UPDATE pipeline_runs SET state='RUNNING' WHERE id=?", (run["run_id"],))
+        reconciled = client.get(f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}").json()["run"]
+        assert reconciled["state"] == "FAILED", reconciled["state"]
+        # The workbench now offers the normal retry entry again.
+        retried = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:retry",
+            json={"expected_revision": reconciled["revision"]},
+        )
+        assert retried.status_code == 200, retried.text
+        assert retried.json()["run"]["state"] == "RUNNING"
+    assert service is not None
+
+
+def test_a_partially_applied_run_can_apply_the_continuation_delta(
+    workspace, database, mock_story_pipeline_ai,
+) -> None:
+    """PR-05: applying batch 1 must not close the run to batch 2.
+
+    The audit applied the first chapter's draft, continued analysis, and then could
+    neither preview nor apply the new episodes: ``apply_state='APPLIED'`` was a
+    run-level boolean, so the run answered ``PIPELINE_STATE_INVALID`` on preview and
+    ``PIPELINE_ALREADY_APPLIED`` on apply while the formal project still only held
+    ``[1]``.
+    """
+
+    del mock_story_pipeline_ai
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="pipe_partial_apply",
+        title="分批应用",
+        episode_count=1,
+        aspect_ratio="9:16",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=120_000,
+        allow_unconfigured_capabilities=True,
+    )
+    project_id = str(project["id"])
+    chapter_count = 61
+    source_text = "\n\n".join(
+        f"# 第{index}章\n\n第{index}章正文，尾部事件-{index}。" for index in range(1, chapter_count + 1)
+    )
+    with TestClient(create_app(workspace)) as client:
+        started = client.post(
+            f"/api/v1/projects/{project_id}/pipeline:start",
+            json={
+                "raw_text": source_text,
+                "visual_style": "国风仙侠 电影级写实 (Cinematic Realistic)",
+                "target_episode_duration_seconds": 120,
+            },
+        )
+        assert started.status_code == 200, started.text
+        run = started.json()["run"]
+        assert LocalMediaWorker(database, workspace).run_once("story-partial-batch-1", ["CPU"]) is not None
+        first = client.get(f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}").json()["run"]
+        assert first["draft"]["source_coverage"]["status"] == "PARTIAL"
+
+        preview = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:apply-preview",
+            json={"expected_revision": first["revision"], "sections": ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"]},
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["can_apply"] is True
+        applied = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:apply",
+            json={
+                "expected_revision": first["revision"],
+                "sections": ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"],
+                "expected_impact_sha256": preview.json()["impact"]["impact_sha256"],
+            },
+        )
+        assert applied.status_code == 200, applied.text
+        first_applied_count = applied.json()["created"]["episodes"]
+        assert first_applied_count > 0
+
+        # Mark one episode as already in production: its identity must never change.
+        with database.transaction() as connection:
+            produced = connection.execute(
+                """SELECT e.id FROM episodes e JOIN seasons s ON s.id=e.season_id
+                WHERE s.project_id=? ORDER BY e.number LIMIT 1""",
+                (project_id,),
+            ).fetchone()
+            produced_id = str(produced["id"])
+            connection.execute(
+                "UPDATE episodes SET title='已确认标题', production_status='IN_PRODUCTION' WHERE id=?",
+                (produced_id,),
+            )
+
+        applied_run = client.get(f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}").json()["run"]
+        assert applied_run["apply_state"] == "APPLIED"
+        assert applied_run["applied_revision_hash"]
+        applied_numbers_before = list(applied_run["applied_episode_numbers"])
+
+        # Continue the remaining windows.
+        cursor = applied_run["analysis_cursor"]
+        assert cursor["has_more_windows"] is True
+        queued = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:continue-analysis",
+            json={
+                "expected_revision": applied_run["revision"],
+                "expected_source_sha256": applied_run["draft"]["source_coverage"]["source_sha256"],
+                "expected_next_window_index": cursor["next_window_index"],
+            },
+        )
+        assert queued.status_code == 200, queued.text
+        assert LocalMediaWorker(database, workspace).run_once("story-partial-batch-2", ["CPU"]) is not None
+        continued = client.get(f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}").json()["run"]
+        assert continued["draft"]["source_coverage"]["status"] == "FULL"
+        assert continued["apply_state"] == "APPLIED"
+
+        # The NEW revision can be previewed and applied: this is exactly what the
+        # audit could not do.
+        delta_preview = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:apply-preview",
+            json={"expected_revision": continued["revision"], "sections": ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"]},
+        )
+        assert delta_preview.status_code == 200, delta_preview.text
+        watermark = delta_preview.json()["apply_watermark"]
+        assert watermark["already_applied"] is False
+        assert watermark["applied_revision_hash"] == applied_run["applied_revision_hash"]
+        assert watermark["draft_revision_hash"] != watermark["applied_revision_hash"]
+        assert delta_preview.json()["can_apply"] is True
+        # The already-applied episodes are not re-added.
+        assert {item["number"] for item in delta_preview.json()["impact"]["episodes"]["add"]} == {
+            number for number in range(1, chapter_count + 1)
+        } - set(applied_numbers_before) - {
+            int(item["number"]) for item in delta_preview.json()["impact"]["episodes"]["update"]
+        } - {
+            int(item["number"]) for item in delta_preview.json()["impact"]["episodes"]["preserve"]
+        }
+
+        delta = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:apply",
+            json={
+                "expected_revision": continued["revision"],
+                "sections": ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"],
+                "expected_impact_sha256": delta_preview.json()["impact"]["impact_sha256"],
+            },
+        )
+        assert delta.status_code == 200, delta.text
+        assert delta.json()["created"]["episodes"] > 0
+        final = delta.json()["run"]
+        assert final["applied_revision_hash"] == watermark["draft_revision_hash"]
+        assert set(final["applied_episode_numbers"]) >= set(applied_numbers_before)
+
+        # Re-applying the SAME revision is a no-op, never a second write.
+        same = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:apply",
+            json={
+                "expected_revision": final["revision"],
+                "sections": ["STORY_PLAN", "STORY_BIBLE", "ASSET_PROPOSALS"],
+                "expected_impact_sha256": delta_preview.json()["impact"]["impact_sha256"],
+            },
+        )
+        assert same.status_code == 422
+        assert same.json()["error"]["code"] == "PIPELINE_ALREADY_APPLIED"
+
+    with database.connect() as connection:
+        preserved = connection.execute(
+            "SELECT title, production_status FROM episodes WHERE id=?", (produced_id,)
+        ).fetchone()
+        total = connection.execute(
+            """SELECT COUNT(*) AS n FROM episodes e JOIN seasons s ON s.id=e.season_id
+            WHERE s.project_id=?""",
+            (project_id,),
+        ).fetchone()
+    # The produced episode keeps its confirmed title and production status.
+    assert str(preserved["title"]) == "已确认标题"
+    assert str(preserved["production_status"]) == "IN_PRODUCTION"
+    # Every planned unit now exists in the formal project.
+    assert int(total["n"]) >= chapter_count
+
+
+def test_a_run_applied_before_the_watermark_is_backfilled_and_not_re_applied(
+    workspace, database, mock_story_pipeline_ai,
+) -> None:
+    """PR-05 migration: an old APPLIED run keeps its "already applied" meaning.
+
+    The watermark migration cannot compute a content hash in SQL, so a run applied by
+    an earlier build has ``apply_state='APPLIED'`` and no hash.  Treating that as
+    "nothing applied" would let a re-apply rewrite episodes the user already confirmed,
+    so the current draft is adopted as the applied revision and the watermark is
+    persisted on first read.
+    """
+
+    del mock_story_pipeline_ai
+    project = ProjectService(database, workspace.projects_root).create_project(
+        code="pipe_watermark_backfill",
+        title="水位回填",
+        episode_count=1,
+        aspect_ratio="9:16",
+        fps_num=24,
+        fps_den=1,
+        target_duration_ms=120_000,
+        allow_unconfigured_capabilities=True,
+    )
+    project_id = str(project["id"])
+    with TestClient(create_app(workspace)) as client:
+        started = client.post(
+            f"/api/v1/projects/{project_id}/pipeline:start",
+            json={
+                "raw_text": "# 第一章 归来\n\n林渊握紧照骨古剑，凝视远处的九转金丹，决定逆天改命。",
+                "visual_style": "国风仙侠 电影级写实 (Cinematic Realistic)",
+                "target_episode_duration_seconds": 120,
+            },
+        )
+        assert started.status_code == 200, started.text
+        run = started.json()["run"]
+        assert LocalMediaWorker(database, workspace).run_once("story-watermark", ["CPU"]) is not None
+        current = client.get(f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}").json()["run"]
+
+        # Simulate a run applied by the pre-watermark build: APPLIED with no hash.
+        with database.transaction() as connection:
+            connection.execute(
+                """UPDATE pipeline_runs SET apply_state='APPLIED',applied_revision_hash=NULL,
+                applied_episode_numbers_json='[]' WHERE id=?""",
+                (run["run_id"],),
+            )
+
+        preview = client.post(
+            f"/api/v1/projects/{project_id}/pipeline/{run['run_id']}:apply-preview",
+            json={"expected_revision": current["revision"], "sections": ["STORY_PLAN"]},
+        )
+        assert preview.status_code == 200, preview.text
+        watermark = preview.json()["apply_watermark"]
+        # The adopted watermark makes this revision count as already applied.
+        assert watermark["already_applied"] is True
+        assert preview.json()["can_apply"] is False
+
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT applied_revision_hash,applied_episode_numbers_json FROM pipeline_runs WHERE id=?",
+            (run["run_id"],),
+        ).fetchone()
+    assert row["applied_revision_hash"], "the watermark must be persisted on first read"
+    assert json.loads(str(row["applied_episode_numbers_json"])) != []
 
 
 def test_continue_analysis_finishes_the_remaining_windows_of_a_long_novel(

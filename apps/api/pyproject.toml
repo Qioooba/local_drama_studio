@@ -33,6 +33,10 @@ dev = [
   "pytest-asyncio>=0.23,<1",
   "ruff>=0.6,<1",
   "mypy>=1.11,<2",
+  # TM-06: the OTIO acceptance criterion is parsed with the OFFICIAL reader, so the
+  # writer's Transition objects and offsets are checked against the real schema
+  # rather than against our own assumptions about it.
+  "opentimelineio>=0.18,<1",
 ]
 
 [tool.pytest.ini_options]

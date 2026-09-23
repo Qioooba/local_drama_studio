@@ -74,6 +74,12 @@ class RuntimeConfig(BaseModel):
     local_ai_model_root: Path | None = None
     latentsync_python: Path | None = None
     latentsync_root: Path | None = None
+    #: Explainer generation canvas height.  The product generates every master at
+    #: this proxy size (480p by default) and a later super-resolution step lifts the
+    #: accepted film to ``explainer_delivery_height``.
+    explainer_generation_height: int = Field(default=480, ge=240, le=2160)
+    #: Delivery height the explainer masters are super-resolved to.
+    explainer_delivery_height: int = Field(default=1080, ge=480, le=4320)
 
     @field_validator("model_download_source_hosts")
     @classmethod
@@ -232,6 +238,8 @@ def settings_values(config: MachineConfig) -> dict[str, Any]:
         "local_ai_model_root": config.runtime.local_ai_model_root,
         "latentsync_python": config.runtime.latentsync_python,
         "latentsync_root": config.runtime.latentsync_root,
+        "explainer_generation_height": config.runtime.explainer_generation_height,
+        "explainer_delivery_height": config.runtime.explainer_delivery_height,
         "tool_fallback_dirs": config.tools.fallback_dirs,
         "ffmpeg_override": config.tools.ffmpeg,
         "ffprobe_override": config.tools.ffprobe,

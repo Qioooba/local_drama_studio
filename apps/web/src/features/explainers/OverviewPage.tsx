@@ -115,26 +115,30 @@ export function ExplainerOverviewPage() {
         actions={currentRun ? <span className="badge blue">{runStatusLabel(currentRun.projected_status)}</span> : <span className="badge">尚未开始</span>}
       >
         <StateNotice state={state} />
-        {!state ? (
-          <>
-            <div className="explainer-actions">
-              <button
-                type="button"
-                className="primary-action"
-                disabled={start.isPending}
-                onClick={() => start.mutate()}
-              >
-                {start.isPending ? "正在检查并提交…" : "检查并一键生成"}
-              </button>
-              <button type="button" disabled={!currentRun || control.isPending} onClick={() => control.mutate({ action: "pause" })}>暂停</button>
-              <button type="button" disabled={!currentRun || control.isPending} onClick={() => control.mutate({ action: "resume" })}>继续</button>
-              <button type="button" disabled={!currentRun || control.isPending} onClick={() => control.mutate({ action: "cancel" })}>取消</button>
-              <Link className="explainer-issue-link" to={routes.explainerPage(projectId, "review")}>只修问题</Link>
-            </div>
-            <InlineOk message={feedback} />
-            <InlineError message={error} />
-          </>
-        ) : null}
+        {/*
+          * The production controls stay available in every run state.  They used to
+          * be rendered only when there was no notice, so the moment the run needed a
+          * human decision ("等待处理") the page hid 继续 along with them and the
+          * operator had no way to hand the paused workflow back to the machine.
+          */}
+        <>
+          <div className="explainer-actions">
+            <button
+              type="button"
+              className="primary-action"
+              disabled={start.isPending}
+              onClick={() => start.mutate()}
+            >
+              {start.isPending ? "正在检查并提交…" : "检查并一键生成"}
+            </button>
+            <button type="button" disabled={!currentRun || control.isPending} onClick={() => control.mutate({ action: "pause" })}>暂停</button>
+            <button type="button" disabled={!currentRun || control.isPending} onClick={() => control.mutate({ action: "resume" })}>继续</button>
+            <button type="button" disabled={!currentRun || control.isPending} onClick={() => control.mutate({ action: "cancel" })}>取消</button>
+            <Link className="explainer-issue-link" to={routes.explainerPage(projectId, "review")}>只修问题</Link>
+          </div>
+          <InlineOk message={feedback} />
+          <InlineError message={error} />
+        </>
 
         {overview.data ? (
           <div className="explainer-summary-strip">

@@ -276,14 +276,25 @@ def test_lan_dns_rebinding_host_is_rejected_without_explicit_registration(tmp_pa
     with the client's own ``Host``.  A hostile domain resolving to this LAN server
     satisfies that comparison by itself, so an unconfigured domain-name Host must
     not be trusted even when the token was fetched over GET.
+
+    The Host trust check now also covers reads, because a DNS-rebound GET (which
+    normally sends no ``Origin``) could read project titles, ids and paths.  An
+    unregistered rebound domain therefore cannot even bootstrap a session, and the
+    token below is obtained through a legitimate address so the write path is still
+    exercised end to end.
     """
+
     settings = _lan_settings(tmp_path)
     attacker_host = "rebind.attacker.example:3210"
     with TestClient(create_app(settings), client=("10.8.0.99", 50000)) as client:
         token = client.get(
             "/api/v1/session/bootstrap",
-            headers={"Host": attacker_host, "Origin": f"http://{attacker_host}"},
+            headers={"Host": "10.8.0.20:3210"},
         ).json()["token"]
+        rebound_read = client.get(
+            "/api/v1/session/bootstrap",
+            headers={"Host": attacker_host, "Origin": f"http://{attacker_host}"},
+        )
         rejected = client.post(
             "/api/v1/system/contract",
             headers={
@@ -292,8 +303,12 @@ def test_lan_dns_rebinding_host_is_rejected_without_explicit_registration(tmp_pa
                 "X-Local-Instance-Token": token,
             },
         )
+    # The rebound Host is refused before anything is served, and never reflects it.
+    assert rebound_read.status_code == 403
+    assert rebound_read.json()["error"]["code"] == "UNTRUSTED_HOST"
+    assert attacker_host not in rebound_read.text
     assert rejected.status_code == 403
-    assert rejected.json()["error"]["code"] == "ORIGIN_NOT_ALLOWED"
+    assert rejected.json()["error"]["code"] == "UNTRUSTED_HOST"
 
 
 def test_lan_ip_literal_host_keeps_working_and_registered_host_is_trusted(tmp_path: Path) -> None:
@@ -335,22 +350,28 @@ def test_explicit_trusted_hosts_override_replaces_origin_derived_hosts(tmp_path:
     """An explicit ``trusted_hosts`` list is authoritative, including empty.
 
     ``allowed_origins`` is cleared here so the only possible grant would come from
-    the trusted-host rule, which proves ``trusted_hosts=()`` really denies rather
-    than silently falling back to the origin-derived hosts.
+    the origin-derived host rule or a built-in rule.  ``localhost`` would normally be
+    accepted by the built-in loopback rule, so refusing it proves that
+    ``trusted_hosts=()`` really replaces those rules rather than silently falling
+    back to them.  The Host check now covers reads as well, so the denial happens
+    before the write is even evaluated.
     """
+
     settings = _lan_settings(tmp_path, allowed_origins=(), trusted_hosts=())
     with TestClient(create_app(settings), client=("10.8.0.99", 50000)) as client:
-        token = client.get("/api/v1/session/bootstrap", headers={"Host": "localhost:3210"}).json()["token"]
+        bootstrap = client.get("/api/v1/session/bootstrap", headers={"Host": "localhost:3210"})
         rejected = client.post(
             "/api/v1/system/contract",
             headers={
                 "Host": "localhost:3210",
                 "Origin": "http://localhost:3210",
-                "X-Local-Instance-Token": token,
+                "X-Local-Instance-Token": "unused",
             },
         )
+    assert bootstrap.status_code == 403
+    assert bootstrap.json()["error"]["code"] == "UNTRUSTED_HOST"
     assert rejected.status_code == 403
-    assert rejected.json()["error"]["code"] == "ORIGIN_NOT_ALLOWED"
+    assert rejected.json()["error"]["code"] == "UNTRUSTED_HOST"
 
 
 def test_lan_service_emits_cors_headers_for_registered_origins(tmp_path: Path) -> None:

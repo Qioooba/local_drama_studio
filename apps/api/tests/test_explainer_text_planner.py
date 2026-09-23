@@ -568,20 +568,39 @@ def test_storyboard_refuses_a_render_type_outside_the_capability_snapshot(databa
     assert error.value.code == ExplainerErrorCode.CAPABILITY_UNAVAILABLE.value
 
 
-def test_storyboard_never_labels_a_still_image_as_motion(database: Database) -> None:
+def test_storyboard_records_a_coerced_motion_requirement_instead_of_claiming_motion(
+    database: Database,
+) -> None:
+    """A still picture type can never be reported as satisfying ``must_be_motion``.
+
+    The planner used to abort the whole run when the model asked for motion but
+    declared a still type.  This build's picture path is the deterministic
+    still/graphic renderer, so the plan is kept with the declared type, the motion
+    requirement is dropped and the degradation is recorded on the beat — the one
+    thing that must never happen is a beat that still claims ``must_be_motion``
+    while its render type cannot move.
+    """
+
     _frozen_script(database)
     response = _beats_response()
     response["beats"][0]["must_be_motion"] = True
     planner, _ = _planner({"beats": response})
     with database.connect() as connection:
-        with pytest.raises(ExplainerContractError) as error:
-            planner.plan_storyboard(
-                repo=ExplainerRepository(connection),
-                project_id=PROJECT_ID,
-                video_id="video-1",
-                usable_render_types=["STILL_MOTION", "INFOGRAPHIC"],
-            )
-    assert "不能使用静帧" in error.value.message
+        plan = planner.plan_storyboard(
+            repo=ExplainerRepository(connection),
+            project_id=PROJECT_ID,
+            video_id="video-1",
+            usable_render_types=["STILL_MOTION", "INFOGRAPHIC"],
+        )
+    coerced = list(plan.get("motion_coerced_beats") or [])
+    assert coerced, "must_be_motion + still render type must be recorded as coerced"
+    coerced_codes = {str(item["code"]) for item in coerced}
+    for beat in plan["beats"]:
+        if str(beat["code"]) in coerced_codes:
+            assert beat["must_be_motion"] is False
+            assert beat["motion_requirement_coerced"] is True
+        else:
+            assert beat["must_be_motion"] is False or beat["render_type"] in ("I2V", "PARALLAX")
 
 
 def test_storyboard_refuses_an_unknown_segment_or_entity(database: Database) -> None:

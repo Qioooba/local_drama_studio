@@ -89,6 +89,107 @@ def test_decision_table_covers_cancel_pause_delete_and_budget() -> None:
     assert terminal.job_state == "FAILED"
 
 
+def test_pause_resume_then_second_attempt_really_succeeds(workspace, database) -> None:
+    """PR-02: pause → resume → old attempt settles → the next success is a success.
+
+    The pause wrote ``cancel_requested_at`` as the old attempt's cooperative stop
+    flag, and nothing consumed it when that attempt finally settled.  The second
+    attempt therefore read a stale flag and its ``success=True`` completion was
+    decided as ``CANCELLED`` — and the new artifact gate refused publication even
+    earlier, because it checks the same timestamp.
+    """
+
+    service = JobService(database, workspace)
+    job = _job(service, "pause-resume", max_attempts=3)
+    first = service.claim("pause-resume-worker", ["CPU"])
+    assert first is not None
+    assert service.pause(str(job["id"]))["state"] == PAUSED
+    assert service.resume(str(job["id"]))["state"] == PAUSED  # pending: old attempt is live
+
+    # The paused attempt settles; the resume intent makes the Job claimable at once
+    # and the stop flag it was watching is consumed in the same transaction.
+    settled = service.complete(str(first["attempt"]["id"]), str(first["attempt"]["lease_token"]), "pause-resume-worker", success=False, retryable=True)
+    assert settled["job_state"] == QUEUED
+    assert settled["attempt_state"] == CANCELLED
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT cancel_requested_at FROM jobs WHERE id=?", (str(job["id"]),)
+        ).fetchone()
+    assert row["cancel_requested_at"] is None
+
+    second = service.claim("pause-resume-worker", ["CPU"])
+    assert second is not None, "the resumed Job must be claimable"
+    done = service.complete(
+        str(second["attempt"]["id"]), str(second["attempt"]["lease_token"]), "pause-resume-worker", success=True
+    )
+    assert done["attempt_state"] == "SUCCEEDED"
+    assert done["job_state"] == "SUCCEEDED"
+    assert _state(database, str(job["id"])) == "SUCCEEDED"
+
+
+def test_pause_resume_then_lease_expiry_also_clears_the_stop_flag(workspace, database) -> None:
+    """The lease-expiry recovery path settles the old attempt too (PR-02)."""
+
+    service = JobService(database, workspace)
+    job = _job(service, "pause-expiry", max_attempts=3)
+    first = service.claim("pause-expiry-worker", ["CPU"])
+    assert first is not None
+    service.pause(str(job["id"]))
+    service.resume(str(job["id"]))
+    _expire_lease(database, str(first["attempt"]["id"]))
+
+    reconciled = JobService(database, workspace).reconcile()
+    assert reconciled["reconciled"] == 1
+    assert _state(database, str(job["id"])) == QUEUED
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT cancel_requested_at FROM jobs WHERE id=?", (str(job["id"]),)
+        ).fetchone()
+    assert row["cancel_requested_at"] is None
+
+    second = service.claim("pause-expiry-worker", ["CPU"])
+    assert second is not None
+    done = service.complete(
+        str(second["attempt"]["id"]), str(second["attempt"]["lease_token"]), "pause-expiry-worker", success=True
+    )
+    assert done["job_state"] == "SUCCEEDED"
+
+
+def test_cancel_after_resume_still_wins(workspace, database) -> None:
+    """Cancellation must keep outranking a resume in every race window."""
+
+    service = JobService(database, workspace)
+    job = _job(service, "resume-then-cancel", max_attempts=3)
+    first = service.claim("resume-then-cancel-worker", ["CPU"])
+    assert first is not None
+    service.pause(str(job["id"]))
+    service.resume(str(job["id"]))
+    service.cancel(str(job["id"]))
+
+    # The old attempt settles: the explicit cancel still wins, and its flag is not
+    # consumed by a resume that the cancel superseded.
+    settled = service.complete(
+        str(first["attempt"]["id"]), str(first["attempt"]["lease_token"]), "resume-then-cancel-worker",
+        success=False, retryable=True,
+    )
+    assert settled["job_state"] == CANCELLED
+    assert service.claim("resume-then-cancel-worker", ["CPU"]) is None
+
+
+def test_decision_table_marks_only_the_resume_settle_as_flag_consuming() -> None:
+    resume = decide_job_state(
+        JobStateFacts(state=PAUSED, resume_requested=True, attempt_no=1, max_attempts=3), OUTCOME_UNKNOWN
+    )
+    assert resume.consume_stop_flags is True
+    ordinary = decide_job_state(
+        JobStateFacts(state="RUNNING", attempt_no=1, max_attempts=3), OUTCOME_RETRYABLE_FAILURE
+    )
+    assert ordinary.consume_stop_flags is False
+    assert ordinary.job_state == QUEUED
+    paused = decide_job_state(JobStateFacts(state=PAUSED), OUTCOME_UNKNOWN)
+    assert paused.consume_stop_flags is False
+
+
 # --- SS-02: the report's fault matrix ----------------------------------------
 
 
@@ -357,3 +458,4 @@ def test_deleted_job_never_accepts_provider_or_progress_writes(workspace, databa
         lease = connection.execute("SELECT released_at FROM job_resource_leases WHERE attempt_id=?", (attempt_id,)).fetchone()
     assert lease is not None and lease["released_at"] is not None
     assert service.claim("other-worker", ["CPU"]) is None
+

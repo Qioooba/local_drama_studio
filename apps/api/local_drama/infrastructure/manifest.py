@@ -21,11 +21,16 @@ class ManifestSnapshot:
 
     @property
     def version(self) -> str:
-        return str(self.data["manifest_version"])
+        # ``load_manifest`` already refuses a manifest without a non-empty version;
+        # this stays defensive so a hand-built snapshot cannot raise a KeyError.
+        return str(self.data.get("manifest_version") or "")
 
     @property
     def canonical_model_root(self) -> Path:
-        return Path(str(self.data["canonical_model_root"]["path"]))
+        canonical = self.data.get("canonical_model_root")
+        if not isinstance(canonical, dict):
+            return Path("")
+        return Path(str(canonical.get("path") or ""))
 
     @property
     def worker_policy(self) -> str:
@@ -70,6 +75,66 @@ class ManifestSnapshot:
         }
 
 
+def _require_mapping(value: Any, *, field: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ManifestValidationError(
+            f"model_manifest.json 的 {field} 必须是对象", 
+        )
+    return value
+
+
+def _validate_manifest_structure(data: dict[str, Any]) -> None:
+    """Prove every field this module reads actually has the declared shape.
+
+    ``load_manifest`` used to check only the outer type, ``manifest_type``,
+    ``read_only_inventory`` and ``canonical_model_root.path``; everything else was
+    assumed to exist.  A manifest that is *valid JSON* but semantically wrong — a
+    missing ``manifest_version``, ``runtime: null``, ``models: null`` — therefore
+    raised ``KeyError``/``TypeError``/``AttributeError`` straight through the
+    optional startup step and took the whole API down, even though local import,
+    review and CPU post-production do not need the model manifest at all.
+
+    Validation happens here, before any database write, so a rejected manifest can
+    never leave a half-synced state.
+    """
+
+    version = data.get("manifest_version")
+    if not isinstance(version, str) or not version.strip():
+        raise ManifestValidationError("model_manifest.json 的 manifest_version 必须是非空字符串")
+    for field in ("runtime", "h3_capabilities", "authoritative_current_state"):
+        if field in data:
+            _require_mapping(data[field], field=field)
+    runtime = data.get("runtime")
+    if runtime is not None:
+        comfy = runtime.get("comfyui_api")
+        if comfy is not None and not isinstance(comfy, dict):
+            raise ManifestValidationError("model_manifest.json 的 runtime.comfyui_api 必须是对象")
+    current = data.get("authoritative_current_state")
+    if current is not None:
+        for field in ("route_status", "generation_boundary"):
+            value = current.get(field)
+            if value is not None and not isinstance(value, (str, dict)):
+                raise ManifestValidationError(
+                    f"model_manifest.json 的 authoritative_current_state.{field} 类型不合法"
+                )
+        forbidden = current.get("forbidden_assets")
+        if forbidden is not None and not isinstance(forbidden, list):
+            raise ManifestValidationError(
+                "model_manifest.json 的 authoritative_current_state.forbidden_assets 必须是数组"
+            )
+    models = data.get("models")
+    if models is not None:
+        _require_mapping(models, field="models")
+        partitions = models.get("partitions")
+        # ``ProfileService.sync_manifest`` iterates ``partitions.items()``, so a list
+        # here is a semantic error: it used to reach the sync loop and raise a raw
+        # ``AttributeError`` out of the optional startup step.
+        if partitions is not None and not isinstance(partitions, dict):
+            raise ManifestValidationError(
+                "model_manifest.json 的 models.partitions 必须是对象（分区名 -> 组件）"
+            )
+
+
 def load_manifest(path: Path) -> ManifestSnapshot:
     resolved = path.resolve()
     try:
@@ -84,4 +149,5 @@ def load_manifest(path: Path) -> ManifestSnapshot:
     canonical = data.get("canonical_model_root")
     if not isinstance(canonical, dict) or not canonical.get("path"):
         raise ManifestValidationError("模型 manifest 缺少 canonical_model_root.path")
+    _validate_manifest_structure(data)
     return ManifestSnapshot(resolved, hashlib.sha256(raw).hexdigest(), data)

@@ -30,6 +30,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 from local_drama.bootstrap.resource_locator import ResourceLocator
+from local_drama.infrastructure.database.sqlite import sqlite_readonly_uri
 
 SchemaReadinessState = Literal[
     "no_database",
@@ -223,7 +224,7 @@ def inspect_schema_readiness(
         )
     expected = tuple(sorted(expected_heads)) if expected_heads is not None else release_migration_heads()
     try:
-        connection = sqlite3.connect(f"file:{database_path.as_posix()}?mode=ro", uri=True)
+        connection = sqlite3.connect(sqlite_readonly_uri(database_path), uri=True)
     except sqlite3.Error as error:
         return SchemaReadiness(
             state="unreadable",

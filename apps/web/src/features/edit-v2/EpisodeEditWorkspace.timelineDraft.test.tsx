@@ -197,6 +197,83 @@ describe("EpisodeEditWorkspace timeline snapshot (FE-07)", () => {
   });
 });
 
+describe("EpisodeEditWorkspace first save and upstream refresh (TM-01 / TM-02)", () => {
+  beforeEach(() => {
+    draftRegistry.clear();
+    vi.clearAllMocks();
+    vi.mocked(createEpisodeTimelineDraftV2).mockResolvedValue({
+      timeline: { id: "tl-9", episode_id: "e1", revision_no: 1, status: "DRAFT", revision_hash: "e".repeat(64), outcome: "DRAFT_CREATED", idempotent_replay: false },
+    } as never);
+  });
+
+  afterEach(() => {
+    cleanup();
+    draftRegistry.clear();
+  });
+
+  it("creates the first persisted revision when the episode has no timeline yet", async () => {
+    // A newly entered episode with material but ``latest_revision = null``: the
+    // loaded upstream suggestion becomes the baseline, so the old
+    // "signature === baseline ⇒ saved" shortcut answered *saved* without calling
+    // the API and the episode never got a freezable v1.
+    const fact = { ...workspaceFact(), latest_revision: null, allowed_actions: ["CREATE_DRAFT", "FREEZE_TIMELINE"] };
+    vi.mocked(getEpisodeEditWorkspaceV2).mockResolvedValue({ workspace: fact } as never);
+    mount();
+    await screen.findByRole("heading", { name: "EP01 时间线" });
+
+    expect(draftRegistry.get("timeline-edit:e1")?.dirty).toBe(false);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存新草稿" }));
+    });
+    await waitFor(() => expect(createEpisodeTimelineDraftV2).toHaveBeenCalledTimes(1));
+    const payload = vi.mocked(createEpisodeTimelineDraftV2).mock.calls[0][1] as Record<string, unknown>;
+    expect(payload.expected_latest_revision_id).toBeNull();
+    expect(payload.clips).toHaveLength(2);
+  });
+
+  it("creates a new revision when the loaded revision is stale", async () => {
+    const fact = { ...workspaceFact(), freshness: "STALE", allowed_actions: ["CREATE_DRAFT", "FREEZE_TIMELINE"] };
+    vi.mocked(getEpisodeEditWorkspaceV2).mockResolvedValue({ workspace: fact } as never);
+    mount();
+    await screen.findByRole("heading", { name: "EP01 时间线" });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存新草稿" }));
+    });
+    await waitFor(() => expect(createEpisodeTimelineDraftV2).toHaveBeenCalledTimes(1));
+  });
+
+  it("keeps unsaved edits when only the upstream fingerprint changed", async () => {
+    // Same revision id, different upstream_fingerprint: the old guard compared
+    // revision ids only, so this refresh silently reset the local edit to 1s.
+    const first = { ...workspaceFact() };
+    const second = { ...workspaceFact(), upstream_fingerprint: "f".repeat(64) };
+    vi.mocked(getEpisodeEditWorkspaceV2).mockResolvedValue({ workspace: first } as never);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter><EpisodeEditWorkspace projectId="p1" episodeId="e1" /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByRole("heading", { name: "EP01 时间线" });
+
+    fireEvent.change(screen.getByLabelText("成片时长（秒）"), { target: { value: "1.5" } });
+    expect((screen.getByLabelText("成片时长（秒）") as HTMLInputElement).value).toBe("1.50");
+    expect(draftRegistry.get("timeline-edit:e1")?.dirty).toBe(true);
+
+    // A background refresh returns the same revision id with new upstream inputs.
+    vi.mocked(getEpisodeEditWorkspaceV2).mockResolvedValue({ workspace: second } as never);
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["post-edit-v2", "e1"] });
+    });
+
+    // The local 1.5s edit must survive, keep dirty, and be reported as a server move.
+    await waitFor(() => expect(screen.getByText(/未保存编排已保留/)).toBeTruthy());
+    expect((screen.getByLabelText("成片时长（秒）") as HTMLInputElement).value).toBe("1.50");
+    expect(draftRegistry.get("timeline-edit:e1")?.dirty).toBe(true);
+  });
+});
+
 describe("EpisodeEditWorkspace media seek (FE-08)", () => {
   beforeEach(() => {
     draftRegistry.clear();

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import threading
 import time
 import uuid
@@ -152,7 +153,19 @@ class WorkerSessionService:
             result.append(item)
         return result
 
-    def heartbeat(self, session_id: str, *, lease_seconds: int = 30) -> dict[str, Any]:
+    def heartbeat(
+        self, session_id: str, *, lease_seconds: int = 30, allow_expired: bool = False
+    ) -> dict[str, Any]:
+        """Renew a worker session lease.
+
+        ``allow_expired`` is for the owning process itself.  A local SQLite
+        database serialises writers, so a worker that is blocked inside one long
+        render can miss its lease through no fault of its own; when the lease has
+        already lapsed the renewing process takes it back instead of being declared
+        STALE.  An outside observer (the default) still marks the session STALE so
+        a genuinely dead worker is never resurrected by a bystander.
+        """
+
         if lease_seconds < 5 or lease_seconds > 3600:
             raise DomainRuleError("WORKER_SESSION_LEASE_INVALID", "WorkerSession lease 必须为 5—3600 秒")
         current = _now()
@@ -163,11 +176,12 @@ class WorkerSessionService:
             if str(row["status"]) not in ACTIVE_SESSION_STATES:
                 raise DomainRuleError("WORKER_SESSION_NOT_ACTIVE", "WorkerSession 当前不接受 heartbeat", {"status": row["status"]})
             if datetime.fromisoformat(str(row["lease_expires_at"])) <= current:
-                connection.execute(
-                    "UPDATE worker_sessions SET status='STALE',updated_at=?,revision=revision+1 WHERE id=?",
-                    (_iso(current), session_id),
-                )
-                raise DomainRuleError("WORKER_SESSION_EXPIRED", "WorkerSession heartbeat 已过期")
+                if not allow_expired:
+                    connection.execute(
+                        "UPDATE worker_sessions SET status='STALE',updated_at=?,revision=revision+1 WHERE id=?",
+                        (_iso(current), session_id),
+                    )
+                    raise DomainRuleError("WORKER_SESSION_EXPIRED", "WorkerSession heartbeat 已过期")
             if str(row["status"]) == "BACKING_OFF":
                 connection.execute(
                     """UPDATE worker_sessions SET heartbeat_at=?,lease_expires_at=?,
@@ -509,12 +523,26 @@ class WorkerSupervisor:
         heartbeat_errors: list[BaseException] = []
 
         def pump_heartbeat() -> None:
+            # A single failed heartbeat used to end this thread, and the supervisor
+            # then treated the worker session as fatally unhealthy and stopped the
+            # whole embedded worker.  A local SQLite database serialises writers, so a
+            # *transient* ``database is locked`` while a long render commits its
+            # bookkeeping is a scheduling fact — the heartbeat is retried instead of
+            # killing the worker that is still doing the work.
+            consecutive_failures = 0
             while not heartbeat_stop.wait(10.0):
                 try:
-                    self.sessions.heartbeat(session_id)
+                    # This thread belongs to the process that owns the session: if the
+                    # lease lapsed while the worker was blocked, it takes the lease back
+                    # rather than being declared STALE by its own heartbeat.
+                    self.sessions.heartbeat(session_id, allow_expired=True)
                 except BaseException as error:
+                    consecutive_failures += 1
+                    if consecutive_failures < 12:
+                        continue
                     heartbeat_errors.append(error)
                     return
+                consecutive_failures = 0
 
         heartbeat_thread = threading.Thread(
             target=pump_heartbeat,
@@ -528,7 +556,15 @@ class WorkerSupervisor:
                     break
                 if heartbeat_errors:
                     raise DomainRuleError("WORKER_SESSION_HEARTBEAT_FAILED", "WorkerSession 后台 heartbeat 失败")
-                self.sessions.heartbeat(session_id)
+                # The loop's own renewal must not kill the worker over a transient
+                # lock either; the background thread is the authority on giving up.
+                try:
+                    self.sessions.heartbeat(session_id, allow_expired=True)
+                except DomainRuleError as error:
+                    if getattr(error, "code", "") in {"WORKER_SESSION_NOT_ACTIVE", "WORKER_SESSION_NOT_FOUND"}:
+                        raise
+                except sqlite3.OperationalError:
+                    continue
                 try:
                     requested_channels = channels or ["CPU"]
                     now_monotonic = time.monotonic()

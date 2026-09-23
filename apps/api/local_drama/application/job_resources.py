@@ -35,6 +35,11 @@ PYTORCH_JOB_TYPES = frozenset(
         "LIPSYNC_GENERATION",
         "RAG_RETRIEVAL",
         "VOICE_CLONE",
+        # The explainer narration stages run the offline VoxCPM2 / Qwen3 subprocess
+        # runtimes: CPU-channel jobs that own the same single CUDA device, so they
+        # must take the PYTORCH lease exactly like LIPSYNC_GENERATION does.
+        "NARRATION_TTS",
+        "NARRATION_ALIGN",
     }
 )
 

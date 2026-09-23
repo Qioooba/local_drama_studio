@@ -51,6 +51,7 @@ def mock_story_pipeline_ai(monkeypatch: pytest.MonkeyPatch) -> None:
     def generate(
         self, *, episode_specs, visual_style, target_seconds, profile_version_id=None,
         cancel_check=None, on_episode=None, resume_episodes=None, on_episode_checkpoint=None,
+        existing_analysis=None,
     ):
         del self, profile_version_id, cancel_check, target_seconds
         episodes = [dict(item) for item in (resume_episodes or [])]
@@ -90,12 +91,38 @@ def mock_story_pipeline_ai(monkeypatch: pytest.MonkeyPatch) -> None:
              "importance": "CORE", "kind": "PROP", "description": intro}
             for name, intro in [("九阳神丹", "散发微光、影响命运走向的关键丹药。"), ("斩龙神剑", "与宗门冲突紧密相关的关键神剑。")]
         ]
+        # PR-03: mirror the real service's whole-drama accumulation, so a continuation
+        # cannot be seen to erase assets or continuity facts an earlier batch found.
+        prior = existing_analysis if isinstance(existing_analysis, dict) else {}
+        prior_assets = prior.get("assets") if isinstance(prior.get("assets"), dict) else {}
+        prior_bible = prior.get("story_bible") if isinstance(prior.get("story_bible"), dict) else {}
+
+        def _accumulate(key, fresh):
+            merged, seen = [], set()
+            for row in [*(prior_assets.get(key) or []), *fresh]:
+                name = str(row.get("name") or "").strip()
+                identity = name.casefold()
+                if not name or identity in seen:
+                    continue
+                seen.add(identity)
+                merged.append(row)
+            return merged
+
+        characters = _accumulate("characters", characters)
+        scenes = _accumulate("scenes", scenes)
+        props = _accumulate("props", props)
+        facts: list[str] = []
+        for source in (prior_bible.get("continuity_facts") or [], ["林枫保留前世记忆"]):
+            for fact in source:
+                text = str(fact).strip()
+                if text and text.casefold() not in {existing.casefold() for existing in facts}:
+                    facts.append(text)
         return {
             "story_bible": {
                 "title": "逆命仙途", "logline": "重生少年以旧日记忆逆转命运。", "synopsis": "林枫重生后与顾清雪共同面对追兵及宗门权力。",
                 "central_conflict": "林枫改变命运的意志与既有宗门秩序冲突。",
                 "world_rules": ["力量需要代价"], "visual_style": visual_style,
-                "continuity_facts": ["林枫保留前世记忆"],
+                "continuity_facts": facts,
             },
             "episodes": episodes,
             "assets": {"characters": characters, "scenes": scenes, "props": props},

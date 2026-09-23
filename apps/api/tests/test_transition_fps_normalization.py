@@ -177,10 +177,13 @@ def test_preflight_freezes_the_exact_render_plan(workspace, database) -> None:
     assert set(plan) == {
         "fps_num",
         "fps_den",
+        "fps_source",
         "time_origin_us",
         "timeline_span_us",
         "leading_blank_us",
         "transition_overlap_us",
+        "transitions",
+        "expected_video_frames",
     }
     assert plan["time_origin_us"] == 0
     assert plan["transition_overlap_us"] > 0

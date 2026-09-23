@@ -14,10 +14,27 @@ import {
   selectExplainerBeatCandidate,
 } from "../../generated/api";
 import { queryKeys } from "../../query/queryKeys";
-import { MediaPlaceholder, Panel, SettingRow, StateNotice, type PageState } from "./components";
+import {
+  InlineError,
+  InlineOk,
+  MediaPlaceholder,
+  Panel,
+  SettingRow,
+  StateNotice,
+  type PageState,
+} from "./components";
 import { RENDER_TYPE_LABELS, formatMs, plannedVsActual } from "./viewModels";
 import { useExplainerBeatCandidates, useExplainerBeats, useExplainerEditions } from "./useExplainerQueries";
 import "./explainers.css";
+
+/** FE-A06: the impact of replacing a shot, shown as a panel instead of a lost string. */
+type BeatImpact = {
+  affected_edition_count?: number;
+  affected_edition_ids?: string[];
+  stale_render_count?: number;
+  reusable_asset_count?: number;
+  note?: string | null;
+};
 
 export function ExplainerStoryboardPage() {
   const { projectId = "" } = useParams();
@@ -33,6 +50,10 @@ export function ExplainerStoryboardPage() {
   const candidatesQuery = useExplainerBeatCandidates(projectId, selectedBeatId);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [impactReport, setImpactReport] = useState<BeatImpact | null>(null);
+  // FE-A06: the feedback belongs to the beat/candidate it was produced for, so
+  // switching beats clears it instead of leaving a stale message on screen.
+  const [feedbackBeatId, setFeedbackBeatId] = useState<string | null>(null);
 
   const adopt = useMutation({
     mutationFn: async ({ candidateId, lock }: { candidateId: string; lock: boolean }) =>
@@ -50,21 +71,36 @@ export function ExplainerStoryboardPage() {
           ? `已采用候选；实际类型与计划不同，已记录回退原因：${String(record.fallback_reason ?? "未提供")}。`
           : "已采用候选；原版本仍可回看，批次操作不会改动人工锁定镜头。",
       );
+      setFeedbackBeatId(selectedBeatId);
       await queryClient.invalidateQueries({ queryKey: queryKeys.explainers.all });
     },
-    onError: (mutationError) => setError(mutationError instanceof Error ? mutationError.message : String(mutationError)),
+    onError: (mutationError) => {
+      setFeedback(null);
+      setFeedbackBeatId(null);
+      // A revision conflict keeps the current selection and asks for a refresh
+      // instead of leaving a dead button behind.
+      const message = mutationError instanceof Error ? mutationError.message : String(mutationError);
+      setError(
+        message.includes("CANDIDATE_REVISION_CONFLICT") || message.includes("409")
+          ? `${message}（画面段已被其他操作更新，已保留当前选择；请刷新后重试）`
+          : message,
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.explainers.all });
+    },
   });
 
   const impact = useMutation({
     mutationFn: () => getExplainerBeatImpact(projectId, selectedBeatId ?? ""),
     onSuccess: (result) => {
       setError(null);
-      const record = result as Record<string, unknown>;
-      setFeedback(
-        `更换该镜头会使 ${Number(record.affected_edition_count ?? 0)} 个 edition 的后续时码与渲染过期；无依赖的图像素材可复用。`,
-      );
+      setImpactReport(result as BeatImpact);
+      setFeedback(null);
+      setFeedbackBeatId(null);
     },
-    onError: (mutationError) => setError(mutationError instanceof Error ? mutationError.message : String(mutationError)),
+    onError: (mutationError) => {
+      setImpactReport(null);
+      setError(mutationError instanceof Error ? mutationError.message : String(mutationError));
+    },
   });
 
   const state = useMemo<PageState | null>(() => {
@@ -181,6 +217,14 @@ export function ExplainerStoryboardPage() {
               label={`画面段 ${selectedBeat.code} 预览`}
               detail={selectedBeat.visual_intent ? String(selectedBeat.visual_intent).slice(0, 120) : "尚未生成媒体"}
             />
+            {/* FE-A06: reading the candidate list is its own failure mode and must be
+                distinguishable from "this beat has no candidates yet". */}
+            {candidatesQuery.isError ? (
+              <div className="explainer-inline-error" role="alert">
+                <p>候选列表读取失败：{candidatesQuery.error instanceof Error ? candidatesQuery.error.message : "未知错误"}。这不表示该画面段没有候选。</p>
+                <button type="button" className="pipeline-button quiet" onClick={() => { void candidatesQuery.refetch(); }}>重新读取候选</button>
+              </div>
+            ) : null}
             <div className="explainer-candidate-grid">
               {(candidatesQuery.data?.candidates as Array<Record<string, unknown>> | undefined ?? []).map((candidate) => (
                 <button
@@ -199,10 +243,13 @@ export function ExplainerStoryboardPage() {
                 </button>
               ))}
               {candidatesQuery.isPending ? <p className="muted">正在载入候选…</p> : null}
-              {candidatesQuery.data && ((candidatesQuery.data.candidates as unknown[]) ?? []).length === 0
+              {candidatesQuery.isSuccess && ((candidatesQuery.data?.candidates as unknown[]) ?? []).length === 0
                 ? <p className="muted">还没有候选。普通镜头初次 1 个候选，必要时最多 2 次创作修复；关键人物设定初次 2 个候选。</p>
                 : null}
             </div>
+            {/* FE-A06: adopting, locking and the impact preview all report here. */}
+            <InlineError message={feedbackBeatId === null || feedbackBeatId === selectedBeatId ? error : null} />
+            <InlineOk message={feedbackBeatId === selectedBeatId ? feedback : null} />
           </>
         ) : <p className="muted">选择一个画面段查看候选与要求。</p>}
       </Panel>
@@ -234,6 +281,20 @@ export function ExplainerStoryboardPage() {
               以人工身份锁定当前候选
             </button>
           </div>
+          {/* FE-A06: the impact preview gets a real panel instead of a transient,
+              invisible string. */}
+          {impactReport && (
+            <div className="explainer-impact-panel" aria-label="更换影响">
+              <h6>更换影响</h6>
+              <SettingRow label="受影响输出版本" value={`${Number(impactReport.affected_edition_count ?? 0)} 个`} />
+              <SettingRow label="将过期的渲染" value={`${Number(impactReport.stale_render_count ?? 0)} 个`} />
+              <SettingRow label="可复用素材" value={`${Number(impactReport.reusable_asset_count ?? 0)} 项（无依赖的图像素材）`} />
+              {(impactReport.affected_edition_ids ?? []).length > 0 && (
+                <small>版本：{(impactReport.affected_edition_ids ?? []).map((id) => String(id).slice(0, 8)).join("、")}</small>
+              )}
+              <small>{String(impactReport.note ?? "更换该镜头会使后续时码与渲染过期；已批准的人工锁定镜头不会被批次操作改动。")}</small>
+            </div>
+          )}
         </Panel>
 
         <Panel title="低抽卡机制">

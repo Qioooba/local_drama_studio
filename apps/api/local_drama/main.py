@@ -296,6 +296,29 @@ def _register_model_manifest(app: FastAPI, database: Database, settings: Setting
             error_type=type(error).__name__,
             error_code=str(getattr(error, "code", "")),
         )
+    except Exception as error:  # noqa: BLE001 - the optional step gets its own boundary
+        # This step is optional: the model manifest may only make *model*
+        # capabilities unavailable.  A semantic manifest error previously escaped as
+        # a raw KeyError/TypeError/AttributeError and aborted the whole lifespan, so
+        # the boundary is deliberately wider here than the three named families.
+        # ``BaseException`` is still not caught, and the failure is recorded as
+        # ``failed`` rather than ``completed``.
+        app.state.manifest_sync = None
+        app.state.llm_sync = None
+        _LOGGER.exception(
+            "api.startup_step_degraded step=%s required=false error_type=%s error=%s",
+            INIT_STEP_MODEL_MANIFEST,
+            type(error).__name__,
+            str(error)[:300],
+        )
+        return InitializationStep(
+            name=INIT_STEP_MODEL_MANIFEST,
+            required=False,
+            status="failed",
+            detail=f"{type(error).__name__}: {str(error)[:280]}",
+            error_type=type(error).__name__,
+            error_code="MODEL_MANIFEST_INVALID",
+        )
     _LOGGER.info("api.startup_step_ready step=%s required=false", INIT_STEP_MODEL_MANIFEST)
     return InitializationStep(
         name=INIT_STEP_MODEL_MANIFEST,

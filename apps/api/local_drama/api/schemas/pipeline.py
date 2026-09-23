@@ -236,6 +236,9 @@ class PipelineApplyPreviewResponse(BaseModel):
     impact: dict[str, object]
     quality_report: dict[str, object]
     can_apply: bool
+    #: PR-05: which draft revision is already applied, and whether THIS revision is
+    #: the one that was applied.  A newer revision has an applicable delta.
+    apply_watermark: dict[str, object] = Field(default_factory=dict)
 
 
 class RetryPipelineRequest(BaseModel):

@@ -32000,7 +32000,7 @@
           "explainers"
         ],
         "summary": "List Explainers",
-        "description": "List explainer workspaces with an explicit type filter.\n\nExplainer workspaces are never counted into drama episode numbers, and the\nresponse states the product kind of every row (design §5.1).",
+        "description": "List explainer workspaces with real keyset pagination.\n\nThe declared ``cursor`` used to be ignored entirely: the SQL had no cursor\npredicate and ``next_cursor`` was always ``null``, so work beyond the first\n``limit`` rows could not be reached at all — 101 projects with ``limit=100``\nreported 100 rows and no way to fetch the 101st.  The listing now pages by the\n``(updated_at DESC, id ASC)`` sort key, runs the search filter in SQL, and\nderives ``edition_count`` / ``open_issue_count`` with two bounded aggregate\nqueries instead of two queries per row.",
         "operationId": "listExplainers",
         "parameters": [
           {
@@ -32034,13 +32034,30 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "maxLength": 64
+                  "maxLength": 256
                 },
                 {
                   "type": "null"
                 }
               ],
               "title": "Cursor"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
             }
           }
         ],
@@ -32070,7 +32087,7 @@
           "explainers"
         ],
         "summary": "Create Explainer",
-        "description": "Create the EXPLAINER project together with its video and input references.\n\nProject and video are created in one transaction so a failure never leaves an\norphan project behind (design §14).",
+        "description": "Create the EXPLAINER project together with its video and input references.\n\nProject, video, durable input projection and the composite idempotency receipt\nare written in one transaction by\n:class:`~local_drama.application.explainers.commands.ExplainerCreationService`.\nA failure therefore leaves no orphan project, a replay with the same key and\nbody returns the same ids, and the same key with a different body is a\nstructured conflict.",
         "operationId": "createExplainer",
         "parameters": [
           {
@@ -32087,6 +32104,22 @@
                 }
               ],
               "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "X-Operation-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Operation-Id"
             }
           }
         ],
@@ -32289,6 +32322,56 @@
         },
         "responses": {
           "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/claims/{claim_id}/evidence": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Get Explainer Claim Evidence",
+        "description": "FE-A11: the frozen evidence windows behind one fact.\n\nThe fact ledger only showed code/status/importance, so a conflicting fact could\nnot be inspected: ``claim_span_records`` already joined the claim to its source\nand to the exact saved span, and nothing exposed it.  Each entry carries the\nreadable quote and its offsets, so the page can open the sentence rather than the\nwhole document.",
+        "operationId": "getExplainerClaimEvidence",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "claim_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Claim Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
@@ -51714,6 +51797,11 @@
           "can_apply": {
             "type": "boolean",
             "title": "Can Apply"
+          },
+          "apply_watermark": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Apply Watermark"
           }
         },
         "type": "object",

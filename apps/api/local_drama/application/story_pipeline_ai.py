@@ -318,7 +318,15 @@ class FullStoryAIGenerationService:
         if not value["characters"]:
             raise DomainRuleError("PIPELINE_LLM_CHARACTERS_REQUIRED", "大模型未识别出核心人物")
 
-    def _synthesise(self, client: LocalLLMClient, system: str, payload: Any, visual_style: str) -> dict[str, Any]:
+    def _synthesise(
+        self,
+        client: LocalLLMClient,
+        system: str,
+        payload: Any,
+        visual_style: str,
+        *,
+        previous_digests: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         prompt = (
             f"请根据逐集提纲建立精简的全剧创作记忆和可复用视觉资产。统一视觉方向：{visual_style}。\n"
             "创作记忆只保留故事概述、核心冲突、世界规则和必须跨集保持一致的事实。"
@@ -328,6 +336,14 @@ class FullStoryAIGenerationService:
             "一次性路人、普通家具、动作、表情和对白片段不要建档；同一实体的别名必须合并。\n\n输入：\n"
             + json.dumps(payload, ensure_ascii=False)
         )
+        if previous_digests:
+            # PR-03: earlier batches are part of the same drama.  Without them the
+            # synthesis only ever saw the windows generated in this batch, so each
+            # continuation replaced the whole-drama memory.
+            prompt += (
+                "\n\n此前已确认的分集（必须一并纳入全剧记忆与资产，不得丢弃其中出现过的核心人物/场景/道具）：\n"
+                + json.dumps(previous_digests, ensure_ascii=False)
+            )
         result = client.chat_json(
             system,
             prompt,
@@ -459,6 +475,7 @@ class FullStoryAIGenerationService:
         on_episode: Callable[[int, int], None] | None = None,
         resume_episodes: list[dict[str, Any]] | None = None,
         on_episode_checkpoint: Callable[[list[dict[str, Any]], int, int], None] | None = None,
+        existing_analysis: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         resolved_client, model_info = self.resolve_client(profile_version_id)
         client = _CountingLLMClient(resolved_client)
@@ -513,7 +530,27 @@ class FullStoryAIGenerationService:
                 on_episode(index, len(episode_specs))
 
         try:
-            synthesis = self._synthesise(client, system, [self._compact_digest(item) for item in episodes], visual_style)
+            # PR-03: a continuing batch must synthesise the WHOLE drama, not just the
+            # episodes it happened to generate.  The audit saw batch 1 discover
+            # 角色1 and batch 2 discover 角色2, after which ``assets.characters`` became
+            # ``[角色2]`` and the continuity memory kept only chapter 2's facts: the
+            # earlier, still-visible episodes lost the characters they were built
+            # around.  The earlier compact digests are replayed into the synthesis and
+            # the earlier assets are merged back afterwards.
+            previous_episodes = [
+                dict(item)
+                for item in ((existing_analysis or {}).get("episodes") or [])
+                if isinstance(item, dict)
+            ]
+            previous_assets = (existing_analysis or {}).get("assets")
+            previous_bible = (existing_analysis or {}).get("story_bible")
+            synthesis = self._synthesise(
+                client,
+                system,
+                [self._compact_digest(item) for item in episodes],
+                visual_style,
+                previous_digests=[self._compact_digest(item) for item in previous_episodes],
+            )
         except DomainRuleError:
             raise
         except Exception as error:
@@ -523,19 +560,51 @@ class FullStoryAIGenerationService:
         for key, kind in (("characters", "CHARACTER"), ("scenes", "SCENE"), ("props", "PROP")):
             clean: list[dict[str, Any]] = []
             seen: set[str] = set()
-            for item in synthesis[key]:
+            # PR-03: earlier assets are carried first, so a continuation can only ADD
+            # to the drama's cast and locations.  A same-named entry from this batch
+            # still wins (the newest description is the most complete), but an entity
+            # that only an earlier chapter introduced can never silently disappear.
+            for item in [
+                *[row for row in (previous_assets or {}).get(key, []) if isinstance(row, dict)],
+                *[row for row in synthesis[key] if isinstance(row, dict)],
+            ]:
                 name = _text(item.get("name"))
                 identity = name.casefold()
                 if not name or identity in seen:
                     continue
+                if not all(_text(item.get(field)) for field in ("name", "introduction", "visual_prompt")):
+                    continue
                 seen.add(identity)
-                item["name"] = name
-                item["kind"] = kind
-                item["description"] = _text(item.get("introduction"))
-                clean.append(item)
+                carried = dict(item)
+                carried["name"] = name
+                carried["kind"] = kind
+                carried["description"] = _text(carried.get("introduction"))
+                clean.append(carried)
                 if len(clean) >= limits[key]:
                     break
             synthesis[key] = clean
+        bible = dict(synthesis["story_bible"])
+        if isinstance(previous_bible, dict):
+            # Continuity memory accumulates by fact, so a later batch cannot erase
+            # what production already committed to.
+            facts: list[str] = []
+            for source in (previous_bible.get("continuity_facts") or [], bible.get("continuity_facts") or []):
+                for fact in source:
+                    text = _text(fact)
+                    if text and text.casefold() not in {existing.casefold() for existing in facts}:
+                        facts.append(text)
+            bible["continuity_facts"] = facts[:60]
+            rules: list[str] = []
+            for source in (previous_bible.get("world_rules") or [], bible.get("world_rules") or []):
+                for rule in source:
+                    text = _text(rule)
+                    if text and text.casefold() not in {existing.casefold() for existing in rules}:
+                        rules.append(text)
+            bible["world_rules"] = rules[:40]
+            for field in ("title", "logline", "synopsis", "central_conflict"):
+                if not _text(bible.get(field)) and _text(previous_bible.get(field)):
+                    bible[field] = previous_bible[field]
+        synthesis["story_bible"] = bible
 
         return {
             "story_bible": synthesis["story_bible"],

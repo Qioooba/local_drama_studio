@@ -9,6 +9,7 @@ import { listAdaptationSources, type SourceVersionSummary } from "../story-adapt
 import {
   applyPipelineRun,
   cancelPipelineRun,
+  continuePipelineAnalysis,
   getLatestPipeline,
   getPipelineRun,
   getWholeDramaStatus,
@@ -243,6 +244,7 @@ export function OneClickPipelineWorkbench({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [discardedUploadNotice, setDiscardedUploadNotice] = useState(false);
   const [restoredDraftNotice, setRestoredDraftNotice] = useState(false);
+  const [postSubmitNotice, setPostSubmitNotice] = useState<string | null>(null);
   const [manuscriptVersion, setManuscriptVersion] = useState(0);
   const [configuring, setConfiguring] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -476,28 +478,67 @@ export function OneClickPipelineWorkbench({
       : { endpoint: "STRUCTURE_ONLY" },
   });
 
+  //: The immutable input of one launch attempt.  Every callback reads this
+  //: snapshot instead of the live form, so a later edit can never be reported as
+  //: "already submitted".
+  type LaunchSnapshot = {
+    payload: ReturnType<typeof startPayload>;
+    manuscriptVersion: number;
+    pasteText: string;
+    activeSource: ActiveSource | null;
+  };
+
   const launchMutation = useMutation({
+    // The payload, the manuscript version and the source intent are frozen once,
+    // here, and the callbacks only ever act on that snapshot.  The old callback
+    // read ``rawTextRef.current``/``activeSourceRef.current`` — whatever the form
+    // held when the response arrived — so a manuscript typed *while* the preflight
+    // was in flight was marked as submitted and its draft protection was deleted.
     mutationFn: async () => {
-      const payload = startPayload();
-      const preflight = await preflightStoryPipeline(projectId, payload);
+      const snapshot: LaunchSnapshot = {
+        payload: startPayload(),
+        manuscriptVersion: manuscriptVersionRef.current,
+        pasteText: rawTextRef.current,
+        activeSource: activeSourceRef.current,
+      };
+      const preflight = await preflightStoryPipeline(projectId, snapshot.payload);
       if (!preflight.ai.ready) throw new Error(preflight.ai.message || "故事解析模型尚未就绪");
-      return startOneClickPipeline(projectId, payload);
+      const { run: nextRun } = await startOneClickPipeline(projectId, snapshot.payload);
+      return { nextRun, snapshot };
     },
-    onSuccess: ({ run: nextRun }) => {
+    onSuccess: ({ nextRun, snapshot }) => {
       queryClient.setQueryData(latestKey, { run: nextRun });
       setSelectedRunId(null);
       setConfiguring(false);
       void queryClient.invalidateQueries({ queryKey: historyKey });
-      // The manuscript has been submitted: the local buffer is no longer an
-      // unsaved draft, but an unsuccessful launch must keep it.
+      const current = manuscriptVersionRef.current;
+      const unchanged =
+        current === snapshot.manuscriptVersion &&
+        rawTextRef.current === snapshot.pasteText &&
+        activeSourceRef.current === snapshot.activeSource;
+      if (!unchanged) {
+        // The operator kept editing: the submitted version is recorded as the new
+        // baseline, but the newer text stays dirty and keeps its protection.
+        manuscriptBaselineRef.current = {
+          pasteText: snapshot.pasteText,
+          activeSource: snapshot.activeSource,
+        };
+        setRestoredDraftNotice(false);
+        setPostSubmitNotice("已提交上一版文稿；当前还有未提交的改动，离开页面仍会提示保存。");
+        publishManuscript(current, manuscriptDirty(rawTextRef.current, activeSourceRef.current));
+        return;
+      }
+      // Exactly the submitted manuscript is in the form: the local buffer is no
+      // longer an unsaved draft.
       clearManuscriptDraft(projectId);
       manuscriptSessionBuffer.delete(projectId);
       manuscriptBaselineRef.current = {
-        pasteText: rawTextRef.current,
-        activeSource: activeSourceRef.current,
+        pasteText: snapshot.pasteText,
+        activeSource: snapshot.activeSource,
       };
       setRestoredDraftNotice(false);
-      publishManuscript(manuscriptVersionRef.current, false);
+      setPostSubmitNotice(null);
+      publishManuscript(current, false);
     },
   });
   const cancelMutation = useMutation({
@@ -518,6 +559,31 @@ export function OneClickPipelineWorkbench({
     },
     onSuccess: ({ run: nextRun }) => {
       queryClient.setQueryData(latestKey, { run: nextRun });
+      setSelectedRunId(null);
+      void queryClient.invalidateQueries({ queryKey: historyKey });
+    },
+  });
+  // PR-07: the backend exposes a durable cursor, but nothing in the product called
+  // `continuePipelineAnalysis`, so a PARTIAL long manuscript had no way forward from
+  // the UI.  The button submits the SERVER's cursor with a fresh operation key and
+  // shows the Job's real state.
+  const continueMutation = useMutation({
+    mutationFn: () => {
+      if (!run) throw new Error("没有可续接的分析");
+      const cursor = run.analysis_cursor;
+      const sourceSha = run.draft?.source_coverage?.source_sha256;
+      if (!cursor || !cursor.has_more_windows) throw new Error("当前没有待处理的输入窗口");
+      if (!sourceSha) throw new Error("缺少已冻结的原稿哈希，无法安全续接");
+      return continuePipelineAnalysis(
+        projectId,
+        run.run_id,
+        run.revision,
+        sourceSha,
+        cursor.next_window_index,
+      );
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData(latestKey, { run: result.run });
       setSelectedRunId(null);
       void queryClient.invalidateQueries({ queryKey: historyKey });
     },
@@ -813,6 +879,7 @@ export function OneClickPipelineWorkbench({
             </label>
           )}
           {restoredDraftNotice ? <p className="pipeline-alert" role="status">已恢复尚未提交的原稿草稿；它不会自动上传给 AI，“保存并切换”会把草稿留在本机以便再次打开。</p> : null}
+          {postSubmitNotice ? <p className="pipeline-alert" role="status">{postSubmitNotice}</p> : null}
           {uploadError && <p className="pipeline-alert error" role="alert">{uploadError}</p>}
 
           <div className="pipeline-section-heading"><span>2</span><div><strong>选择成片方向</strong><small>其余参数由项目默认值和模型能力自动决定</small></div></div>
@@ -929,6 +996,41 @@ export function OneClickPipelineWorkbench({
                   {sourceCoverage.resume.resume_unit_number ? `（第 ${sourceCoverage.resume.resume_unit_number} 个分析单元）` : ""}
                   {sourceCoverage.resume.resume_character_offset_in_unit != null ? `，单元内字符偏移 ${sourceCoverage.resume.resume_character_offset_in_unit}` : ""}。
                 </small>
+              )}
+              {run.analysis_cursor && (
+                <p>
+                  输入窗口 {run.analysis_cursor.completed_window_count} / {run.analysis_cursor.total_window_count}
+                  {run.analysis_cursor.has_more_windows
+                    ? `，下一批从第 ${run.analysis_cursor.next_window_index + 1} 个窗口开始。`
+                    : "，全部窗口已处理。"}
+                </p>
+              )}
+              {/* PR-07: the durable cursor existed on the server with no UI entry, so a
+                  PARTIAL long manuscript could not be finished from the product. */}
+              {run.analysis_cursor?.has_more_windows && (
+                <div className="pipeline-actions">
+                  <button
+                    type="button"
+                    className="pipeline-button"
+                    disabled={continueMutation.isPending}
+                    onClick={() => continueMutation.mutate()}
+                  >
+                    {continueMutation.isPending
+                      ? "正在提交下一批…"
+                      : `继续解析剩余内容（还有 ${Math.max(0, run.analysis_cursor.total_window_count - run.analysis_cursor.completed_window_count)} 个窗口）`}
+                  </button>
+                </div>
+              )}
+              {continueMutation.isError && (
+                <p className="pipeline-alert error" role="alert">
+                  续接失败：{errorText(continueMutation.error)}
+                </p>
+              )}
+              {continueMutation.isSuccess && (
+                <p className="pipeline-alert ok" role="status">
+                  已提交续接：任务状态 {String(continueMutation.data.job_state ?? "QUEUED")}
+                  {continueMutation.data.recovery_action === "RETRIED_FAILED_BATCH" ? "（上一批失败，已按你的确认重新入队）" : ""}。
+                </p>
               )}
             </section>
           )}

@@ -371,4 +371,8 @@ def test_committed_spec_covers_the_real_repository_components() -> None:
     assert core.check_components(REPO_ROOT, spec).status == core.PASS
     assert core.check_schema_versions(REPO_ROOT, spec).status == core.PASS
     assert core.check_api_contract_version(REPO_ROOT, spec).status == core.PASS
+    # The declared head is part of the contract: when migrations 0103/0104 landed the
+    # spec still said 0102, so the portable gate reported FAIL on a clean checkout.
+    migration_head = core.check_migration_head(REPO_ROOT, spec)
+    assert migration_head.status == core.PASS, migration_head.findings
     assert core.check_quality_gates(REPO_ROOT, spec).status == core.PASS

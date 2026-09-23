@@ -119,6 +119,66 @@ class LocalAiSubprocessRuntime:
             arguments += ("--speed", f"{float(speed):.6f}")
         return self.run_task("voxcpm2", arguments)
 
+    def synthesize_batch(
+        self,
+        items: Sequence[Mapping[str, str]],
+        *,
+        manifest_path: Path,
+        output_dir: Path,
+        prompt_audio: Path | None = None,
+        prompt_text: str | None = None,
+        speed: float | None = None,
+        timeout: float = 7200,
+    ) -> LocalAiExecution:
+        """Synthesise many segments in one process, keeping the model resident.
+
+        Loading the narration model dominates a single segment's cost, so a long
+        script narrated one subprocess per segment is an order of magnitude slower
+        than the same work batched.  Each item carries ``id`` and ``text``; the
+        receipt reports per-item output paths and per-item failures.
+        """
+
+        payload = [{str(key): str(value) for key, value in dict(item).items()} for item in items]
+        if not payload:
+            raise ValueError("at least one narration item is required")
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        arguments = [
+            "--batch-manifest",
+            str(manifest_path),
+            "--output-dir",
+            str(output_dir),
+        ]
+        if prompt_audio is not None:
+            arguments += ("--prompt-audio", str(prompt_audio))
+        if prompt_text:
+            arguments += ("--prompt-text-b64", self._encode_text(prompt_text))
+        if speed is not None:
+            arguments += ("--speed", f"{float(speed):.6f}")
+        return self.run_task("voxcpm2-batch", arguments, timeout=timeout)
+
+    def align_batch(
+        self,
+        items: Sequence[Mapping[str, str]],
+        *,
+        manifest_path: Path,
+        language: str = "Chinese",
+        timeout: float = 7200,
+    ) -> LocalAiExecution:
+        """Force-align many take files in one process."""
+
+        payload = [{str(key): str(value) for key, value in dict(item).items()} for item in items]
+        if not payload:
+            raise ValueError("at least one alignment item is required")
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        return self.run_task(
+            "alignment-batch",
+            ("--batch-manifest", str(manifest_path), "--language-b64", self._encode_text(language)),
+            timeout=timeout,
+        )
+
     def transcribe(self, audio_path: Path) -> LocalAiExecution:
         return self.run_task("asr", ("--audio-input", str(audio_path)))
 

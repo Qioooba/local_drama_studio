@@ -1,0 +1,555 @@
+"""Explainers: commands that really persist an execution intent.
+
+The audit found four closed loops that only *looked* closed.  ``narration:
+resynthesize`` returned ``requested_stage=NARRATION_TTS`` with zero writes;
+``renders`` returned ``SUBMITTED`` after updating ``edition.status`` and creating
+no job; ``decisions{rerun_policy:true}`` described a re-run it never scheduled; and
+``exports`` inserted a ``BUILDING`` package that no worker could ever claim.  In
+every case the UI said "submitted" while nothing existed to be claimed.
+
+This module owns the submission side of those four commands.  Two rules hold for
+all of them:
+
+1. **No fake acceptance.**  A command either writes a real, claimable job (through
+   the existing ``jobs`` authority — never a second queue) plus its idempotency
+   receipt in one transaction, or it returns a structured ``CAPABILITY_UNAVAILABLE``
+   / ``BLOCKED`` result with the concrete missing piece.
+2. **Freeze the input.**  The job snapshot pins the editions, revisions, hashes and
+   parameters the command was authorized with, so a worker can never "read the
+   latest" behind the operator's back.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Mapping, Sequence
+
+from local_drama.application.ports.database import DatabaseUnitOfWork
+from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.explainers.contracts import ExplainerContractError, content_hash, normalize_locale
+from local_drama.infrastructure.database.explainer_repository import ExplainerRepository
+
+__all__ = [
+    "EXPLAINER_STAGE_JOB_TYPES",
+    "ExplainersCommandService",
+    "STAGE_CAPABILITY_UNAVAILABLE",
+    "build_explainers_command_service",
+]
+
+#: Stage code -> the job type a worker actually dispatches for it.
+#:
+#: Only entries listed here are enqueued.  ``NARRATION_TTS`` and
+#: ``NARRATION_ALIGN`` have dedicated ``jobs.type`` providers, while
+#: ``EXPLAINER_POLICY_EVALUATE`` runs through the generic ``EXPLAINER_TASK``
+#: family with its own policy-evaluator port.  A stage with no provider is reported
+#: as ``CAPABILITY_UNAVAILABLE`` rather than given an unclaimable job, which is
+#: exactly the "already submitted" lie this module exists to remove.
+EXPLAINER_STAGE_JOB_TYPES: Mapping[str, str] = {
+    "NARRATION_TTS": "NARRATION_TTS",
+    "NARRATION_ALIGN": "NARRATION_ALIGN",
+    "COMPOSITION_RENDER": "EXPLAINER_TASK",
+    "EXPLAINER_POLICY_EVALUATE": "EXPLAINER_TASK",
+    "COMPOSITION_QC": "EXPLAINER_TASK",
+    # The export command used to insert a ``BUILDING`` package and stop there: the
+    # row was durable intent with no worker that could ever claim it.  The stage has
+    # a first-party handler, so the command now also schedules the job that fills
+    # the row it just wrote.
+    "EXPLAINER_EXPORT": "EXPLAINER_TASK",
+}
+
+#: Reason code used when a stage cannot be scheduled in this build.
+STAGE_CAPABILITY_UNAVAILABLE = "CAPABILITY_UNAVAILABLE"
+
+
+@dataclass(frozen=True)
+class _StageRequest:
+    stage_code: str
+    project_id: str
+    video_id: str
+    subject_type: str
+    subject_id: str
+    subject_kind: str
+    snapshot: Mapping[str, Any]
+    idempotency_key: str = ""
+    stage_code_for_job: str = ""
+    extra: Mapping[str, Any] = field(default_factory=dict)
+
+
+class ExplainersCommandService:
+    """Submission service for explainer stages that have a real consumer."""
+
+    def __init__(self, database: DatabaseUnitOfWork, *, settings: Any | None = None, jobs: Any | None = None) -> None:
+        self.database = database
+        self.settings = settings
+        # The JobService is injected by the composition root; building it here would
+        # add new cross-service construction to the application layer.
+        self._jobs = jobs
+
+    # ------------------------------------------------------------------ plumbing
+    def _job_service(self) -> Any:
+        if self._jobs is None:
+            raise DomainRuleError(
+                "EXPLAINER_STAGE_JOB_SERVICE_MISSING",
+                "解说阶段命令缺少 JobService 依赖，请通过组合根构建",
+            )
+        return self._jobs
+
+    @staticmethod
+    def _accepted(
+        *,
+        operation_id: str,
+        job: Mapping[str, Any],
+        stage_code: str,
+        subject: Mapping[str, Any],
+        frozen: Mapping[str, Any],
+        replayed: bool,
+    ) -> dict[str, Any]:
+        return {
+            "status": "ACCEPTED",
+            "stage_code": stage_code,
+            "operation_id": operation_id,
+            "job_id": str(job.get("id") or ""),
+            "job_state": str(job.get("state") or "QUEUED"),
+            "subject": dict(subject),
+            "frozen_plan": dict(frozen),
+            "idempotent_replay": bool(replayed),
+            "durable_intent_persisted": True,
+            "would_create_jobs": True,
+        }
+
+    @staticmethod
+    def _blocked(*, stage_code: str, blockers: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+        return {
+            "status": "BLOCKED",
+            "stage_code": stage_code,
+            "operation_id": None,
+            "job_id": None,
+            "blockers": [dict(item) for item in blockers],
+            "would_create_jobs": False,
+            "durable_intent_persisted": False,
+        }
+
+    @staticmethod
+    def _unavailable(*, stage_code: str, reason: str, detail: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        return {
+            "status": STAGE_CAPABILITY_UNAVAILABLE,
+            "stage_code": stage_code,
+            "operation_id": None,
+            "job_id": None,
+            "reason": reason,
+            "detail": dict(detail or {}),
+            "would_create_jobs": False,
+            "durable_intent_persisted": False,
+            "blockers": [
+                {
+                    "code": STAGE_CAPABILITY_UNAVAILABLE,
+                    "message": "该阶段在当前构建中没有可领取的执行器，未创建任何任务",
+                    "next_step": "接入对应 handler 后重试；界面不应显示“已提交”。",
+                }
+            ],
+        }
+
+    def _submit_stage(self, request: _StageRequest) -> dict[str, Any]:
+        """Write a real job + receipt in one transaction, or report why not."""
+
+        job_type = EXPLAINER_STAGE_JOB_TYPES.get(request.stage_code)
+        if not job_type:
+            return self._unavailable(
+                stage_code=request.stage_code,
+                reason="NO_REGISTERED_WORKER_HANDLER",
+                detail={"registered_stages": sorted(EXPLAINER_STAGE_JOB_TYPES)},
+            )
+        if not request.idempotency_key:
+            raise ExplainerContractError(
+                "IDEMPOTENCY_KEY_REQUIRED", "该命令必须提供 Idempotency-Key 才能保证只提交一次"
+            )
+        snapshot = dict(request.snapshot)
+        snapshot.setdefault("task_code", request.stage_code)
+        snapshot.setdefault("stage_code", request.stage_code)
+        snapshot.setdefault("video_id", request.video_id)
+        snapshot.setdefault("project_id", request.project_id)
+        snapshot["frozen_plan_hash"] = content_hash(dict(snapshot))
+        job = self._job_service().create_job(
+            request.project_id,
+            job_type,
+            request.subject_type,
+            request.subject_id,
+            # ``EXPLAINER`` is not one of the worker's configured channels, so a job
+            # created with it was never claimed by anything: the command answered
+            # ACCEPTED while the work sat in the queue forever.  These stages run as
+            # ordinary local CPU-channel jobs; the narration stages additionally
+            # declare their GPU runtime through their job type.
+            channel="CPU",
+            input_snapshot=snapshot,
+            idempotency_key=request.idempotency_key,
+            subject_kind=request.subject_kind,
+            scope_kind="PROJECT",
+            stage_code=request.stage_code,
+        )
+        replayed = bool(job.get("idempotent_replay"))
+        if replayed:
+            state = str(job.get("state") or "")
+            if state in {"FAILED", "CANCELLED", "DEAD_LETTER"}:
+                # Replaying a receipt for a job that is already dead must not look
+                # like a fresh acceptance; the caller needs to retry deliberately.
+                return {
+                    **self._accepted(
+                        operation_id=str(job.get("id") or ""),
+                        job=job,
+                        stage_code=request.stage_code,
+                        subject={
+                            "kind": request.subject_kind,
+                            "id": request.subject_id,
+                            "snapshot_hash": snapshot["frozen_plan_hash"],
+                        },
+                        frozen=snapshot,
+                        replayed=True,
+                    ),
+                    "status": "RECOVERY_REQUIRED",
+                    "recovery_action": "RETRY_FAILED_JOB",
+                }
+        return self._accepted(
+            operation_id=str(job.get("id") or ""),
+            job=job,
+            stage_code=request.stage_code,
+            subject={
+                "kind": request.subject_kind,
+                "id": request.subject_id,
+                "snapshot_hash": snapshot["frozen_plan_hash"],
+            },
+            frozen=snapshot,
+            replayed=replayed,
+        )
+
+    # ------------------------------------------------------------------ narration
+    def submit_narration_resynthesis(
+        self,
+        *,
+        edition_id: str,
+        canonical_segment_id: str,
+        reason: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Freeze one segment re-read and schedule the real ``NARRATION_TTS`` job.
+
+        The scope is the *frozen* script revision plus the edition's own voice
+        locale, so a re-read can never resolve a segment from another language or
+        an older revision through the loose ``video + canonical`` lookup.
+        """
+
+        with self.database.connect() as connection:
+            repo = ExplainerRepository(connection)
+            edition = repo.get("explainer_editions", edition_id)
+            video = repo.get("explainer_videos", str(edition["video_id"]))
+            frozen_script_revision_id = edition.get("frozen_script_revision_id")
+            if not frozen_script_revision_id:
+                return self._blocked(
+                    stage_code="NARRATION_TTS",
+                    blockers=[
+                        {
+                            "code": "SCHEMA_INVALID",
+                            "message": "该输出版本还没有冻结讲稿，不能重读旁白",
+                            "next_step": "先冻结讲稿版本。",
+                        }
+                    ],
+                )
+            locale = normalize_locale(str(edition["voice_locale"]))
+            segment = repo.segment_in_scope(
+                video_id=str(video["id"]),
+                canonical_segment_id=canonical_segment_id,
+                locale=locale,
+                script_revision_id=str(frozen_script_revision_id),
+            )
+            if segment is None:
+                raise ExplainerContractError(
+                    "NOT_FOUND",
+                    "在该输出版本的冻结讲稿里找不到这个段落",
+                    {
+                        "edition_id": edition_id,
+                        "canonical_segment_id": canonical_segment_id,
+                        "locale": locale,
+                        "frozen_script_revision_id": str(frozen_script_revision_id),
+                    },
+                )
+            voice_snapshot = self._voice_snapshot_for(repo, edition=edition, video=video, locale=locale)
+            snapshot = {
+                "semantic_inputs": {
+                    "narration_segment_id": str(segment["id"]),
+                    "canonical_segment_id": str(segment["canonical_segment_id"]),
+                    "locale": locale,
+                    "segment_hash": str(segment["segment_hash"]),
+                    "edition_id": edition_id,
+                    "frozen_script_revision_id": str(frozen_script_revision_id),
+                    "reason": str(reason),
+                },
+                "voice_snapshot": voice_snapshot,
+                "speech_rate": 1.0,
+                "timeout_seconds": 120,
+            }
+            subject_id = str(segment["id"])
+            subject_kind = "NARRATION_SEGMENT"
+        request = _StageRequest(
+            stage_code="NARRATION_TTS",
+            project_id=str(video["project_id"]),
+            video_id=str(video["id"]),
+            subject_type="NARRATION_SEGMENT",
+            subject_id=subject_id,
+            subject_kind=subject_kind,
+            snapshot=snapshot,
+            idempotency_key=idempotency_key,
+        )
+        result = self._submit_stage(request)
+        if result["status"] == "ACCEPTED" or result.get("job_id"):
+            # The invalidation closure is now durable state, not a sentence in a
+            # response: the downstream artifacts are marked stale in the same flow.
+            self._mark_downstream_stale(
+                video_id=str(video["id"]),
+                upstream_kind="NARRATION_SEGMENT",
+                upstream_id=subject_id,
+            )
+            result["invalidates"] = ["NARRATION_TAKE", "ALIGNMENT", "SUBTITLE_REVISION", "COMPOSITION_REVISION"]
+            result["preserves"] = ["FACT_LEDGER", "VISUAL_ASSET", "OTHER_CHAPTER_ASSET"]
+            result["neighbour_join_recheck_required"] = True
+        return result
+
+    @staticmethod
+    def _voice_snapshot_for(
+        repo: ExplainerRepository, *, edition: Mapping[str, Any], video: Mapping[str, Any], locale: str
+    ) -> dict[str, Any]:
+        """The authorized voice/model facts the TTS handler re-validates."""
+
+        profile_version_id = video.get("current_channel_profile_version_id")
+        voice: Mapping[str, Any] = {}
+        if profile_version_id:
+            profile_version = repo.get("channel_profile_versions", str(profile_version_id))
+            raw = profile_version.get("voice_json")
+            voice = raw if isinstance(raw, Mapping) else {}
+        supported = [normalize_locale(str(item)) for item in (voice.get("supported_locales") or [])] or [locale]
+        purposes = [str(item) for item in (voice.get("purposes") or [])] or ["NARRATION"]
+        return {
+            "voice_profile_version_id": voice.get("voice_profile_version_id") or profile_version_id,
+            "voice_ref": str(voice.get("voice_ref") or ""),
+            "model_ref": str(voice.get("model_ref") or voice.get("voice_ref") or "local-narration-default"),
+            "supported_locales": supported,
+            "purposes": purposes,
+            "license_status": str(voice.get("license_status") or "UNVERIFIED").upper(),
+            "license_evidence": voice.get("license_evidence"),
+            "test_only_acknowledged": bool(voice.get("test_only_acknowledged")),
+            "delivery_authorized": str(voice.get("license_status") or "").upper() in {"VERIFIED", "LICENSED"},
+            "test_only": str(voice.get("license_status") or "").upper() in {"UNVERIFIED", "TEST_ONLY"},
+        }
+
+    def _mark_downstream_stale(
+        self, *, video_id: str, upstream_kind: str, upstream_id: str
+    ) -> None:
+        with self.database.transaction() as connection:
+            ExplainerRepository(connection).mark_dependents_stale(
+                upstream_kind=upstream_kind,
+                upstream_id=upstream_id,
+                downstream_kinds=(
+                    "NARRATION_TAKE",
+                    "ALIGNMENT",
+                    "SUBTITLE_REVISION",
+                    "COMPOSITION_REVISION",
+                ),
+                reason="NARRATION_RESYNTHESIS_REQUESTED",
+                invalidated_by=f"explainer-command:{video_id}",
+            )
+
+    # ------------------------------------------------------------------ policy
+    def submit_policy_rerun(
+        self, *, edition_id: str, idempotency_key: str, reason: str = "OPERATOR_REQUEST"
+    ) -> dict[str, Any]:
+        """Schedule the real policy evaluation instead of describing it in prose."""
+
+        with self.database.connect() as connection:
+            repo = ExplainerRepository(connection)
+            edition = repo.get("explainer_editions", edition_id)
+            video = repo.get("explainer_videos", str(edition["video_id"]))
+            target = repo.current_review_target(edition_id)
+        snapshot = {
+            "semantic_inputs": {
+                "edition_id": edition_id,
+                "subject_kind": "COMPOSITION_RENDER" if target["has_render"] else "EDITION",
+                "subject_revision_id": target["render_id"] or edition_id,
+                "subject_hash": target["render_sha256"] or "",
+                "policy_rule_version": "explainer_standard_v1",
+                "reason": str(reason),
+                "video_id": str(video["id"]),
+            }
+        }
+        return self._submit_stage(
+            _StageRequest(
+                stage_code="EXPLAINER_POLICY_EVALUATE",
+                project_id=str(video["project_id"]),
+                video_id=str(video["id"]),
+                subject_type="EXPLAINER_EDITION",
+                subject_id=edition_id,
+                subject_kind="EDITION",
+                snapshot=snapshot,
+                idempotency_key=idempotency_key,
+            )
+        )
+
+    # ------------------------------------------------------------------ alignment
+    def submit_alignment(
+        self,
+        *,
+        edition_id: str,
+        take_id: str,
+        locale: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Schedule alignment for one take; used after a take becomes selected."""
+
+        with self.database.connect() as connection:
+            repo = ExplainerRepository(connection)
+            edition = repo.get("explainer_editions", edition_id)
+            video = repo.get("explainer_videos", str(edition["video_id"]))
+            take = repo.get("narration_takes", take_id)
+        if str(take["video_id"]) != str(video["id"]):
+            raise ExplainerContractError("INVALID_REQUEST", "take 不属于该输出版本的作品")
+        return self._submit_stage(
+            _StageRequest(
+                stage_code="NARRATION_ALIGN",
+                project_id=str(video["project_id"]),
+                video_id=str(video["id"]),
+                subject_type="NARRATION_TAKE",
+                subject_id=take_id,
+                subject_kind="NARRATION_TAKE",
+                snapshot={
+                    "semantic_inputs": {
+                        "take_id": take_id,
+                        "edition_id": edition_id,
+                        "locale": normalize_locale(locale),
+                        "segment_id": str(take["segment_id"]),
+                    }
+                },
+                idempotency_key=idempotency_key,
+            )
+        )
+
+    # ------------------------------------------------------------------ render
+    def submit_composition_render(
+        self,
+        *,
+        edition_id: str,
+        composition: Mapping[str, Any],
+        idempotency_key: str,
+        confirm: bool,
+    ) -> dict[str, Any]:
+        """Register a real render job bound to the frozen manifest.
+
+        ``COMPOSITION_RENDER`` now has a first-party worker handler, so the command
+        creates a claimable ``EXPLAINER_TASK`` job for the edition instead of
+        describing work no worker could pick up.  Nothing is written unless the
+        composition really is frozen: the previous behaviour flipped the edition to
+        ``RENDERING`` and returned ``SUBMITTED`` while no job existed.
+        """
+
+        with self.database.connect() as connection:
+            repo = ExplainerRepository(connection)
+            edition = repo.get("explainer_editions", edition_id)
+            video = repo.get("explainer_videos", str(edition["video_id"]))
+        if str(composition.get("status")) != "FROZEN":
+            return self._blocked(
+                stage_code="COMPOSITION_RENDER",
+                blockers=[
+                    {
+                        "code": "SCHEMA_INVALID",
+                        "message": "渲染必须基于已冻结的 composition manifest",
+                        "next_step": "先冻结 composition。",
+                    }
+                ],
+            )
+        return self._submit_stage(
+            _StageRequest(
+                stage_code="COMPOSITION_RENDER",
+                project_id=str(video["project_id"]),
+                video_id=str(video["id"]),
+                subject_type="EXPLAINER_EDITION",
+                subject_id=edition_id,
+                subject_kind="EDITION",
+                snapshot={
+                    "semantic_inputs": {
+                        "project_id": str(video["project_id"]),
+                        "video_id": str(video["id"]),
+                        "edition_id": edition_id,
+                        "composition_revision_id": str(composition.get("id") or ""),
+                        "manifest_hash": str(composition.get("manifest_hash") or ""),
+                    }
+                },
+                idempotency_key=idempotency_key,
+            )
+        )
+
+
+    # ------------------------------------------------------------------ export
+    def submit_export(
+        self,
+        *,
+        edition_id: str,
+        package_id: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Schedule the worker that builds an already-recorded publication package.
+
+        The command flow is plan → confirm → durable ``BUILDING`` row → this job.  The
+        job's snapshot pins the package id, so the worker completes exactly the row
+        the operator confirmed instead of inventing a second package for the same
+        edition.
+        """
+
+        with self.database.connect() as connection:
+            repo = ExplainerRepository(connection)
+            edition = repo.get("explainer_editions", edition_id)
+            video = repo.get("explainer_videos", str(edition["video_id"]))
+            package = repo.get("publication_packages", package_id)
+        if str(package["edition_id"]) != str(edition_id):
+            raise ExplainerContractError(
+                "INVALID_REQUEST",
+                "发布包不属于该输出版本",
+                {"package_id": package_id, "edition_id": edition_id},
+            )
+        return self._submit_stage(
+            _StageRequest(
+                stage_code="EXPLAINER_EXPORT",
+                project_id=str(video["project_id"]),
+                video_id=str(video["id"]),
+                subject_type="PUBLICATION_PACKAGE",
+                subject_id=package_id,
+                subject_kind="PUBLICATION_PACKAGE",
+                snapshot={
+                    "semantic_inputs": {
+                        "project_id": str(video["project_id"]),
+                        "video_id": str(video["id"]),
+                        "edition_id": edition_id,
+                        "package_id": package_id,
+                        "render_id": str(package.get("render_id") or ""),
+                        "composition_revision_id": str(package.get("composition_revision_id") or ""),
+                    }
+                },
+                idempotency_key=idempotency_key,
+            )
+        )
+
+
+def build_explainers_command_service(
+    database: DatabaseUnitOfWork,
+    settings: Any | None = None,
+    *,
+    jobs: Any | None = None,
+) -> ExplainersCommandService:
+    """Composition root for the explainer stage commands.
+
+    The job authority — the only queue these commands are allowed to write to — is
+    wired here instead of inside the service, so the application layer keeps
+    depending on an injected collaborator rather than constructing a concrete
+    service of its own.
+    """
+
+    if jobs is None:
+        from local_drama.application.jobs import JobService
+
+        jobs = JobService(database, settings)
+    return ExplainersCommandService(database, settings=settings, jobs=jobs)

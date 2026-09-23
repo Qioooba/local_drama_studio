@@ -90,6 +90,13 @@ class JobStateDecision:
     #: caller's current timestamp; any other value is a concrete ISO timestamp.
     next_run_at: str | None
     reason: str
+    #: True when this settlement *consumed* the cooperative stop flag a pause wrote
+    #: on the Job.  The flag must then be cleared in the same transaction, otherwise
+    #: the next attempt reads a stale ``cancel_requested_at`` and its successful
+    #: completion is decided as CANCELLED.  Only an authorized resume whose previous
+    #: attempt has just settled may consume it; a plain re-queue must not, because
+    #: the still-running old attempt has to keep seeing the stop request.
+    consume_stop_flags: bool = False
 
 
 def decide_job_state(facts: JobStateFacts, outcome: str) -> JobStateDecision:
@@ -125,7 +132,11 @@ def decide_job_state(facts: JobStateFacts, outcome: str) -> JobStateDecision:
         if facts.attempt_no < facts.max_attempts:
             # Claimable at once: the settle releases the lease in the same
             # transaction, so the operator's resume runs without extra delay.
-            return JobStateDecision(QUEUED, "NOW", "resume_intent_after_attempt_settled")
+            # The old attempt has now settled, so this is the one moment where the
+            # pause's stop flag may be consumed; the caller clears it atomically.
+            return JobStateDecision(
+                QUEUED, "NOW", "resume_intent_after_attempt_settled", consume_stop_flags=True
+            )
         return JobStateDecision(NEEDS_ATTENTION, None, "attempt_budget_exhausted")
     if facts.cancel_requested:
         # The cooperative stop flag an explicit cancellation wrote on a Job
@@ -428,6 +439,25 @@ class JobService:
                 raise DomainRuleError("IDEMPOTENCY_PAYLOAD_MISMATCH", "相同 Idempotency-Key 的请求体不一致")
             result = dict(_parse_json(existing["response_json"]))
             result["idempotent_replay"] = True
+            # PR-04: the cached response recorded the Job as QUEUED at creation time.
+            # A caller that trusts it will believe a FAILED Job is still running and
+            # can leave a run pinned at RUNNING forever, so the live state is read
+            # here, inside the same transaction, and cached back for later replays.
+            replayed_job_id = str(result.get("id") or "")
+            if replayed_job_id:
+                live = connection.execute(
+                    "SELECT state, next_run_at, last_error_code FROM jobs WHERE id=?",
+                    (replayed_job_id,),
+                ).fetchone()
+                if live is not None:
+                    result["state"] = str(live["state"])
+                    result["next_run_at"] = live["next_run_at"]
+                    result["last_error_code"] = live["last_error_code"]
+                    result["state_refreshed_from_database"] = True
+                    connection.execute(
+                        "UPDATE command_idempotencies SET response_json=? WHERE scope=? AND idempotency_key=?",
+                        (_json(result), scope, idempotency_key),
+                    )
             return result
         if project_id is not None:
             project = connection.execute("SELECT id FROM projects WHERE id=?", (project_id,)).fetchone()
@@ -1083,11 +1113,21 @@ class JobService:
             if job_state != DELETED:
                 # A soft-deleted Job stays hidden: the attempt settles and its
                 # resource lock is released, but nothing revives the Job.
+                #
+                # ``consume_stop_flags`` is the resume-after-settle case: the paused
+                # attempt is now settled, so the cooperative stop flag it was
+                # watching is consumed here, in the same transaction.  Without this
+                # the next attempt inherited the stale flag, was decided CANCELLED
+                # on success, and the new artifact gate refused publication.
                 connection.execute(
-                    "UPDATE jobs SET state=?, next_run_at=?, progress_json=?, progress_updated_at=?, last_error_code=?, last_error_detail_redacted=?, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
+                    "UPDATE jobs SET state=?, next_run_at=?,"
+                    " cancel_requested_at=CASE WHEN ? THEN NULL ELSE cancel_requested_at END,"
+                    " progress_json=?, progress_updated_at=?, last_error_code=?,"
+                    " last_error_detail_redacted=?, finished_at=?, updated_at=?, revision=revision+1 WHERE id=?",
                     (
                         job_state,
                         next_run_at,
+                        1 if decision.consume_stop_flags else 0,
                         _json(terminal_progress),
                         now,
                         error_code,
@@ -1174,13 +1214,23 @@ class JobService:
     def retry(self, job_id: str, actor: str = "local-user") -> dict[str, Any]:
         """Re-queue a terminal Job in exactly one write transaction.
 
-        ``resume`` shares this implementation through :meth:`_retry_in_transaction`
+        ``resume`` shares this implementation through :meth:`retry_in_transaction`
         so the FAILED-recovery path can never nest a second write transaction
         (and therefore never self-deadlock on the ``BEGIN IMMEDIATE`` lock).
         """
 
         with self.database.transaction() as connection:
-            return self._retry_in_transaction(connection, job_id, actor=actor)
+            return self.retry_in_transaction(connection, job_id, actor=actor)
+
+    def retry_in_transaction(self, connection: Any, job_id: str, *, actor: str) -> dict[str, Any]:
+        """Authorised retry inside a caller-owned transaction (PR-04).
+
+        The pipeline continuation path must requeue a FAILED batch Job and update
+        the run's projection in the SAME transaction, or the Job and the run can
+        disagree about who owns the batch.
+        """
+
+        return self._retry_in_transaction(connection, job_id, actor=actor)
 
     def _retry_in_transaction(self, connection: Any, job_id: str, *, actor: str) -> dict[str, Any]:
         now = _iso(_utc_now())
@@ -1483,9 +1533,19 @@ class JobService:
                     (current_iso, row["id"]),
                 )
                 if next_job_state != DELETED:
+                    # An expired lease on a paused-with-resume Job settles the old
+                    # attempt here too, so this is where its stop flag is consumed.
                     connection.execute(
-                        "UPDATE jobs SET state=?, next_run_at=?, last_error_code='WORKER_LEASE_EXPIRED', updated_at=?, revision=revision+1 WHERE id=?",
-                        (next_job_state, next_run_at, current_iso, row["job_id"]),
+                        "UPDATE jobs SET state=?, next_run_at=?,"
+                        " cancel_requested_at=CASE WHEN ? THEN NULL ELSE cancel_requested_at END,"
+                        " last_error_code='WORKER_LEASE_EXPIRED', updated_at=?, revision=revision+1 WHERE id=?",
+                        (
+                            next_job_state,
+                            next_run_at,
+                            1 if decision.consume_stop_flags else 0,
+                            current_iso,
+                            row["job_id"],
+                        ),
                     )
                 connection.execute("UPDATE job_resource_leases SET released_at=? WHERE attempt_id=? AND released_at IS NULL", (current_iso, row["id"]))
                 self._emit(

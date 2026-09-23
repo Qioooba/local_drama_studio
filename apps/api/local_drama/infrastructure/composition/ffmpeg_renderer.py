@@ -41,6 +41,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -48,7 +49,12 @@ from typing import Any, Callable, Mapping, Sequence
 from local_drama.application.composition.manifest import (
     ManifestChunkSpec,
     ManifestClip,
+    Ratio,
     RenderManifest,
+)
+from local_drama.application.composition.slices import (
+    ClipSlicePlan,
+    compute_chunk_slices,
 )
 from local_drama.application.composition.validation import concat_compatibility
 from local_drama.domain.explainers.contracts import ExplainerContractError, content_hash
@@ -66,6 +72,17 @@ __all__ = [
     "FfmpegRunner",
     "KNOWN_FILTERS",
     "LOUDNESS_NOTE",
+    "REASON_ARGUMENT_INVALID",
+    "REASON_DISK_FULL",
+    "REASON_FILTER_INVALID",
+    "REASON_INPUT_MISSING",
+    "REASON_NO_OUTPUT",
+    "REASON_PROCESS_FAILED",
+    "REASON_PROCESS_KILLED",
+    "REASON_RESOURCE_EXHAUSTED",
+    "REASON_TIMEOUT",
+    "REASON_TOOL_MISSING",
+    "REASON_USER_CANCELLED",
     "VIDEO_PIX_FMT",
     "VIDEO_TIMEBASE",
     "X264_CRF",
@@ -76,6 +93,7 @@ __all__ = [
     "build_mix_command",
     "build_subtitle_burn_command",
     "classify_process_failure",
+    "compute_chunk_slices",
     "decode_signature",
     "escape_concat_quote",
     "escape_drawtext_text",
@@ -110,6 +128,69 @@ _RECOVERABLE_STDERR_MARKERS = (
     "disk quota exceeded",
     "not enough space",
 )
+
+#: Reason codes for a failed process.  ``recoverable=True`` means "a technical
+#: retry inside the declared budget may help"; a deterministic input, filter or
+#: argument error is *not* recoverable, because repeating the same command
+#: cannot change it.
+REASON_DISK_FULL = "DISK_FULL"
+REASON_TOOL_MISSING = "TOOL_MISSING"
+REASON_INPUT_MISSING = "INPUT_MISSING"
+REASON_PERMISSION_DENIED = "PERMISSION_DENIED"
+REASON_FILTER_INVALID = "FILTER_INVALID"
+REASON_ARGUMENT_INVALID = "ARGUMENT_INVALID"
+REASON_RESOURCE_EXHAUSTED = "RESOURCE_EXHAUSTED"
+REASON_TIMEOUT = "TIMEOUT"
+REASON_USER_CANCELLED = "USER_CANCELLED"
+REASON_PROCESS_KILLED = "PROCESS_KILLED"
+REASON_NO_OUTPUT = "NO_OUTPUT"
+REASON_PROCESS_FAILED = "PROCESS_FAILED"
+
+#: Permanent configuration errors.  Repeating the identical command cannot fix
+#: them, so they must never be reported as "just retry".
+_PERMANENT_STDERR_MARKERS: tuple[tuple[str, str], ...] = (
+    ("no such file or directory", REASON_INPUT_MISSING),
+    ("matches no streams", REASON_INPUT_MISSING),
+    ("invalid data found when processing input", REASON_INPUT_MISSING),
+    ("moov atom not found", REASON_INPUT_MISSING),
+    ("does not contain any stream", REASON_INPUT_MISSING),
+    ("no such filter", REASON_FILTER_INVALID),
+    ("option not found", REASON_FILTER_INVALID),
+    ("filter not found", REASON_FILTER_INVALID),
+    ("has output", REASON_FILTER_INVALID),
+    ("unconnected", REASON_FILTER_INVALID),
+    ("invalid stream specifier", REASON_FILTER_INVALID),
+    ("error binding filtergraph", REASON_FILTER_INVALID),
+    ("error initializing filter", REASON_FILTER_INVALID),
+    ("error reinitializing filters", REASON_FILTER_INVALID),
+    ("error while opening encoder", REASON_ARGUMENT_INVALID),
+    ("error while opening decoder", REASON_ARGUMENT_INVALID),
+    ("unrecognized option", REASON_ARGUMENT_INVALID),
+    ("invalid argument", REASON_ARGUMENT_INVALID),
+    ("permission denied", REASON_PERMISSION_DENIED),
+)
+
+#: Resource pressure: retryable, but only after the caller has freed something.
+_RESOURCE_STDERR_MARKERS: tuple[tuple[str, str], ...] = (
+    ("cannot allocate memory", REASON_RESOURCE_EXHAUSTED),
+    ("out of memory", REASON_RESOURCE_EXHAUSTED),
+    ("resource temporarily unavailable", REASON_RESOURCE_EXHAUSTED),
+)
+
+#: A cooperative stop requested by the caller; it must never be retried silently.
+_CANCEL_STDERR_MARKERS: tuple[str, ...] = (
+    "received signal 2",
+    "received signal 15",
+    "exiting normally, received signal",
+)
+
+#: Default in-memory log tail.  The whole stream still goes to a log file when one
+#: is configured, so bounding memory never loses the diagnosis.
+DEFAULT_LOG_TAIL_BYTES = 64 * 1024
+
+#: macOS/Linux signal numbers that mean "the user or the host stopped this".
+_SIGINT = -2
+_SIGTERM = -15
 
 
 def _domain_error(code: str, message: str, details: Mapping[str, Any] | None = None) -> ExplainerContractError:
@@ -247,6 +328,80 @@ class FfmpegFilterGraph:
     def as_dict(self) -> dict[str, Any]:
         return {"filter_complex": str(self), "chains": [dict(chain) for chain in self._chains]}
 
+    # ------------------------------------------------------- structural proof
+    def validate(self, *, terminal: Sequence[str] = ()) -> None:
+        """Prove every internal label has exactly one producer and one consumer.
+
+        A hand-written graph that consumes ``[voice]`` while something else
+        produced ``[voice_raw]`` is structurally invalid, but FFmpeg only reports
+        it as an opaque exit code at run time.  The builder therefore proves the
+        two properties that make a graph executable *before* a process starts:
+
+        * every internal label (one that is not a bare input-stream specifier
+          such as ``0:v:0``) has exactly one producing chain;
+        * every internal label a chain consumes has a producer;
+        * every produced label is either consumed by another chain or declared
+          ``terminal`` (i.e. mapped to an output with ``-map``).
+
+        Two chains producing the same label, or a label fed to two chains
+        without an explicit ``split``/``asplit``, are refused rather than left
+        for FFmpeg to interpret.
+        """
+
+        terminal_labels = {str(label).strip() for label in terminal}
+        producers: dict[str, int] = {}
+        for index, chain in enumerate(self._chains):
+            for label in chain["outputs"]:
+                if label in producers:
+                    raise _domain_error(
+                        "FFMPEG_FILTERGRAPH_INVALID",
+                        f"标签 [{label}] 有多个生产者，必须显式 split/asplit",
+                        {"label": label, "chains": [producers[label], index]},
+                    )
+                producers[label] = index
+        consumers: dict[str, list[int]] = {}
+        for index, chain in enumerate(self._chains):
+            for label in chain["inputs"]:
+                if _is_stream_specifier(label):
+                    # ``0:a:0`` addresses an input stream, not an internal label.
+                    continue
+                if label not in producers:
+                    raise _domain_error(
+                        "FFMPEG_FILTERGRAPH_INVALID",
+                        f"标签 [{label}] 没有生产者，滤镜图无法执行",
+                        {"label": label, "chain": index, "terminal": sorted(terminal_labels)},
+                    )
+                consumers.setdefault(label, []).append(index)
+        for label, index in producers.items():
+            if label in terminal_labels:
+                continue
+            if len(consumers.get(label, ())) != 1:
+                raise _domain_error(
+                    "FFMPEG_FILTERGRAPH_INVALID",
+                    f"标签 [{label}] 未被消费，或需要多路分支时缺少 split/asplit",
+                    {"label": label, "chain": index, "consumers": consumers.get(label, [])},
+                )
+
+    def label(self, base: str) -> str:
+        """Allocate a unique internal label derived from ``base``.
+
+        Hand-written label strings are what produced the ``[voice_raw]`` /
+        ``[voice]`` mismatch this builder now refuses; callers should allocate
+        through this method so a second use of the same base cannot collide.
+        """
+
+        stem = "".join(
+            character if (character.isalnum() or character == "_") else "_"
+            for character in str(base).strip()
+        ) or "label"
+        used = {label for chain in self._chains for label in (*chain["inputs"], *chain["outputs"])}
+        if stem not in used:
+            return stem
+        index = 2
+        while f"{stem}_{index}" in used:
+            index += 1
+        return f"{stem}_{index}"
+
     # ------------------------------------------------------- simple filters
     @staticmethod
     def setsar(value: str = "1") -> str:
@@ -296,12 +451,20 @@ class FfmpegFilterGraph:
         return f"settb={timebase}"
 
     @staticmethod
-    def trim(*, start: float | None = None, duration: float | None = None, end_frame: int | None = None) -> str:
+    def trim(
+        *,
+        start: float | None = None,
+        duration: float | None = None,
+        start_frame: int | None = None,
+        end_frame: int | None = None,
+    ) -> str:
         parts: list[str] = []
         if start is not None:
             parts.append(f"start={_fmt_number(start)}")
         if duration is not None:
             parts.append(f"duration={_fmt_number(duration)}")
+        if start_frame is not None:
+            parts.append(f"start_frame={int(start_frame)}")
         if end_frame is not None:
             parts.append(f"end_frame={int(end_frame)}")
         if not parts:
@@ -309,14 +472,40 @@ class FfmpegFilterGraph:
         return "trim=" + ":".join(parts)
 
     @staticmethod
-    def atrim(*, start: float | None = None, duration: float | None = None, sample_count: int | None = None) -> str:
+    def atrim(
+        *,
+        start: float | None = None,
+        duration: float | None = None,
+        start_sample: int | None = None,
+        end_sample: int | None = None,
+        sample_count: int | None = None,
+    ) -> str:
+        """Build ``atrim`` with real FFmpeg sample options.
+
+        ``sample_count`` is kept for callers that already used it, but it is not
+        an option ``atrim`` accepts: FFmpeg rejects it with "Option not found" and
+        exits 1.  Sample-domain cuts must be expressed as ``start_sample`` /
+        ``end_sample``, and a sample count is translated into an ``end_sample``
+        window instead of being emitted as an invalid option.
+        """
+
         parts: list[str] = []
         if start is not None:
             parts.append(f"start={_fmt_number(start)}")
         if duration is not None:
             parts.append(f"duration={_fmt_number(duration)}")
+        if start_sample is not None:
+            parts.append(f"start_sample={int(start_sample)}")
+        if end_sample is not None:
+            parts.append(f"end_sample={int(end_sample)}")
         if sample_count is not None:
-            parts.append(f"sample_count={int(sample_count)}")
+            if start_sample is not None or end_sample is not None:
+                raise _domain_error(
+                    "SCHEMA_INVALID",
+                    "atrim 不能同时给出 sample_count 与 start_sample/end_sample",
+                )
+            parts.append(f"start_sample=0")
+            parts.append(f"end_sample={int(sample_count)}")
         if not parts:
             raise _domain_error("SCHEMA_INVALID", "atrim 至少需要一个参数")
         return "atrim=" + ":".join(parts)
@@ -477,6 +666,7 @@ KNOWN_FILTERS: frozenset[str] = frozenset(
         "pad",
         "crop",
         "aresample",
+        "color",
     }
 )
 
@@ -488,6 +678,17 @@ def _check_label(label: str) -> None:
     for forbidden in ("[", "]", ";", ",", newline, carriage_return):
         if forbidden in label:
             raise _domain_error("SCHEMA_INVALID", "滤镜标签包含非法字符", {"label": label})
+
+
+def _is_stream_specifier(label: str) -> bool:
+    """True for an input-stream address such as ``0:v:0`` rather than a label.
+
+    ``_check_label`` refuses ``:`` in an internal label, so this distinction is
+    exact: anything carrying a colon addresses an input stream and is produced by
+    an ``-i`` input rather than by another chain.
+    """
+
+    return ":" in str(label)
 
 
 # --------------------------------------------------------------------------- #
@@ -568,16 +769,97 @@ def _clip_media_path(
     clip: ManifestClip,
     media_path_resolver: Callable[[str, str | None], str | os.PathLike[str]] | None,
 ) -> str | None:
-    if clip.media_version_id is None:
+    return _resolve_media_path(
+        media_version_id=clip.media_version_id,
+        media_sha256=clip.media_sha256,
+        owner_id=str(clip.clip_id),
+        media_path_resolver=media_path_resolver,
+    )
+
+
+def _resolve_media_path(
+    *,
+    media_version_id: str | None,
+    media_sha256: str | None,
+    owner_id: str,
+    media_path_resolver: Callable[[str, str | None], str | os.PathLike[str]] | None,
+) -> str | None:
+    if media_version_id is None:
         return None
     if media_path_resolver is None:
         raise _domain_error(
             "MEDIA_PATH_RESOLVER_REQUIRED",
             "清单包含媒体条目，但没有提供 media_path_resolver；渲染器不会自行猜测路径",
-            {"clip_id": clip.clip_id, "media_version_id": clip.media_version_id},
+            {"clip_id": owner_id, "media_version_id": media_version_id},
         )
-    resolved = media_path_resolver(str(clip.media_version_id), clip.media_sha256)
+    resolved = media_path_resolver(str(media_version_id), media_sha256)
     return str(resolved)
+
+
+def _clip_by_id(manifest: RenderManifest, clip_id: str) -> ManifestClip:
+    for clip in manifest.clips:
+        if str(clip.clip_id) == str(clip_id):
+            return clip
+    raise _domain_error(
+        "SCHEMA_INVALID",
+        "切片计划引用了清单中不存在的 clip",
+        {"clip_id": str(clip_id)},
+    )
+
+
+def _input_count(args: Sequence[str]) -> int:
+    """Number of ``-i`` inputs in a partially built argument vector."""
+
+    return sum(1 for value in args if value == "-i")
+
+
+def _samples_for_frames(frames: int, fps: Ratio, sample_rate: int) -> int:
+    """Exact sample count for a frame count: one rational rounding, half-up."""
+
+    return fps.samples_for_frames(int(frames), int(sample_rate))
+
+
+#: Picture item kinds this chunk builder can compile today.  ``INFOGRAPHIC`` and
+#: ``TEXT_LAYER`` need their own input strategy, so a manifest that declares them
+#: is refused with a blocker instead of being rendered as unexplained black.
+_COMPILABLE_VIDEO_ITEM_KINDS: frozenset[str] = frozenset(
+    {"VIDEO_CLIP", "IMAGE_CLIP", "MOTION_CLIP"}
+)
+
+
+def _append_black_run(
+    *,
+    graph: FfmpegFilterGraph,
+    args: list[str],
+    frames: int,
+    width: int,
+    height: int,
+    fps: Ratio,
+    sample_rate: int,
+    label_base: str,
+) -> str:
+    """Add an explicitly declared black picture run of exactly ``frames`` frames."""
+
+    if int(frames) <= 0:
+        raise _domain_error("SCHEMA_INVALID", "黑场时长必须为正", {"frames": int(frames)})
+    args += [
+        "-f", "lavfi", "-i",
+        f"color=c=black:s={width}x{height}:r={fps.num}/{fps.den}:d={_fmt_number(fps.seconds_for_frames(int(frames)) + 1.0)}",
+    ]
+    input_index = _input_count(args) - 1
+    label = graph.label(label_base)
+    graph.chain(
+        [f"{input_index}:v:0"],
+        [
+            FfmpegFilterGraph.fps(fps.num, fps.den),
+            FfmpegFilterGraph.settb(VIDEO_TIMEBASE),
+            FfmpegFilterGraph.trim(end_frame=int(frames)),
+            FfmpegFilterGraph.setpts(),
+            FfmpegFilterGraph.format(VIDEO_PIX_FMT),
+        ],
+        [label],
+    )
+    return label
 
 
 def _expected_output_signature(manifest: RenderManifest) -> dict[str, Any]:
@@ -630,25 +912,33 @@ def build_chunk_command(
     if decode_end <= decode_start:
         raise _domain_error("SCHEMA_INVALID", "分块解码窗口为空", {"chunk_no": chunk.chunk_no})
 
-    clips = [
-        clip
-        for clip in manifest.clips
-        if int(clip.end_frame_exclusive) > decode_start and int(clip.start_frame) < decode_end
-    ]
-    if not clips:
+    # Only the picture track is compiled into the picture graph.  A narration or
+    # BGM item that merely overlaps this block in time is *not* a video source;
+    # feeding a WAV to the video concat used to fail with "[1:v:0] matches no
+    # streams".  A declared item kind this builder cannot compile is refused
+    # instead of being silently degraded to black fill.
+    slices = compute_chunk_slices(manifest=manifest, chunk=chunk, tracks=("VIDEO",))
+    if not slices:
         raise _domain_error(
             "CHUNK_HAS_NO_ITEMS",
-            "分块内没有任何条目，无法渲染",
+            "分块内没有任何可编译的画面条目，无法渲染",
             {"chunk_no": chunk.chunk_no, "decode_start_frame": decode_start, "decode_end_frame": decode_end},
+        )
+    unsupported = sorted(
+        {
+            plan.item_kind
+            for plan in slices
+            if plan.item_kind not in _COMPILABLE_VIDEO_ITEM_KINDS
+        }
+    )
+    if unsupported:
+        raise _domain_error(
+            "RENDER_ITEM_KIND_UNSUPPORTED",
+            "分块含当前合成器无法编译的画面条目类型",
+            {"chunk_no": chunk.chunk_no, "item_kinds": unsupported},
         )
 
     fps = manifest.fps
-    # A block's *output* is exactly its core tile ``[start_frame,
-    # end_frame_exclusive)``.  ``handle_in`` / ``handle_out`` only widen the
-    # decoded window so a seam has material on both sides; the incoming handle is
-    # trimmed off the head and the outgoing handle off the tail, which subtracts
-    # the seam overlap exactly once and keeps ``sum(block output) ==
-    # total_frames``.
     handle_in_frames = min(int(chunk.handle_in_frames), max(0, decode_end - decode_start))
     output_frames = chunk.output_frame_count(int(manifest.total_frames))
     if output_frames <= 0:
@@ -659,74 +949,95 @@ def build_chunk_command(
         )
     target_frames = output_frames
     target_seconds = fps.seconds_for_frames(target_frames)
-    handle_in_seconds = fps.seconds_for_frames(handle_in_frames)
-    # The material a block must have on hand, in output frames, before its head
-    # trim and tail trim are applied.
     decode_span_frames = decode_end - decode_start
-    decode_span_seconds = fps.seconds_for_frames(decode_span_frames)
     width, height = int(manifest.width), int(manifest.height)
     sample_rate = int(manifest.audio_sample_rate_hz)
 
     args: list[str] = [*_base_args()]
     graph = FfmpegFilterGraph()
-    # Per clip: the video input index, the audio input index, and whether that
-    # audio is a generated ``anullsrc`` stream.  A clip whose media carries no
-    # usable audio gets a real silent stream of the same length, so every block
-    # has one stable layout; the silence is explicit and declared, never hidden
-    # with shortest-selection semantics.
-    inputs: list[dict[str, Any]] = []
-    input_cursor = 0
-    for clip in clips:
-        path = _clip_media_path(clip, media_path_resolver)
-        declared_audio = True if has_audio_lookup is None else bool(
-            has_audio_lookup.get(str(clip.media_version_id), True)
-        )
-        if path is None:
-            video_index = input_cursor
-            args += ["-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r={fps.num}/{fps.den}"]
-            audio_index = input_cursor + 1
-            args += [
-                "-f", "lavfi", "-i",
-                f"anullsrc=channel_layout={AUDIO_CHANNEL_LAYOUT}:sample_rate={sample_rate}",
-            ]
-            input_cursor += 2
-            inputs.append(
-                {"video": video_index, "audio": audio_index, "silent": True, "clip": clip}
-            )
-            continue
-        video_index = input_cursor
-        args += ["-i", path]
-        input_cursor += 1
-        if declared_audio:
-            inputs.append({"video": video_index, "audio": video_index, "silent": False, "clip": clip})
-        else:
-            audio_index = input_cursor
-            args += [
-                "-f", "lavfi", "-i",
-                f"anullsrc=channel_layout={AUDIO_CHANNEL_LAYOUT}:sample_rate={sample_rate}",
-            ]
-            input_cursor += 1
-            inputs.append({"video": video_index, "audio": audio_index, "silent": True, "clip": clip})
-
+    #: film frame at which the next video slice starts.  A gap in the decode
+    #: window is filled with an explicit black run, never with a stolen copy of
+    #: another picture.
+    cursor_frame = decode_start
     video_labels: list[str] = []
     audio_labels: list[str] = []
-    for index, entry in enumerate(inputs):
-        clip = entry["clip"]
-        source_in_seconds = (int(clip.source_in_us or 0)) / 1_000_000
-        # The last contributing clip is the one that must cover the block's
-        # decode window: an under-length tail (or an intentionally silent clip)
-        # is padded with a cloned last frame, so the block always has exactly
-        # ``decode_span_frames`` frames to trim from.  That padding is part of the
-        # declared design, never a hidden -shortest substitution.
-        last_contributing = index == len(clips) - 1
-        clip_end_seconds = source_in_seconds + fps.seconds_for_frames(clip.frames)
-        if last_contributing and clip_end_seconds < source_in_seconds + decode_span_seconds:
-            clip_end_seconds = source_in_seconds + decode_span_seconds
-        clip_span_seconds = clip_end_seconds - source_in_seconds
+    # One declared silent input per block, added only if something actually needs
+    # it: an input that no chain consumes would make the graph unprovable.
+    silence_input: str | None = None
+
+    def silence_stream() -> str:
+        nonlocal silence_input
+        if silence_input is None:
+            args.extend([
+                "-f", "lavfi", "-i",
+                f"anullsrc=channel_layout={AUDIO_CHANNEL_LAYOUT}:sample_rate={sample_rate}",
+            ])
+            silence_input = f"{_input_count(args) - 1}:a"
+        return silence_input
+
+    def silence_bed(label_base: str, frames: int) -> str:
+        label = graph.label(label_base)
+        span_seconds = fps.seconds_for_frames(int(frames))
+        graph.chain(
+            [silence_stream()],
+            [
+                FfmpegFilterGraph.aformat(sample_rates=sample_rate),
+                FfmpegFilterGraph.atrim(duration=span_seconds),
+                FfmpegFilterGraph.asetpts(),
+            ],
+            [label],
+        )
+        return label
+
+    for plan in slices:
+        if plan.intersection_start_frame > cursor_frame:
+            gap_frames = plan.intersection_start_frame - cursor_frame
+            video_labels.append(
+                _append_black_run(
+                    graph=graph,
+                    args=args,
+                    frames=gap_frames,
+                    width=width,
+                    height=height,
+                    fps=fps,
+                    sample_rate=sample_rate,
+                    label_base=f"gap{len(video_labels)}",
+                )
+            )
+            audio_labels.append(silence_bed(f"gapa{len(video_labels)}", gap_frames))
+        cursor_frame = plan.intersection_end_frame_exclusive
+        clip = _clip_by_id(manifest, plan.clip_id)
+        path = _resolve_media_path(
+            media_version_id=plan.media_version_id,
+            media_sha256=clip.media_sha256,
+            owner_id=plan.clip_id,
+            media_path_resolver=media_path_resolver,
+        )
+        span_seconds = fps.seconds_for_frames(plan.output_frame_count)
+        if path is None:
+            # A clip with no resolvable media becomes a declared black run of
+            # exactly its own length, so the block layout does not change.
+            video_labels.append(
+                _append_black_run(
+                    graph=graph,
+                    args=args,
+                    frames=plan.output_frame_count,
+                    width=width,
+                    height=height,
+                    fps=fps,
+                    sample_rate=sample_rate,
+                    label_base=f"black{len(video_labels)}",
+                )
+            )
+            audio_labels.append(silence_bed(f"blacka{len(video_labels)}", plan.output_frame_count))
+            continue
+        input_index = _input_count(args)
+        args += ["-i", path]
+        source_start_seconds = (plan.source_read_start_us or 0) / 1_000_000
         fit = str((clip.transform or {}).get("fit") or "LETTERBOX").upper()
-        video_out = f"v{index}"
+        video_label = graph.label(f"v{len(video_labels)}")
         video_filters = [
-            FfmpegFilterGraph.trim(start=source_in_seconds),
+            FfmpegFilterGraph.trim(start=source_start_seconds),
             FfmpegFilterGraph.setpts(),
             FfmpegFilterGraph.scale(width, height, fit=fit),
         ]
@@ -739,67 +1050,109 @@ def build_chunk_command(
             FfmpegFilterGraph.fps(fps.num, fps.den),
             FfmpegFilterGraph.settb(VIDEO_TIMEBASE),
         ]
-        if last_contributing:
-            video_filters.append(FfmpegFilterGraph.tpad(stop_mode="clone", stop_duration=clip_span_seconds))
+        declared_source_span = max(0, int(plan.local_source_span_us)) / 1_000_000
+        if plan.covers_decode_end and declared_source_span < span_seconds:
+            # The declared source is genuinely shorter than the block needs; the
+            # design's answer is an explicit clone of the last frame for exactly
+            # the declared shortfall, never a hidden -shortest substitution.
+            video_filters.append(
+                FfmpegFilterGraph.tpad(stop_mode="clone", stop_duration=span_seconds - declared_source_span)
+            )
         video_filters += [
-            FfmpegFilterGraph.trim(end_frame=max(1, round(clip_span_seconds * fps.value))),
+            FfmpegFilterGraph.trim(end_frame=max(1, plan.output_frame_count)),
             FfmpegFilterGraph.setpts(),
             FfmpegFilterGraph.format(VIDEO_PIX_FMT),
         ]
-        graph.chain([f"{entry['video']}:v:0"], video_filters, [video_out])
-        video_labels.append(video_out)
+        graph.chain([f"{input_index}:v:0"], video_filters, [video_label])
+        video_labels.append(video_label)
 
-        audio_out = f"a{index}"
-        # A clip without usable audio gets a real, declared silent stream of the
-        # same length, so concat always sees one stable layout.  That silence is
-        # explicit here; it is never hidden with shortest-selection semantics.
-        # ``anullsrc`` carries a single audio stream, so it is referenced as
-        # ``[n:a]``; a media input uses the explicit ``[n:a:0]`` specifier.
-        audio_input_label = f"{entry['audio']}:a" if entry["silent"] else f"{entry['audio']}:a:0"
-        audio_filters = [
-            FfmpegFilterGraph.atrim(start=source_in_seconds),
-            FfmpegFilterGraph.asetpts(),
-            FfmpegFilterGraph.aformat(sample_rates=sample_rate),
-            FfmpegFilterGraph.apad(whole_duration=clip_span_seconds),
-            FfmpegFilterGraph.atrim(duration=clip_span_seconds),
-            FfmpegFilterGraph.asetpts(),
-        ]
-        graph.chain([audio_input_label], audio_filters, [audio_out])
-        audio_labels.append(audio_out)
+        declared_audio = True if has_audio_lookup is None else bool(
+            has_audio_lookup.get(str(plan.media_version_id), True)
+        )
+        audio_label = graph.label(f"a{len(video_labels) - 1}")
+        if declared_audio:
+            audio_filters = [
+                FfmpegFilterGraph.atrim(start=source_start_seconds),
+                FfmpegFilterGraph.asetpts(),
+                FfmpegFilterGraph.aformat(sample_rates=sample_rate),
+                FfmpegFilterGraph.apad(whole_duration=span_seconds),
+                FfmpegFilterGraph.atrim(duration=span_seconds),
+                FfmpegFilterGraph.asetpts(),
+            ]
+            graph.chain([f"{input_index}:a:0"], audio_filters, [audio_label])
+        else:
+            graph.chain(
+                [silence_stream()],
+                [
+                    FfmpegFilterGraph.aformat(sample_rates=sample_rate),
+                    FfmpegFilterGraph.atrim(duration=span_seconds),
+                    FfmpegFilterGraph.asetpts(),
+                ],
+                [audio_label],
+            )
+        audio_labels.append(audio_label)
 
     # ``concat`` needs at least two inputs.  A single label is used directly:
     # an empty filter chain (``[in][out]``) is not a valid filtergraph, so the
     # pass-through must not be emitted as a chain at all.
     if len(video_labels) > 1:
-        graph.chain(video_labels, [FfmpegFilterGraph.concat(inputs=len(video_labels), video=True, audio=False)], ["vcat"])
-        video_source = "vcat"
+        vcat_label = graph.label("vcat")
+        graph.chain(
+            video_labels,
+            [FfmpegFilterGraph.concat(inputs=len(video_labels), video=True, audio=False)],
+            [vcat_label],
+        )
+        video_source = vcat_label
     else:
         video_source = video_labels[0]
+    # The head handle is dropped in the frame domain (never seconds) so a
+    # fractional frame rate cannot round a frame away at the seam.
     if handle_in_frames > 0:
+        vhead_label = graph.label("vhead")
         graph.chain(
             [video_source],
-            [FfmpegFilterGraph.trim(start=handle_in_seconds), FfmpegFilterGraph.setpts()],
-            ["vhead"],
+            [
+                FfmpegFilterGraph.fps(fps.num, fps.den),
+                FfmpegFilterGraph.settb(VIDEO_TIMEBASE),
+                FfmpegFilterGraph.trim(start_frame=handle_in_frames),
+                FfmpegFilterGraph.setpts(),
+            ],
+            [vhead_label],
         )
-        video_source = "vhead"
+        video_source = vhead_label
+    vout_label = graph.label("vout")
     graph.chain(
         [video_source],
-        [FfmpegFilterGraph.trim(end_frame=target_frames), FfmpegFilterGraph.setpts()],
-        ["vout"],
+        [
+            FfmpegFilterGraph.trim(start_frame=0, end_frame=target_frames),
+            FfmpegFilterGraph.setpts(),
+            FfmpegFilterGraph.format(VIDEO_PIX_FMT),
+        ],
+        [vout_label],
     )
 
     if len(audio_labels) > 1:
-        graph.chain(audio_labels, [FfmpegFilterGraph.concat(inputs=len(audio_labels), video=False, audio=True)], ["acat"])
-        audio_source = "acat"
+        acat_label = graph.label("acat")
+        graph.chain(
+            audio_labels,
+            [FfmpegFilterGraph.concat(inputs=len(audio_labels), video=False, audio=True)],
+            [acat_label],
+        )
+        audio_source = acat_label
     else:
         audio_source = audio_labels[0]
-    if handle_in_frames > 0:
+    # The audio handle is dropped in the *sample* domain: the same fractional
+    # frame rate that decides the picture decides the sample, rounding once.
+    handle_in_samples = _samples_for_frames(handle_in_frames, fps, sample_rate)
+    if handle_in_samples > 0:
+        ahead_label = graph.label("ahead")
         graph.chain(
             [audio_source],
-            [FfmpegFilterGraph.atrim(start=handle_in_seconds), FfmpegFilterGraph.asetpts()],
-            ["ahead"],
+            [FfmpegFilterGraph.atrim(start_sample=handle_in_samples), FfmpegFilterGraph.asetpts()],
+            [ahead_label],
         )
-        audio_source = "ahead"
+        audio_source = ahead_label
+    aout_label = graph.label("aout")
     graph.chain(
         [audio_source],
         [
@@ -807,13 +1160,14 @@ def build_chunk_command(
             FfmpegFilterGraph.atrim(duration=target_seconds),
             FfmpegFilterGraph.asetpts(),
         ],
-        ["aout"],
+        [aout_label],
     )
+    graph.validate(terminal=[vout_label, aout_label])
 
     args += [
         "-filter_complex", str(graph),
-        "-map", "[vout]",
-        "-map", "[aout]",
+        "-map", f"[{vout_label}]",
+        "-map", f"[{aout_label}]",
         # The filter graph produced exactly ``target_frames`` frames at the target
         # rate already, so the muxer must not re-time them: ``cfr`` would duplicate
         # the tail frame to cover the fractionally longer AAC stream and the chunk
@@ -972,6 +1326,16 @@ def build_mix_command(
 
     if not isinstance(manifest, RenderManifest):
         raise TypeError("build_mix_command 需要 RenderManifest")
+    if int(narration_start_sample) != 0:
+        # The parameter used to be written into the command note and otherwise
+        # ignored, so a caller asking for a delayed start silently got audio from
+        # sample 0.  A declared-but-unimplemented time offset is refused instead:
+        # accepting a parameter and not applying it is the bug, not a feature.
+        raise _domain_error(
+            "NARRATION_START_NOT_SUPPORTED",
+            "narration_start_sample 目前只支持 0；非零偏移必须由 manifest 的采样布局表达",
+            {"narration_start_sample": int(narration_start_sample)},
+        )
     sample_rate = int(manifest.audio_sample_rate_hz)
     total_samples = int(manifest.total_samples)
     total_seconds = total_samples / sample_rate
@@ -982,7 +1346,7 @@ def build_mix_command(
     narration_labels: list[str] = []
     for index, path in enumerate(narration_paths):
         args += ["-i", str(path)]
-        label = f"n{index}"
+        label = graph.label(f"n{index}")
         graph.chain(
             [f"{index}:a:0"],
             [FfmpegFilterGraph.aformat(sample_rates=sample_rate), FfmpegFilterGraph.asetpts()],
@@ -991,12 +1355,12 @@ def build_mix_command(
         narration_labels.append(label)
     voice_label: str | None = None
     if len(narration_labels) > 1:
+        voice_label = graph.label("voice")
         graph.chain(
             narration_labels,
             [FfmpegFilterGraph.concat(inputs=len(narration_labels), video=False, audio=True)],
-            ["voice_raw"],
+            [voice_label],
         )
-        voice_label = "voice"
     elif narration_labels:
         # A single narration input is used directly; an empty chain would not be
         # a valid filtergraph.
@@ -1005,7 +1369,7 @@ def build_mix_command(
     bed_labels: list[str] = []
     for index, path in enumerate(sfx_paths):
         args += ["-i", str(path)]
-        label = f"s{index}"
+        label = graph.label(f"s{index}")
         graph.chain(
             [f"{len(narration_labels) + index}:a:0"],
             [
@@ -1018,6 +1382,7 @@ def build_mix_command(
         bed_labels.append(label)
     if bgm_path is not None:
         args += ["-i", str(bgm_path)]
+        bgm_label = graph.label("bgm")
         graph.chain(
             [f"{len(narration_labels) + len(sfx_paths)}:a:0"],
             [
@@ -1025,39 +1390,43 @@ def build_mix_command(
                 FfmpegFilterGraph.volume(gain_db=0.0),
                 FfmpegFilterGraph.asetpts(),
             ],
-            ["bgm"],
+            [bgm_label],
         )
-        bed_labels.append("bgm")
+        bed_labels.append(bgm_label)
 
     bed_label: str | None = None
     if bed_labels:
         if len(bed_labels) == 1:
             bed_label = bed_labels[0]
         else:
+            bed_label = graph.label("bed")
             graph.chain(
                 bed_labels,
                 [FfmpegFilterGraph.amix(inputs=len(bed_labels), duration="longest", normalize=False)],
-                ["bed"],
+                [bed_label],
             )
-            bed_label = "bed"
 
     duck_ratio = 10 ** (float(duck_db) / 20.0)
     mix_inputs: list[str] = []
     if bed_label is not None and voice_label is not None:
         # The narration drives the ducker through a dedicated second copy so the
         # voice that reaches the final mix is never processed by its own ducking.
-        graph.chain([voice_label], [FfmpegFilterGraph.asplit(outputs=2)], ["voice_mix", "voice_sc"])
+        voice_mix = graph.label("voice_mix")
+        voice_sc = graph.label("voice_sc")
+        bed_scaled = graph.label("bed_scaled")
+        bed_ducked = graph.label("bed_ducked")
+        graph.chain([voice_label], [FfmpegFilterGraph.asplit(outputs=2)], [voice_mix, voice_sc])
         graph.chain(
             [bed_label],
             [FfmpegFilterGraph.volume(factor=duck_ratio)],
-            ["bed_scaled"],
+            [bed_scaled],
         )
         graph.chain(
-            ["bed_scaled", "voice_sc"],
+            [bed_scaled, voice_sc],
             [FfmpegFilterGraph.sidechaincompress(threshold=0.05, ratio=8.0, attack_ms=20.0, release_ms=300.0)],
-            ["bed_ducked"],
+            [bed_ducked],
         )
-        mix_inputs += ["bed_ducked", "voice_mix"]
+        mix_inputs += [bed_ducked, voice_mix]
     elif bed_label is not None:
         mix_inputs.append(bed_label)
     elif voice_label is not None:
@@ -1066,23 +1435,26 @@ def build_mix_command(
         # No declared audio at all: emit an explicit, legal silent bed rather
         # than relying on -shortest to paper over the missing stream.
         args += ["-f", "lavfi", "-i", f"anullsrc=channel_layout={AUDIO_CHANNEL_LAYOUT}:sample_rate={sample_rate}"]
+        silence_label = graph.label("silence")
         graph.chain(
             [f"{len(narration_paths) + len(sfx_paths) + (1 if bgm_path is not None else 0)}:a"],
             [FfmpegFilterGraph.aformat(sample_rates=sample_rate)],
-            ["silence"],
+            [silence_label],
         )
-        mix_inputs.append("silence")
+        mix_inputs.append(silence_label)
 
     # ``amix`` needs at least two inputs; one label is normalized directly.
     if len(mix_inputs) > 1:
+        mixed_label = graph.label("mixed")
         graph.chain(
             mix_inputs,
             [FfmpegFilterGraph.amix(inputs=len(mix_inputs), duration="longest", normalize=False)],
-            ["mixed"],
+            [mixed_label],
         )
-        mixed_source = "mixed"
+        mixed_source = mixed_label
     else:
         mixed_source = mix_inputs[0]
+    mixout_label = graph.label("mixout")
     graph.chain(
         [mixed_source],
         [
@@ -1091,12 +1463,13 @@ def build_mix_command(
             FfmpegFilterGraph.loudnorm(i=loudness_target_lufs, tp=true_peak_dbtp, lra=loudness_lra),
             FfmpegFilterGraph.aformat(sample_rates=sample_rate),
         ],
-        ["mixout"],
+        [mixout_label],
     )
+    graph.validate(terminal=[mixout_label])
 
     args += [
         "-filter_complex", str(graph),
-        "-map", "[mixout]",
+        "-map", f"[{mixout_label}]",
         "-t", _fmt_number(total_seconds),
         "-c:a", "pcm_s16le",
         "-ar", str(sample_rate),
@@ -1105,7 +1478,7 @@ def build_mix_command(
     ]
     note = (
         f"{LOUDNESS_NOTE}；duck 目标 {float(duck_db):.1f} dB（系数 {duck_ratio:.6f}）；"
-        f"起点 {int(narration_start_sample)} 采样；禁止 -shortest"
+        f"起点 0 采样（非零偏移不受支持，会被拒绝）；禁止 -shortest"
     )
     return FfmpegCommand(args=tuple(args), purpose="MIX", chunk_no=None, note=note)
 
@@ -1209,52 +1582,114 @@ def classify_process_failure(
     stderr: str = "",
     stdout: str = "",
     output_path: Path | None = None,
+    cancelled: bool = False,
 ) -> dict[str, Any]:
-    """Classify a non-zero process exit as recoverable or not.
+    """Classify a non-zero process exit, deciding whether a retry is legitimate.
 
-    Disk-full (``ENOSPC``) and a process that died without producing output are
-    *recoverable*: the caller may clean the work directory and retry.  Everything
-    else is reported with its own code so the caller cannot mistake a real
-    encoding failure for a transient one.
+    Categories, in the order they are decided:
+
+    ``USER_CANCELLED``
+        the caller asked for the stop, so nothing may be retried automatically;
+    ``DISK_FULL`` / ``RESOURCE_EXHAUSTED``
+        recoverable, but only after the caller performs a recovery action;
+    ``TOOL_MISSING`` / ``INPUT_MISSING`` / ``PERMISSION_DENIED``
+        environment or input problems with a concrete next step;
+    ``FILTER_INVALID`` / ``ARGUMENT_INVALID``
+        the command itself is wrong.  These are checked *before* the
+        "no output was produced" fallback on purpose: a deterministic filtergraph
+        error also produces no file, and the old ordering classified exactly that
+        case as a retryable ``NO_OUTPUT`` — so a graph that can never succeed was
+        retried until the budget ran out;
+    ``TIMEOUT`` / ``PROCESS_KILLED``
+        recoverable technical failures;
+    ``NO_OUTPUT``
+        recoverable only when nothing more specific is visible in the log;
+    ``PROCESS_FAILED``
+        unknown non-zero exit with output present.
+
+    ``produced_output`` is reported for every branch but is never used as proof
+    of success: a half-written file must not become a "recoverable" reason.
     """
 
-    combined = f"{stdout}\n{stderr}".lower()
-    produced_output = bool(output_path is not None and output_path.exists() and output_path.stat().st_size > 0)
-    if any(marker in combined for marker in _RECOVERABLE_STDERR_MARKERS):
+    combined = f"{stdout}\n{stderr}"
+    lowered = combined.lower()
+    produced_output = bool(output_path is not None and Path(output_path).exists() and Path(output_path).stat().st_size > 0)
+    code = None if returncode is None else int(returncode)
+
+    def result(
+        status: str,
+        reason: str,
+        recoverable: bool,
+        retry_hint: str,
+        **extra: Any,
+    ) -> dict[str, Any]:
         return {
-            "status": "RECOVERABLE_FAILED",
-            "reason": "DISK_FULL",
-            "recoverable": True,
-            "retry_hint": "清理工作目录后重试；半成品不会登记为完成",
-            "returncode": returncode,
+            "status": status,
+            "reason": reason,
+            "recoverable": bool(recoverable),
+            "retry_hint": retry_hint,
+            "returncode": code,
             "produced_output": produced_output,
+            **extra,
         }
-    if returncode is not None and int(returncode) < 0:
-        return {
-            "status": "RECOVERABLE_FAILED",
-            "reason": "PROCESS_KILLED",
-            "recoverable": True,
-            "retry_hint": "进程被终止（可能由取消或资源压力触发），清理后可重试",
-            "returncode": returncode,
-            "produced_output": produced_output,
-        }
+
+    if cancelled or code in {_SIGINT, _SIGTERM} or any(marker in lowered for marker in _CANCEL_STDERR_MARKERS):
+        return result(
+            "CANCELLED",
+            REASON_USER_CANCELLED,
+            False,
+            "已按请求停止，不自动重试；需要时由用户重新发起",
+        )
+    if any(marker in lowered for marker in _RECOVERABLE_STDERR_MARKERS):
+        return result(
+            "RECOVERABLE_FAILED",
+            REASON_DISK_FULL,
+            True,
+            "清理工作目录/释放磁盘后重试；半成品不会登记为完成",
+        )
+    for marker, reason in _RESOURCE_STDERR_MARKERS:
+        if marker in lowered:
+            return result(
+                "RECOVERABLE_FAILED",
+                reason,
+                True,
+                "释放内存或降低并发后重试",
+            )
+    for marker, reason in _PERMANENT_STDERR_MARKERS:
+        if marker in lowered:
+            return result(
+                "FAILED",
+                reason,
+                False,
+                "这是确定的输入/参数/滤镜错误，重复同一命令不会恢复；请修正输入或命令",
+            )
+    if any(marker in lowered for marker in ("not found", "no such file")) and "ffmpeg" in lowered:
+        return result(
+            "UNAVAILABLE",
+            REASON_TOOL_MISSING,
+            False,
+            "未找到 ffmpeg/ffprobe 可执行文件，需先安装或修正路径",
+        )
+    if code is not None and code < 0:
+        return result(
+            "RECOVERABLE_FAILED",
+            REASON_PROCESS_KILLED,
+            True,
+            "进程被终止（可能由资源压力触发），清理后可重试",
+        )
     if not produced_output:
-        return {
-            "status": "RECOVERABLE_FAILED",
-            "reason": "NO_OUTPUT",
-            "recoverable": True,
-            "retry_hint": "进程未产出任何输出，清理后可重试",
-            "returncode": returncode,
-            "produced_output": False,
-        }
-    return {
-        "status": "FAILED",
-        "reason": "PROCESS_FAILED",
-        "recoverable": False,
-        "retry_hint": "编码失败，需检查输入与参数",
-        "returncode": returncode,
-        "produced_output": produced_output,
-    }
+        return result(
+            "RECOVERABLE_FAILED",
+            REASON_NO_OUTPUT,
+            True,
+            "进程未产出任何输出，且日志中没有确定的配置错误；清理后可重试一次",
+        )
+    return result(
+        "FAILED",
+        REASON_PROCESS_FAILED,
+        False,
+        "编码失败且已产出部分文件，需按日志检查输入与参数，不得当作成功",
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -1303,6 +1738,28 @@ def _unavailable(reason: str, **extra: Any) -> dict[str, Any]:
     return {"status": "UNAVAILABLE", "reason": reason, "measured": False, **extra}
 
 
+def _tail(text: str, limit: int) -> str:
+    """Bounded tail of a log stream, so a report can never carry a whole log."""
+
+    if limit <= 0:
+        return ""
+    return text[-limit:]
+
+
+def _command_output_path(command: FfmpegCommand) -> Path | None:
+    """The file a command writes: its last positional argument.
+
+    ``FfmpegCommand`` builders always append the destination last, so this is the
+    path the classifier must probe to decide whether a half file exists.
+    """
+
+    for value in reversed(tuple(command.args)):
+        if value.startswith("-"):
+            continue
+        return Path(value)
+    return None
+
+
 _DECODE_ERROR_RE = None
 
 
@@ -1312,28 +1769,47 @@ def _default_process_runner(
     timeout_seconds: float,
     cwd: Path | None = None,
 ) -> dict[str, Any]:
-    """Run one process with no shell and capture bounded output tails."""
+    """Run one process with no shell, streaming its output through bounded tails.
 
+    ``subprocess.run(capture_output=True)`` is *not* used: it returns the whole
+    stream, so a long FFmpeg run with verbose logging can accumulate hundreds of
+    megabytes in memory before the caller truncates the string.  Instead the
+    pipes are drained incrementally; each stream keeps a bounded in-memory tail
+    (:data:`DEFAULT_LOG_TAIL_BYTES`), the total byte count is recorded, and — when
+    ``LOUDNESS_LOG_DIR`` (or ``DSH_FFMPEG_LOG_DIR``) is set — the full stream is
+    appended to a per-run log file so bounding memory never loses the diagnosis.
+    A timeout kills the whole process tree, not just the parent.
+    """
+
+    command = list(argv)
+    tail_limit = _log_tail_bytes()
+    log_dir_text = os.environ.get("LOUDNESS_LOG_DIR") or os.environ.get("DSH_FFMPEG_LOG_DIR")
+    log_path: Path | None = None
+    log_handle = None
+    if log_dir_text:
+        try:
+            log_dir = Path(log_dir_text)
+            log_dir.mkdir(parents=True, exist_ok=True)
+            name = hashlib.sha256(" ".join(command).encode("utf-8", errors="replace")).hexdigest()[:16]
+            log_path = log_dir / f"ffmpeg-{name}.log"
+            log_handle = log_path.open("ab")
+        except OSError:
+            log_path = None
+            log_handle = None
+
+    state = {"stdout": bytearray(), "stderr": bytearray()}
+    totals = {"stdout": 0, "stderr": 0}
     try:
-        completed = subprocess.run(
-            list(argv),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=float(timeout_seconds),
+        process = subprocess.Popen(
+            command,
             cwd=str(cwd) if cwd is not None else None,
-            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=False,
         )
-    except subprocess.TimeoutExpired as error:
-        return {
-            "returncode": None,
-            "stdout": _as_text(error.stdout),
-            "stderr": _as_text(error.stderr),
-            "timed_out": True,
-            "error": "TIMEOUT",
-        }
     except OSError as error:
+        if log_handle is not None:
+            log_handle.close()
         return {
             "returncode": None,
             "stdout": "",
@@ -1341,14 +1817,97 @@ def _default_process_runner(
             "timed_out": False,
             "error": type(error).__name__,
             "errno": getattr(error, "errno", None),
+            "log_path": None if log_path is None else str(log_path),
+            "log_bytes": 0,
+            "truncated": False,
         }
+
+    def _pump(stream: Any, key: str) -> None:
+        buffer = state[key]
+        while True:
+            block = stream.read(4096)
+            if not block:
+                break
+            totals[key] += len(block)
+            buffer.extend(block)
+            if len(buffer) > tail_limit:
+                del buffer[: len(buffer) - tail_limit]
+            if log_handle is not None:
+                log_handle.write(block)
+        stream.close()
+
+    timed_out = False
+    try:
+        threads = [
+            threading.Thread(target=_pump, args=(process.stdout, "stdout"), daemon=True),
+            threading.Thread(target=_pump, args=(process.stderr, "stderr"), daemon=True),
+        ]
+        for thread in threads:
+            thread.start()
+        try:
+            process.wait(timeout=float(timeout_seconds))
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _terminate_process_tree(process)
+            try:
+                process.wait(timeout=10.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=10.0)
+        for thread in threads:
+            thread.join(timeout=10.0)
+    finally:
+        if log_handle is not None:
+            log_handle.close()
+
+    def _decode(buffer: bytearray) -> str:
+        return bytes(buffer).decode("utf-8", errors="replace")
+
     return {
-        "returncode": completed.returncode,
-        "stdout": completed.stdout or "",
-        "stderr": completed.stderr or "",
-        "timed_out": False,
-        "error": None,
+        "returncode": None if timed_out else process.returncode,
+        "stdout": _decode(state["stdout"]),
+        "stderr": _decode(state["stderr"]),
+        "timed_out": timed_out,
+        "error": "TIMEOUT" if timed_out else None,
+        "log_path": None if log_path is None else str(log_path),
+        "log_bytes": int(totals["stdout"] + totals["stderr"]),
+        "stdout_bytes": int(totals["stdout"]),
+        "stderr_bytes": int(totals["stderr"]),
+        "truncated": bool(totals["stdout"] + totals["stderr"] > tail_limit),
+        "tail_limit_bytes": int(tail_limit),
     }
+
+
+def _log_tail_bytes() -> int:
+    raw = os.environ.get("DSH_FFMPEG_LOG_TAIL_BYTES")
+    if raw is None:
+        return DEFAULT_LOG_TAIL_BYTES
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_LOG_TAIL_BYTES
+    return max(4096, value)
+
+
+def _terminate_process_tree(process: subprocess.Popen[Any]) -> None:
+    """Stop a child and everything it started, without ever using a shell."""
+
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                capture_output=True,
+                check=False,
+            )
+            return
+        except OSError:
+            pass
+    try:
+        process.terminate()
+    except OSError:
+        pass
 
 
 def _as_text(value: Any) -> str:
@@ -1376,10 +1935,12 @@ class FfmpegRunner:
         timeout_seconds: float = 3600.0,
         runner: Callable[..., Any] | None = None,
         which: Callable[[str], str | None] | None = None,
+        tail_bytes: int = DEFAULT_LOG_TAIL_BYTES,
     ) -> None:
         self.ffmpeg = str(ffmpeg)
         self.ffprobe = str(ffprobe)
         self.timeout_seconds = float(timeout_seconds)
+        self.tail_bytes = max(0, int(tail_bytes))
         self._runner = runner
         self._which = which or shutil.which
         self.calls: list[dict[str, Any]] = []
@@ -1458,19 +2019,32 @@ class FfmpegRunner:
                 "chunk_no": command.chunk_no,
                 "returncode": 0,
                 "argv": argv,
-                "stderr_tail": _as_text(outcome.get("stderr"))[-4000:],
+                "stderr_tail": _tail(_as_text(outcome.get("stderr")), self.tail_bytes),
+                "log_path": outcome.get("log_path"),
+                "log_bytes": outcome.get("log_bytes"),
+                "log_truncated": outcome.get("truncated"),
             }
+        # The output path is what the process was writing: without it the
+        # classifier cannot tell "produced a half file" from "produced nothing",
+        # and a deterministic filter error was therefore reported as a retryable
+        # NO_OUTPUT.
+        output_path = _command_output_path(command)
         classified = classify_process_failure(
             returncode=returncode if isinstance(returncode, int) else None,
             stderr=_as_text(outcome.get("stderr")),
             stdout=_as_text(outcome.get("stdout")),
+            output_path=output_path,
+            cancelled=bool(outcome.get("cancelled")),
         )
         return {
             **classified,
             "purpose": command.purpose,
             "chunk_no": command.chunk_no,
             "argv": argv,
-            "stderr_tail": _as_text(outcome.get("stderr"))[-4000:],
+            "stderr_tail": _tail(_as_text(outcome.get("stderr")), self.tail_bytes),
+            "log_path": outcome.get("log_path"),
+            "log_bytes": outcome.get("log_bytes"),
+            "log_truncated": outcome.get("truncated"),
         }
 
     # ----------------------------------------------------------------- probe
@@ -1793,6 +2367,7 @@ def atomic_render(
     sfx_paths: Sequence[Path] = (),
     expected_sha256: str | None = None,
     keep_temp_on_failure: bool = True,
+    has_audio_lookup: Mapping[str, bool] | None = None,
     chunk_builder: Callable[..., FfmpegCommand] = build_chunk_command,
     concat_builder: Callable[..., FfmpegCommand] = build_concat_command,
     signature: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
@@ -1838,6 +2413,7 @@ def atomic_render(
             output_path=chunk_path,
             work_dir=staging_dir,
             media_path_resolver=media_path_resolver,
+            has_audio_lookup=has_audio_lookup,
         )
         outcome = dict(run_command(command))
         status = str(outcome.get("status") or "")

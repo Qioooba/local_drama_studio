@@ -35,6 +35,7 @@ What this handler deliberately does NOT do:
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 from typing import Any, Callable, Mapping, Protocol
 
 from local_drama.application.explainers.narration import ExplainerNarrationService
@@ -202,7 +203,16 @@ def run_narration_tts_job(
     media_ops: NarrationMediaPort,
     atomic_writer: AtomicWriter,
     take_suffix: str = "wav",
+    pre_synthesized: Path | None = None,
 ) -> tuple[str, str]:
+    """Synthesise one narration segment and register the take.
+
+    ``pre_synthesized`` carries a WAV a batch run already produced with the same
+    authorised voice and text.  Every verification below still runs: the file is
+    probed, hashed, registered as an immutable media version and re-checked against
+    the segment hash, so a batched take is the same durable fact a per-segment
+    synthesis would have produced.
+    """
     snapshot = job["input_snapshot"]
     semantic_inputs = snapshot.get("semantic_inputs") or {}
     if not isinstance(semantic_inputs, Mapping):
@@ -288,7 +298,24 @@ def run_narration_tts_job(
             timeout_seconds=timeout_seconds,
         ) or {}
 
-    atomic_writer(raw_output, synthesize)
+    if pre_synthesized is not None:
+        source = Path(pre_synthesized)
+        if not source.is_file() or source.stat().st_size <= 0:
+            raise DomainRuleError(
+                "NARRATION_BATCH_OUTPUT_MISSING",
+                "批量旁白合成没有产出该段落的音频文件",
+                {"segment_id": str(segment["id"]), "path": source.name},
+            )
+        runtime_result = {
+            "runtime": "voxcpm2-subprocess-batch",
+            "batch": True,
+            "source": source.name,
+            "network_used": False,
+            "speed_applied_natively": True,
+        }
+        atomic_writer(raw_output, lambda target: shutil.copyfile(source, target))
+    else:
+        atomic_writer(raw_output, synthesize)
     if not raw_output.exists() or raw_output.stat().st_size <= 0:
         raise DomainRuleError(
             "NARRATION_TTS_OUTPUT_MISSING", "旁白合成没有产出可用的音频文件", {"path": raw_output.name}

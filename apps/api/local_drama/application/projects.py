@@ -194,56 +194,60 @@ class ProjectService:
         idempotency_key: str | None = None,
         request_digest: str | None = None,
         product_kind: str = ProductKind.DRAMA.value,
+        connection: sqlite3.Connection | None = None,
     ) -> dict[str, Any]:
-        validate_project_code(code)
-        if product_kind not in {item.value for item in ProductKind}:
-            raise DomainRuleError(
-                "INVALID_PRODUCT_KIND", "product_kind 必须是 DRAMA 或 EXPLAINER", {"product_kind": product_kind}
-            )
-        if product_kind == ProductKind.EXPLAINER.value:
-            # An explainer project deliberately owns no season and no episode.
-            # Creating a hidden "episode zero" is exactly what design §4.2 forbids.
-            if episode_count != 0 or season_count != 0:
-                raise DomainRuleError(
-                    "INVALID_EPISODE_COUNT",
-                    "解说项目不创建季与分集；请使用解说工厂的 edition 概念",
-                    {"episode_count": episode_count, "season_count": season_count},
-                )
-            if not title or len(title) > 200:
-                raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
-            if width is not None and height is not None and (width < 64 or height < 64):
-                raise DomainRuleError("INVALID_PRODUCTION_RESOLUTION", "制作分辨率必须同时提供有效 width 与 height")
-            if aspect_ratio is not None and aspect_ratio not in {
-                "16:9",
-                "9:16",
-                "3:4",
-                "1:1",
-                "4:3",
-                "2.39:1",
-                "2.35:1",
-                "21:9",
-            }:
-                raise DomainRuleError(
-                    "INVALID_ASPECT_RATIO", "画幅取值不合法", {"aspect_ratio": aspect_ratio}
-                )
-            if (fps_num is None) != (fps_den is None) or (fps_num is not None and (fps_num <= 0 or fps_den is None or fps_den <= 0)):
-                raise DomainRuleError("INVALID_FPS", "fps 必须是有效的正有理数")
-        else:
-            validate_project_spec(
+        """Create one project, either in its own transaction or the caller's.
+
+        ``connection`` is the composite-command seam: the explainer creation
+        service creates the project *and* its video in one write transaction, so
+        the project write must be able to join a transaction it does not own.  The
+        public single-project behaviour (own transaction, directory rollback,
+        idempotency receipt) is unchanged when ``connection`` is omitted.
+        """
+
+        if connection is not None:
+            project_id = self._insert_project_in_connection(
+                connection,
+                code=code,
+                title=title,
                 episode_count=episode_count,
                 aspect_ratio=aspect_ratio,
                 fps_num=fps_num,
                 fps_den=fps_den,
-                allow_unconfigured=allow_unconfigured_capabilities,
+                target_duration_ms=target_duration_ms,
+                allow_unconfigured_capabilities=allow_unconfigured_capabilities,
                 season_count=season_count,
                 width=width,
                 height=height,
                 primary_language=primary_language,
                 subtitle_mode=subtitle_mode,
                 subtitle_language=subtitle_language,
+                production_plan=production_plan,
+                profile_bindings=profile_bindings,
+                delivery_target=delivery_target,
+                actor=actor,
+                request_id=request_id,
+                simulate_failure=simulate_failure,
+                product_kind=product_kind,
             )
-            if not title or len(title) > 200:
-                raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
+            return {**self._project_row(connection, project_id), "idempotent_replay": False}
+
+        validate_project_code(code)
+        self._validate_project_creation(
+            title=title,
+            episode_count=episode_count,
+            season_count=season_count,
+            aspect_ratio=aspect_ratio,
+            fps_num=fps_num,
+            fps_den=fps_den,
+            width=width,
+            height=height,
+            primary_language=primary_language,
+            subtitle_mode=subtitle_mode,
+            subtitle_language=subtitle_language,
+            allow_unconfigured_capabilities=allow_unconfigured_capabilities,
+            product_kind=product_kind,
+        )
         if isinstance(target_duration_ms, bool) or not isinstance(target_duration_ms, int) or not 0 < target_duration_ms <= MAX_TARGET_DURATION_MS:
             raise DomainRuleError("INVALID_TARGET_DURATION", "target_duration_ms 必须大于 0 且不超过 24 小时")
         profile_bindings = _canonical_profile_bindings(profile_bindings or [])
@@ -310,6 +314,165 @@ class ProjectService:
             # HTTP envelope can report a real idempotent result.
             return {**self.get_project(replay_project_id), "idempotent_replay": True}
         return self.get_project(project_id)
+
+    def _insert_project_in_connection(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        code: str,
+        title: str,
+        episode_count: int,
+        aspect_ratio: str | None,
+        fps_num: int | None,
+        fps_den: int | None,
+        target_duration_ms: int,
+        allow_unconfigured_capabilities: bool,
+        season_count: int,
+        width: int | None,
+        height: int | None,
+        primary_language: str | None,
+        subtitle_mode: str | None,
+        subtitle_language: str | None,
+        production_plan: dict[str, Any] | None = None,
+        profile_bindings: list[dict[str, str]] | None = None,
+        delivery_target: dict[str, Any] | None = None,
+        actor: str = "local-user",
+        request_id: str | None = None,
+        simulate_failure: bool = False,
+        product_kind: str,
+    ) -> str:
+        """Validate and insert a project inside a caller-owned transaction.
+
+        The caller owns commit *and* rollback, so this helper performs no directory
+        cleanup of its own: the composite command tracks the directory it created
+        and removes exactly that directory when its transaction fails, which is
+        what makes "the project never exists without its video" true.
+        """
+
+        validate_project_code(code)
+        self._validate_project_creation(
+            title=title,
+            episode_count=episode_count,
+            season_count=season_count,
+            aspect_ratio=aspect_ratio,
+            fps_num=fps_num,
+            fps_den=fps_den,
+            width=width,
+            height=height,
+            primary_language=primary_language,
+            subtitle_mode=subtitle_mode,
+            subtitle_language=subtitle_language,
+            allow_unconfigured_capabilities=allow_unconfigured_capabilities,
+            product_kind=product_kind,
+        )
+        if isinstance(target_duration_ms, bool) or not isinstance(target_duration_ms, int) or not 0 < target_duration_ms <= MAX_TARGET_DURATION_MS:
+            raise DomainRuleError("INVALID_TARGET_DURATION", "target_duration_ms 必须大于 0 且不超过 24 小时")
+        resolved_bindings = _canonical_profile_bindings(profile_bindings or [])
+        self._validate_creation_bindings(
+            production_plan, resolved_bindings, delivery_target, require_complete=not allow_unconfigured_capabilities
+        )
+        if connection.execute("SELECT id FROM projects WHERE code = ?", (code,)).fetchone():
+            raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
+        project_id = str(uuid.uuid4())
+        self._insert_new_project(
+            connection,
+            project_id=project_id,
+            code=code,
+            title=title,
+            episode_count=episode_count,
+            season_count=season_count,
+            aspect_ratio=aspect_ratio,
+            fps_num=fps_num,
+            fps_den=fps_den,
+            target_duration_ms=target_duration_ms,
+            width=width,
+            height=height,
+            primary_language=primary_language,
+            subtitle_mode=subtitle_mode,
+            subtitle_language=subtitle_language,
+            production_plan=production_plan,
+            profile_bindings=resolved_bindings,
+            delivery_target=delivery_target,
+            actor=actor,
+            request_id=request_id,
+            simulate_failure=simulate_failure,
+            product_kind=product_kind,
+        )
+        return project_id
+
+    def _project_row(self, connection: sqlite3.Connection, project_id: str) -> dict[str, Any]:
+        row = connection.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if row is None:
+            raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在", {"project_id": project_id})
+        return {key: row[key] for key in row.keys()}
+
+    def _validate_project_creation(
+        self,
+        *,
+        title: str,
+        episode_count: int,
+        season_count: int,
+        aspect_ratio: str | None,
+        fps_num: int | None,
+        fps_den: int | None,
+        width: int | None,
+        height: int | None,
+        primary_language: str | None,
+        subtitle_mode: str | None,
+        subtitle_language: str | None,
+        allow_unconfigured_capabilities: bool,
+        product_kind: str,
+    ) -> None:
+        """Validate the project shape for both the standalone and composite paths."""
+
+        if product_kind not in {item.value for item in ProductKind}:
+            raise DomainRuleError(
+                "INVALID_PRODUCT_KIND", "product_kind 必须是 DRAMA 或 EXPLAINER", {"product_kind": product_kind}
+            )
+        if product_kind == ProductKind.EXPLAINER.value:
+            # An explainer project deliberately owns no season and no episode.
+            # Creating a hidden "episode zero" is exactly what design §4.2 forbids.
+            if episode_count != 0 or season_count != 0:
+                raise DomainRuleError(
+                    "INVALID_EPISODE_COUNT",
+                    "解说项目不创建季与分集；请使用解说工厂的 edition 概念",
+                    {"episode_count": episode_count, "season_count": season_count},
+                )
+            if not title or len(title) > 200:
+                raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
+            if width is not None and height is not None and (width < 64 or height < 64):
+                raise DomainRuleError("INVALID_PRODUCTION_RESOLUTION", "制作分辨率必须同时提供有效 width 与 height")
+            if aspect_ratio is not None and aspect_ratio not in {
+                "16:9",
+                "9:16",
+                "3:4",
+                "1:1",
+                "4:3",
+                "2.39:1",
+                "2.35:1",
+                "21:9",
+            }:
+                raise DomainRuleError(
+                    "INVALID_ASPECT_RATIO", "画幅取值不合法", {"aspect_ratio": aspect_ratio}
+                )
+            if (fps_num is None) != (fps_den is None) or (fps_num is not None and (fps_num <= 0 or fps_den is None or fps_den <= 0)):
+                raise DomainRuleError("INVALID_FPS", "fps 必须是有效的正有理数")
+            return
+        validate_project_spec(
+            episode_count=episode_count,
+            aspect_ratio=aspect_ratio,
+            fps_num=fps_num,
+            fps_den=fps_den,
+            allow_unconfigured=allow_unconfigured_capabilities,
+            season_count=season_count,
+            width=width,
+            height=height,
+            primary_language=primary_language,
+            subtitle_mode=subtitle_mode,
+            subtitle_language=subtitle_language,
+        )
+        if not title or len(title) > 200:
+            raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
 
     def _create_owned_project_root(self, project_id: str, code: str, title: str, episode_count: int, season_count: int) -> Path:
         """Create the project directory, or translate a conflict into a domain error.

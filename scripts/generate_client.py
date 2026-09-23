@@ -2345,6 +2345,37 @@ export type ExplainerSegment = {
   [key: string]: unknown;
 };
 
+export type ExplainerClaimEvidenceSpan = {
+  evidence_id: string;
+  stance: string;
+  independence_key?: string | null;
+  note?: string | null;
+  source_id: string;
+  source_title?: string | null;
+  source_url?: string | null;
+  published_at?: string | null;
+  fetched_at?: string | null;
+  credibility_kind?: string | null;
+  source_body_sha256?: string | null;
+  span_id: string;
+  start_offset?: number | null;
+  end_offset?: number | null;
+  quote_text?: string | null;
+  span_hash?: string | null;
+};
+
+export type ExplainerClaimEvidence = {
+  video_id: string;
+  claim_id: string;
+  claim_code: string;
+  status: string;
+  statement?: string | null;
+  evidence: ExplainerClaimEvidenceSpan[];
+  evidence_count: number;
+  independent_source_count: number;
+  empty_state: 'NO_EVIDENCE_SPAN_RECORDED' | null;
+};
+
 export type ExplainerScriptView = {
   video_id: string;
   revision: Record<string, unknown> | null;
@@ -2438,6 +2469,10 @@ export async function startExplainerResearchRun(projectId: string, payload: Reco
 
 export async function patchExplainerClaim(projectId: string, claimId: string, payload: Record<string, unknown>, baseUrl = ''): Promise<Record<string, unknown>> {
   return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/claims/${encodeURIComponent(claimId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function getExplainerClaimEvidence(projectId: string, claimId: string, baseUrl = ''): Promise<ExplainerClaimEvidence> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/claims/${encodeURIComponent(claimId)}/evidence`, undefined, baseUrl);
 }
 
 export async function getExplainerScript(projectId: string, filter: { locale?: string; revision_id?: string } = {}, baseUrl = ''): Promise<ExplainerScriptView> {

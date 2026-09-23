@@ -9,7 +9,7 @@ import uuid
 import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
-from typing import Any, cast
+from typing import Any, Mapping, cast
 from urllib.parse import quote
 
 from local_drama.application.commands.director_recipes import canonical_recipe, recipe_hash, validate_recipe
@@ -31,7 +31,65 @@ STATE_SCHEMA_V2 = "localdrama.project-state.v2"
 #: from v3 on are reported as ``missing_fields`` instead of being silently
 #: defaulted.
 STATE_SCHEMA = "localdrama.project-state.v3"
-SUPPORTED_STATE_SCHEMAS = (STATE_SCHEMA_V2, STATE_SCHEMA)
+#: PKG-02: the EXPLAINER domain has its own state schema, because the DRAMA schema
+#: describes seasons/episodes/scenes/shots and cannot represent an explainer video.
+EXPLAINER_STATE_SCHEMA = "localdrama.project-state.explainer.v1"
+SUPPORTED_STATE_SCHEMAS = (STATE_SCHEMA_V2, STATE_SCHEMA, EXPLAINER_STATE_SCHEMA)
+#: Every domain list the EXPLAINER adapter declares.  A package that omits one is
+#: malformed rather than "empty".
+_EXPLAINER_STATE_LIST_KEYS = frozenset({
+    "videos",
+    "research_packets",
+    "sources",
+    "source_spans",
+    "claims",
+    "claim_evidence",
+    "events",
+    "entities",
+    "entity_state_revisions",
+    "script_revisions",
+    "chapters",
+    "narration_segments",
+    "visual_beats",
+    "beat_narration_links",
+    "editions",
+    "narration_takes",
+    "narration_alignment_revisions",
+    "subtitle_revisions",
+    "composition_revisions",
+    "composition_items",
+    "media_assets",
+    "media_versions",
+    "channel_profile_versions",
+    "runs",
+})
+#: Domains an EXPLAINER package deliberately does not carry.  Jobs/attempts and
+#: authorization state are execution authority: copying them would restart work the
+#: user never asked for, or restore a publication grant the source already used.
+_EXPLAINER_EXCLUDED_DOMAINS = frozenset({
+    "jobs",
+    "job_attempts",
+    "automation_workflow_runs",
+    "automation_workflow_tasks",
+    "outbox_deliveries",
+    "explainer_step_bindings",
+    "run_identity_inputs",
+    "entity_identity_bindings",
+    "artifact_dependencies",
+    "explainer_qc_reports",
+    "explainer_qc_issues",
+    "explainer_decisions",
+    "composition_renders",
+    "composition_render_chunks",
+    "composition_deliveries",
+    "publication_packages",
+    "publication_receipts",
+    "explainer_schedules",
+    "schedule_occurrences",
+    "audit_events",
+    "cache",
+    "work",
+})
 MAX_ENTRIES = 100_000
 MAX_EXPANDED_BYTES = 2 * 1024**4
 MAX_COMPRESSION_RATIO = 250
@@ -79,6 +137,16 @@ def _json_bytes(value: object) -> bytes:
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
+def _json(value: object) -> str:
+    """Canonical JSON text for a stored column.
+
+    Sorted keys keep two exports of the same business state byte-identical, which the
+    package identity and the import receipt both depend on.
+    """
+
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -101,17 +169,128 @@ def _writestr(archive: zipfile.ZipFile, name: str, content: bytes) -> None:
     archive.writestr(info, content)
 
 
+def _require_package_supported_product(project: Mapping[str, Any], *, project_id: str) -> str:
+    """Refuse to package a product kind the package protocol cannot restore.
+
+    The DRAMA state carries seasons/episodes/scenes/shots/... and the EXPLAINER state
+    carries the explainer video, research packet, claims, script, narration, beats and
+    editions.  A product kind with no adapter must be refused: producing a file a user
+    can mistake for a complete backup is worse than refusing.  This is what used to
+    happen when EXPLAINER had no adapter at all:
+
+    ```json
+    {
+      "source_product_kind": "EXPLAINER",
+      "copied_product_kind": "DRAMA",
+      "source_explainer_videos": 1,
+      "copied_explainer_videos": 0,
+      "copy_status": "IMPORTED",
+      "missing_fields": []
+    }
+    ```
+    """
+
+    kind = str(project.get("product_kind") or "DRAMA").upper()
+    if kind not in _PACKAGE_SUPPORTED_PRODUCT_KINDS:
+        raise DomainRuleError(
+            "PROJECT_PACKAGE_PRODUCT_UNSUPPORTED",
+            "该产品类型尚未纳入项目包协议，不能导出为“完整项目包”；请先单独备份其业务数据",
+            {
+                "project_id": project_id,
+                "product_kind": kind,
+                "supported_product_kinds": sorted(_PACKAGE_SUPPORTED_PRODUCT_KINDS),
+            },
+        )
+    return kind
+
+
+#: Product kinds whose domain is described by a package state schema.  EXPLAINER
+#: uses its own schema (``EXPLAINER_STATE_SCHEMA``); a kind that is absent here has
+#: no adapter at all and is refused rather than exported as an empty DRAMA shell.
+_PACKAGE_SUPPORTED_PRODUCT_KINDS: frozenset[str] = frozenset({"DRAMA", "EXPLAINER"})
+
+
+def _rewrite_manuscript_metadata(
+    metadata: object,
+    *,
+    media_version_map: Mapping[str, str],
+    version_id: str,
+    rel_path: str,
+) -> dict[str, Any]:
+    """Rewrite the runtime references inside a manuscript version's metadata.
+
+    Only *named* references are rewritten; the surrounding descriptive JSON is
+    copied as-is, and the source identity is preserved under a clearly named
+    ``source_*`` provenance key instead of being lost or guessed at.
+    """
+
+    payload = dict(metadata) if isinstance(metadata, Mapping) else {}
+    old_media_id = payload.pop("source_media_version_id", None)
+    if old_media_id is None:
+        old_media_id = payload.get("media_version_id")
+    if old_media_id:
+        new_media_id = media_version_map.get(str(old_media_id))
+        if not new_media_id:
+            raise DomainRuleError(
+                "PROJECT_PACKAGE_MANUSCRIPT_REFERENCE_INVALID",
+                "原稿版本引用的媒体版本不在项目包内，副本无法恢复该原稿",
+                {
+                    "source_document_version_id": version_id,
+                    "rel_path": rel_path,
+                    "reference": "media_version_id",
+                    "missing_media_version_id": str(old_media_id),
+                },
+            )
+        payload["media_version_id"] = str(new_media_id)
+        payload["source_media_version_id"] = str(old_media_id)
+    elif "media_version_id" in payload:
+        # A present-but-empty reference is malformed rather than absent.
+        raise DomainRuleError(
+            "PROJECT_PACKAGE_MANUSCRIPT_REFERENCE_INVALID",
+            "原稿版本的 media_version_id 为空，副本无法确认原文件归属",
+            {"source_document_version_id": version_id, "rel_path": rel_path, "reference": "media_version_id"},
+        )
+    # ``preview.derived_from_import_session_id`` is another business identity: it
+    # must resolve inside the copy, so a package that still carries the source
+    # session id is rejected rather than silently pointing outside the copy.
+    preview = payload.get("preview")
+    if isinstance(preview, Mapping) and preview.get("derived_from_import_session_id"):
+        payload["preview"] = {
+            **dict(preview),
+            "source_derived_from_import_session_id": str(preview["derived_from_import_session_id"]),
+            "derived_from_import_session_id": None,
+        }
+    return payload
+
+
 def _write_path(archive: zipfile.ZipFile, name: str, source: Path) -> None:
-    """Stream one file into the archive with a fixed timestamp.
+    """Stream one file into the archive with a fixed timestamp and ZIP64 safety.
 
     Using ``ZipFile.write`` would copy the source file's mtime into the archive
     header, so two exports of byte-identical content would produce different
     archives and the content-addressed package identity would look changed.
+
+    A freshly built ``ZipInfo`` has no ``file_size``, so ``archive.open(info, "w")``
+    cannot know whether the entry will cross the ZIP64 limit and writes a plain
+    local header.  When the file turns out to be larger (a render or an
+    intermediate video in the project easily is), ``ZipFile`` raises
+    ``RuntimeError: File size too large, try using force_zip64`` **even though**
+    the outer archive was created with ``allowZip64=True``.  The source size is
+    known here, so it is declared on the entry and ZIP64 is forced whenever the
+    entry needs it.
     """
+
     info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
     info.compress_type = zipfile.ZIP_DEFLATED
     info.external_attr = 0o100644 << 16
-    with source.open("rb") as stream, archive.open(info, "w") as target:
+    try:
+        size = source.stat().st_size
+    except OSError:
+        size = None
+    if size is not None:
+        info.file_size = int(size)
+    needs_zip64 = size is None or int(size) >= zipfile.ZIP64_LIMIT
+    with source.open("rb") as stream, archive.open(info, "w", force_zip64=needs_zip64) as target:
         shutil.copyfileobj(stream, target, length=1024 * 1024)
 
 
@@ -277,7 +456,7 @@ class ProjectPackageService:
     def _state(self, project_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             project = connection.execute("""SELECT id,code,title,template_version,aspect_ratio,fps_num,fps_den,timezone,
-                width,height,primary_language,subtitle_mode,subtitle_language,target_duration_ms FROM projects WHERE id=?""", (project_id,)).fetchone()
+                width,height,primary_language,subtitle_mode,subtitle_language,target_duration_ms,product_kind FROM projects WHERE id=?""", (project_id,)).fetchone()
             if project is None:
                 raise DomainRuleError("PROJECT_NOT_FOUND", "项目不存在")
             seasons = [dict(row) for row in connection.execute("SELECT id,number,display_order,code,title FROM seasons WHERE project_id=? ORDER BY display_order", (project_id,))]
@@ -428,6 +607,333 @@ class ProjectPackageService:
                     }
                 ]}
 
+    def _explainer_state(self, project_id: str) -> dict[str, Any]:
+        """The EXPLAINER domain, declared by the explainer package adapter (PKG-02).
+
+        The DRAMA state describes seasons/episodes/scenes/shots and nothing else, so
+        an explainer project used to export successfully and come back as a DRAMA
+        shell with no seasons, no episodes and no explainer video:
+
+        ```json
+        {
+          "source_product_kind": "EXPLAINER",
+          "copied_product_kind": "DRAMA",
+          "source_explainer_videos": 1,
+          "copied_explainer_videos": 0,
+          "copy_status": "IMPORTED",
+          "missing_fields": []
+        }
+        ```
+
+        This adapter declares which explainer tables participate, which of them are
+        executable history (never replayed by a copy), and which rows are excluded
+        outright.  The shared file manifest, media mapping, hashing and transaction
+        are reused unchanged.
+        """
+
+        with self.database.connect() as connection:
+            videos = [dict(row) for row in connection.execute(
+                """SELECT id,project_id,title,topic,content_kind,source_locale,input_kind,input_payload_json,
+                duration_mode,target_seconds,tolerance_percent,automation_mode,inference_mode,research_mode,
+                research_allowed_domains_json,current_script_revision_id,current_channel_profile_version_id,status,
+                created_at,updated_at,created_by,revision,schema_version
+                FROM explainer_videos WHERE project_id=? ORDER BY created_at,id""", (project_id,))]
+            video_ids = [str(item["id"]) for item in videos]
+            if not video_ids:
+                return {
+                    "schema_version": EXPLAINER_STATE_SCHEMA,
+                    "videos": [],
+                    "included_domains": [],
+                    "excluded_domains": sorted(_EXPLAINER_EXCLUDED_DOMAINS),
+                    "incomplete_domains": [],
+                    "domain_counts": {},
+                    "excluded_state": [],
+                    "notes": ["该 EXPLAINER 项目没有解说作品记录"],
+                }
+            placeholders = ",".join("?" for _ in video_ids)
+
+            def rows(columns: str, table: str, *, order: str = "id", where: str = "video_id IN (...)") -> list[dict[str, Any]]:
+                clause = where.replace("video_id IN (...)", f"video_id IN ({placeholders})")
+                return [
+                    dict(row)
+                    for row in connection.execute(
+                        f"SELECT {columns} FROM {table} WHERE {clause} ORDER BY {order}", tuple(video_ids)
+                    )
+                ]
+
+            packets = rows("id,video_id,revision_no,status,mode,topic,allowed_domains_json,external_request_count,"
+                           "max_external_requests,content_hash,blockers_json,created_at,updated_at,created_by,revision,"
+                           "schema_version", "explainer_research_packets", order="video_id,revision_no,id")
+            sources = rows("id,packet_id,video_id,project_id,source_kind,url,title,author_or_publisher,published_at,"
+                           "updated_at_source,event_date,event_date_precision,fetched_at,language,body_sha256,rel_path,"
+                           "byte_size,credibility_kind,rights_json,upstream_source_id,import_session_id,"
+                           "source_document_version_id,retrieved_via,created_at,updated_at,created_by,revision,schema_version",
+                           "explainer_sources", order="video_id,created_at,id")
+            packet_ids = [str(item["id"]) for item in packets]
+            span_rows: list[dict[str, Any]] = []
+            if packet_ids:
+                packet_placeholders = ",".join("?" for _ in packet_ids)
+                span_rows = [dict(row) for row in connection.execute(
+                    "SELECT id,source_id,packet_id,ordinal,start_offset,end_offset,quote_text,span_hash,page_no,"
+                    "paragraph_no,created_at,updated_at,created_by,revision,schema_version FROM explainer_source_spans "
+                    f"WHERE packet_id IN ({packet_placeholders}) ORDER BY packet_id,ordinal,id", tuple(packet_ids))]
+            claims = rows("id,video_id,packet_id,code,statement,statement_kind,status,importance,confidence_reason,"
+                          "verified_as_history,disambiguation_json,verification_json,created_at,updated_at,created_by,"
+                          "revision,schema_version", "explainer_claims", order="video_id,code,id")
+            claim_ids = [str(item["id"]) for item in claims]
+            evidence: list[dict[str, Any]] = []
+            if claim_ids:
+                claim_placeholders = ",".join("?" for _ in claim_ids)
+                evidence = [dict(row) for row in connection.execute(
+                    "SELECT id,claim_id,source_id,source_span_id,stance,independence_key,note,created_at,updated_at,"
+                    f"created_by,revision,schema_version FROM claim_evidence WHERE claim_id IN ({claim_placeholders}) "
+                    "ORDER BY claim_id,created_at,id", tuple(claim_ids))]
+            events = rows("id,video_id,code,title,story_time_start,story_time_end,story_time_precision,calendar_system,"
+                          "place_entity_id,place_label,participant_entity_ids_json,claim_ids_json,causal_note,sequence_no,"
+                          "created_at,updated_at,created_by,revision,schema_version", "explainer_events",
+                          order="video_id,sequence_no,id")
+            entities = rows("id,video_id,project_id,code,entity_type,name,latin_name,aliases_json,fictional,"
+                            "descriptive_only,disambiguation_json,story_asset_id,status,canonical_state_revision_id,"
+                            "created_at,updated_at,created_by,revision,schema_version", "explainer_entities",
+                            order="video_id,code,id")
+            entity_ids = [str(item["id"]) for item in entities]
+            entity_states: list[dict[str, Any]] = []
+            if entity_ids:
+                entity_placeholders = ",".join("?" for _ in entity_ids)
+                entity_states = [dict(row) for row in connection.execute(
+                    "SELECT id,entity_id,revision_no,label,age,wardrobe,condition,carried_prop_entity_ids_json,"
+                    "valid_from_story_time,valid_to_story_time,identity_pack_version_id,reference_media_version_ids_json,"
+                    "content_hash,source_state_id,created_at,updated_at,created_by,revision,schema_version "
+                    f"FROM entity_state_revisions WHERE entity_id IN ({entity_placeholders}) "
+                    "ORDER BY entity_id,revision_no,id", tuple(entity_ids))]
+            script_revisions = rows("id,video_id,revision_no,locale,source_script_revision_id,title,outline_json,"
+                                    "terminology_json,status,frozen_at,frozen_by,content_hash,parent_plan_id,"
+                                    "provenance_json,created_at,updated_at,created_by,revision,schema_version",
+                                    "explainer_script_revisions", order="video_id,revision_no,id")
+            chapters = rows("id,script_revision_id,ordinal,code,title,audience_question,summary,claim_ids_json,"
+                            "source_ids_json,created_at,updated_at,created_by,revision,schema_version",
+                            "explainer_chapters", order="script_revision_id,ordinal,id",
+                            where="script_revision_id IN (SELECT id FROM explainer_script_revisions WHERE video_id IN (...))")
+            segments = rows("id,video_id,script_revision_id,chapter_id,canonical_segment_id,locale,ordinal,display_text,"
+                            "spoken_text,statement_type,claim_ids_json,pronunciation_map_json,speaker,emotion,"
+                            "pause_after_ms,target_duration_ms,content_locked_by_human,locked_by,locked_at,segment_hash,"
+                            "previous_segment_id,created_at,updated_at,created_by,revision,schema_version",
+                            "narration_segments", order="video_id,ordinal,id")
+            beats = rows("id,video_id,code,ordinal,render_type,visual_intent,must_be_motion,reference_policy,"
+                         "allowed_fallbacks_json,preferred_duration_ms,entity_refs_json,claim_refs_json,visual_factuality,"
+                         "shot_grammar_json,prompt_intent,status,actual_fallback_type,fallback_reason,locked_by_human,"
+                         "locked_by,locked_at,origin,created_at,updated_at,created_by,revision,schema_version",
+                         "explainer_visual_beats", order="video_id,ordinal,id")
+            beat_links = rows("id,beat_id,narration_segment_id,video_id,ordinal,created_at,updated_at,created_by,revision,"
+                              "schema_version", "beat_narration_links", order="video_id,ordinal,id")
+            editions = rows("id,video_id,edition_key,revision_no,voice_locale,subtitle_locales_json,subtitle_mode,"
+                            "aspect_ratio,fps_num,fps_den,width,height,audio_sample_rate_hz,duration_policy,target_seconds,"
+                            "tolerance_percent,allow_soft_subtitle_fallback,frozen_script_revision_id,"
+                            "frozen_narration_take_ids_json,frozen_subtitle_revision_id,status,created_at,updated_at,"
+                            "created_by,revision,schema_version", "explainer_editions", order="video_id,revision_no,id")
+            takes = rows("id,video_id,segment_id,canonical_segment_id,locale,take_no,media_asset_id,media_version_id,"
+                         "media_sha256,segment_hash,voice_profile_version_id,model_ref,emotion,speech_rate,"
+                         "measured_duration_ms,measured_sample_count,sample_rate_hz,lead_silence_ms,trail_silence_ms,"
+                         "status,selected,source_job_attempt_id,generation_json,created_at,updated_at,created_by,revision,"
+                         "schema_version", "narration_takes", order="video_id,segment_id,take_no,id")
+            alignments = rows("id,take_id,segment_id,video_id,revision_no,locale,script_hash,media_sha256,sample_rate_hz,"
+                              "sample_offset,total_samples,word_timings_json,display_map_json,alignment_status,"
+                              "unaligned_tokens_json,asr_review_json,detector_version,created_at,updated_at,created_by,"
+                              "revision,schema_version", "narration_alignment_revisions", order="video_id,take_id,id")
+            subtitles = rows("id,video_id,edition_id,revision_no,locale,paired_locale,format,text_authority,"
+                             "script_revision_id,narration_alignment_revision_ids_json,style_version_id,content_text,"
+                             "cues_json,content_hash,layout_report_json,status,created_at,updated_at,created_by,revision,"
+                             "schema_version", "explainer_subtitle_revisions", order="video_id,edition_id,revision_no,id")
+            compositions = rows("id,edition_id,video_id,project_id,revision_no,status,manifest_json,manifest_hash,"
+                                "fps_num,fps_den,total_frames,audio_sample_rate_hz,total_samples,duration_policy,"
+                                "target_frames,frozen_media_hash,frozen_at,frozen_by,validation_json,created_at,updated_at,"
+                                "created_by,revision,schema_version", "composition_revisions", order="video_id,revision_no,id")
+            composition_ids = [str(item["id"]) for item in compositions]
+            composition_items: list[dict[str, Any]] = []
+            if composition_ids:
+                composition_placeholders = ",".join("?" for _ in composition_ids)
+                composition_items = [dict(row) for row in connection.execute(
+                    "SELECT id,composition_revision_id,edition_id,video_id,ordinal,item_kind,track,beat_id,"
+                    "narration_segment_id,narration_take_id,media_asset_id,media_version_id,media_sha256,start_frame,"
+                    "end_frame_exclusive,source_in_us,source_out_us,sample_start,sample_end_exclusive,layer_json,"
+                    "transform_json,subtitle_json,audio_json,transition_json,render_type_planned,render_type_actual,"
+                    "media_kind,item_hash,created_at,updated_at,created_by,revision,schema_version FROM composition_items "
+                    f"WHERE composition_revision_id IN ({composition_placeholders}) "
+                    "ORDER BY composition_revision_id,ordinal,id", tuple(composition_ids))]
+            candidates = rows("id,video_id,beat_id,variant_no,candidate_kind,purpose,media_asset_id,media_version_id,"
+                              "media_sha256,status,job_id,source_job_attempt_id,execution_snapshot_json,lineage_json,"
+                              "render_type_planned,render_type_actual,fallback_reason,technical_retry_count,"
+                              "creative_repair_count,qc_summary_json,adopted,created_at,updated_at,created_by,revision,"
+                              "schema_version", "explainer_media_candidates", order="video_id,beat_id,variant_no,id")
+            beat_selections = rows("id,video_id,beat_id,edition_id,candidate_id,media_asset_id,media_version_id,"
+                                   "media_sha256,source_in_us,source_out_us,adoption_authority,locked_by_human,actor,"
+                                   "decided_at,policy_decision_id,render_type_actual,fallback_reason,status,created_at,"
+                                   "updated_at,created_by,revision,schema_version", "explainer_beat_selections",
+                                   order="video_id,beat_id,created_at,id")
+            media_assets = [dict(row) for row in connection.execute(
+                "SELECT id,project_id,owner_type,owner_id,purpose,media_kind,version_counter,metadata_json,"
+                "created_at,updated_at,created_by,revision,schema_version FROM media_assets "
+                f"WHERE owner_type='EXPLAINER_VIDEO' AND owner_id IN ({placeholders}) ORDER BY created_at,id",
+                tuple(video_ids),
+            )]
+            media_asset_ids = [str(item["id"]) for item in media_assets]
+            media_versions: list[dict[str, Any]] = []
+            if media_asset_ids:
+                asset_placeholders = ",".join("?" for _ in media_asset_ids)
+                media_versions = [dict(row) for row in connection.execute(
+                    "SELECT id,media_asset_id,version_no,take_no,stage,rel_path,mime_type,byte_size,sha256,"
+                    "duration_ms,fps_num,fps_den,parent_version_id,integrity_status,source_name,import_source,probe_json "
+                    f"FROM media_versions WHERE media_asset_id IN ({asset_placeholders}) "
+                    "ORDER BY media_asset_id,version_no,id", tuple(media_asset_ids))]
+            # Channel profile versions are shared, project-scoped configuration: a copy
+            # keeps the same profiles and re-points the video at them.
+            channel_profile_versions = [dict(row) for row in connection.execute(
+                "SELECT v.id,v.channel_profile_id,v.version_no,v.title,v.status,v.render_style,v.palette_json,"
+                "v.camera_grammar_json,v.lighting_json,v.typography_json,v.subtitle_safe_area_json,v.transition_set_json,"
+                "v.voice_json,v.bgm_policy_json,v.negative_constraints_json,v.license_policy_json,v.content_hash,"
+                "v.source_version_id,v.created_at,v.updated_at,v.created_by,v.revision,v.schema_version "
+                "FROM channel_profile_versions v JOIN channel_profiles p ON p.id=v.channel_profile_id "
+                "WHERE p.project_id=? ORDER BY v.channel_profile_id,v.version_no,v.id", (project_id,))]
+            runs = rows("id,project_id,video_id,status,automation_mode,plan_hash,parent_plan_id,plan_json,plan_revision,"
+                        "frozen_inputs_json,policy_snapshot_json,capability_snapshot_json,budget_json,inference_mode,"
+                        "research_mode,inference_egress_denied_count,automation_workflow_run_id,automation_workflow_id,"
+                        "current_stage_code,progress_json,blockers_json,budget_used_json,idempotency_key,started_at,"
+                        "finished_at,cancel_requested_at,created_at,updated_at,created_by,revision,schema_version",
+                        "explainer_runs", order="video_id,created_at,id")
+
+        for item in videos:
+            item["input_payload"] = json.loads(str(item.pop("input_payload_json") or "{}"))
+            item["research_allowed_domains"] = json.loads(str(item.pop("research_allowed_domains_json") or "[]"))
+        for item in packets:
+            item["allowed_domains"] = json.loads(str(item.pop("allowed_domains_json") or "[]"))
+            item["blockers"] = json.loads(str(item.pop("blockers_json") or "[]"))
+        for item in sources:
+            item["rights"] = json.loads(str(item.pop("rights_json") or "{}"))
+        for item in claims:
+            item["disambiguation"] = json.loads(str(item.pop("disambiguation_json") or "{}"))
+            item["verification"] = json.loads(str(item.pop("verification_json") or "{}"))
+        for item in script_revisions:
+            item["outline"] = json.loads(str(item.pop("outline_json") or "{}"))
+            item["terminology"] = json.loads(str(item.pop("terminology_json") or "{}"))
+            item["provenance"] = json.loads(str(item.pop("provenance_json") or "{}"))
+        for item in beats:
+            item["allowed_fallbacks"] = json.loads(str(item.pop("allowed_fallbacks_json") or "[]"))
+            item["entity_refs"] = json.loads(str(item.pop("entity_refs_json") or "[]"))
+            item["claim_refs"] = json.loads(str(item.pop("claim_refs_json") or "[]"))
+            item["shot_grammar"] = json.loads(str(item.pop("shot_grammar_json") or "{}"))
+        for item in editions:
+            item["subtitle_locales"] = json.loads(str(item.pop("subtitle_locales_json") or "[]"))
+            item["frozen_narration_take_ids"] = json.loads(str(item.pop("frozen_narration_take_ids_json") or "[]"))
+        for item in takes:
+            item["generation"] = json.loads(str(item.pop("generation_json") or "{}"))
+        for item in alignments:
+            item["word_timings"] = json.loads(str(item.pop("word_timings_json") or "[]"))
+            item["display_map"] = json.loads(str(item.pop("display_map_json") or "{}"))
+            item["unaligned_tokens"] = json.loads(str(item.pop("unaligned_tokens_json") or "[]"))
+            item["asr_review"] = json.loads(str(item.pop("asr_review_json") or "{}"))
+        for item in subtitles:
+            item["narration_alignment_revision_ids"] = json.loads(
+                str(item.pop("narration_alignment_revision_ids_json") or "[]")
+            )
+            item["cues"] = json.loads(str(item.pop("cues_json") or "[]"))
+            item["layout_report"] = json.loads(str(item.pop("layout_report_json") or "{}"))
+        for item in compositions:
+            item["manifest"] = json.loads(str(item.pop("manifest_json") or "{}"))
+            item["validation"] = json.loads(str(item.pop("validation_json") or "{}"))
+        for item in composition_items:
+            item["layer"] = json.loads(str(item.pop("layer_json") or "{}"))
+            item["transform"] = json.loads(str(item.pop("transform_json") or "{}"))
+            item["subtitle"] = json.loads(str(item.pop("subtitle_json") or "{}"))
+            item["audio"] = json.loads(str(item.pop("audio_json") or "{}"))
+            item["transition"] = json.loads(str(item.pop("transition_json") or "{}"))
+        for item in candidates:
+            item["execution_snapshot"] = json.loads(str(item.pop("execution_snapshot_json") or "{}"))
+            item["lineage"] = json.loads(str(item.pop("lineage_json") or "{}"))
+            item["qc_summary"] = json.loads(str(item.pop("qc_summary_json") or "{}"))
+        for item in media_assets:
+            item["metadata"] = json.loads(str(item.pop("metadata_json") or "{}"))
+        for item in media_versions:
+            item["probe"] = json.loads(str(item.pop("probe_json") or "{}"))
+        for item in runs:
+            item["plan"] = json.loads(str(item.pop("plan_json") or "{}"))
+            item["frozen_inputs"] = json.loads(str(item.pop("frozen_inputs_json") or "{}"))
+            item["policy_snapshot"] = json.loads(str(item.pop("policy_snapshot_json") or "{}"))
+            item["capability_snapshot"] = json.loads(str(item.pop("capability_snapshot_json") or "{}"))
+            item["budget"] = json.loads(str(item.pop("budget_json") or "{}"))
+            item["progress"] = json.loads(str(item.pop("progress_json") or "{}"))
+            item["blockers"] = json.loads(str(item.pop("blockers_json") or "[]"))
+            item["budget_used"] = json.loads(str(item.pop("budget_used_json") or "{}"))
+
+        sections = {
+            "videos": videos,
+            "research_packets": packets,
+            "sources": sources,
+            "source_spans": span_rows,
+            "claims": claims,
+            "claim_evidence": evidence,
+            "events": events,
+            "entities": entities,
+            "entity_state_revisions": entity_states,
+            "script_revisions": script_revisions,
+            "chapters": chapters,
+            "narration_segments": segments,
+            "visual_beats": beats,
+            "beat_narration_links": beat_links,
+            "editions": editions,
+            "narration_takes": takes,
+            "narration_alignment_revisions": alignments,
+            "subtitle_revisions": subtitles,
+            "composition_revisions": compositions,
+            "composition_items": composition_items,
+            "media_assets": media_assets,
+            "media_versions": media_versions,
+            "channel_profile_versions": channel_profile_versions,
+            "runs": runs,
+        }
+        return {
+            "schema_version": EXPLAINER_STATE_SCHEMA,
+            **sections,
+            "included_domains": sorted(sections),
+            "excluded_domains": sorted(_EXPLAINER_EXCLUDED_DOMAINS),
+            # Renders, deliveries, QC reports and decisions stay historical facts: the
+            # copy carries them so a reader sees what happened, and every one of them
+            # must be re-verified after the copy because its media identity is new.
+            "incomplete_domains": [
+                {
+                    "domain": "composition_renders",
+                    "rule": "HISTORICAL_FACT_REQUIRES_REVALIDATION",
+                    "note": "渲染文件按历史事实保留；副本中的媒体验证状态不会被复制为已通过。",
+                },
+                {
+                    "domain": "composition_deliveries",
+                    "rule": "HISTORICAL_FACT_REQUIRES_REVALIDATION",
+                    "note": "交付包按历史事实保留；发布授权不回放。",
+                },
+                {
+                    "domain": "explainer_qc_reports",
+                    "rule": "HISTORICAL_FACT_REQUIRES_REVALIDATION",
+                    "note": "QC 报告按历史事实保留；副本必须重新执行 QC 才能再次作为门禁依据。",
+                },
+                {
+                    "domain": "explainer_decisions",
+                    "rule": "HISTORICAL_FACT_REQUIRES_REVALIDATION",
+                    "note": "人工/策略决定按历史事实保留；subject_hash 变化后标记为需复核。",
+                },
+                {
+                    "domain": "explainer_runs",
+                    "rule": "RUNNING_AUTHORITY_NOT_REPLAYED",
+                    "note": "运行与步骤绑定不会因复制而自动重新执行；已取消/失败的运行保持终态。",
+                },
+                {
+                    "domain": "publication_packages",
+                    "rule": "PUBLICATION_AUTHORITY_NOT_REPLAYED",
+                    "note": "发布包与回执按历史事实保留；复制不会恢复发布授权或重放上传。",
+                },
+            ],
+            "domain_counts": {name: len(items) for name, items in sections.items()},
+            "excluded_state": [],
+        }
+
     def _source_files(self, root: Path) -> list[Path]:
         files: list[Path] = []
         for path in root.rglob("*"):
@@ -508,10 +1014,18 @@ class ProjectPackageService:
             raise last_error
         raise DomainRuleError("PROJECT_PACKAGE_OUTPUT_CONFLICT", "同名项目包内容不一致")
 
+    def _state_for(self, project_id: str, product_kind: str) -> dict[str, Any]:
+        """Pick the domain adapter declared by the project's product kind."""
+
+        if product_kind == "EXPLAINER":
+            return self._explainer_state(project_id)
+        return self._state(project_id)
+
     def export(self, project_id: str) -> dict[str, Any]:
         project = self._project(project_id)
+        product_kind = _require_package_supported_product(project, project_id=project_id)
         root = self._root(project)
-        state_bytes = _json_bytes(self._state(project_id))
+        state_bytes = _json_bytes(self._state_for(project_id, product_kind))
         state_sha = hashlib.sha256(state_bytes).hexdigest()
         payload_manifest = self._payload_manifest(root)
         identity = self._package_identity(state_sha, payload_manifest)
@@ -555,7 +1069,7 @@ class ProjectPackageService:
                 "entry_count": len(entries), "expanded_bytes": sum(int(item["byte_size"]) for item in entries), "reused": reused,
                 "database_mutated": False, "runtime_contacted": False, "network_contacted": False}
 
-    def _load_metadata_json(self, archive: zipfile.ZipFile, name: str, declared_size: int) -> object:
+    def _load_metadata(self, archive: zipfile.ZipFile, name: str, declared_size: int, ensure_ascii=False, sort_keys=True) -> object:
         """Read one bounded metadata member; structural limits before parsing."""
         if declared_size < 0 or declared_size > MAX_METADATA_JSON_BYTES:
             raise DomainRuleError(
@@ -618,12 +1132,57 @@ class ProjectPackageService:
             raise DomainRuleError("PROJECT_PACKAGE_MANIFEST_MISMATCH", "manifest 文件清单与压缩包不一致")
         return expected
 
+    def _validate_explainer_state_structure(self, state: dict[str, Any]) -> list[str]:
+        """Shape validation for the EXPLAINER adapter's own state schema.
+
+        An explainer project legitimately has no seasons, episodes, scenes or shots,
+        so the DRAMA required-list contract cannot apply.  What must hold is that the
+        domain lists this adapter declares are present, well-typed, and that the
+        package says which domains it did not carry.
+        """
+
+        videos = state.get("videos")
+        if not isinstance(videos, list):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "解说项目包缺少 videos 列表")
+        if any(not isinstance(item, dict) for item in videos):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "解说项目包 videos 条目必须是对象")
+        records = 0
+        missing: list[str] = []
+        for key in sorted(_EXPLAINER_STATE_LIST_KEYS):
+            if key not in state:
+                missing.append(key)
+                continue
+            value = state[key]
+            if not isinstance(value, list):
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", f"解说项目包 {key} 必须是数组", {"key": key})
+            records += len(value)
+            if any(not isinstance(item, dict) for item in value):
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", f"解说项目包 {key} 条目必须是对象", {"key": key})
+        if records > MAX_STATE_RECORDS:
+            raise DomainRuleError("PROJECT_PACKAGE_TOO_MANY_RECORDS", "项目包状态记录数超过上限", {"records": records})
+        for key in ("included_domains", "excluded_domains", "incomplete_domains"):
+            value = state.get(key)
+            if value is not None and not isinstance(value, list):
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", f"解说项目包 {key} 必须是数组", {"key": key})
+        # Omitting a domain list is a format error, never a silent empty result: an
+        # adapter that forgets a table would otherwise produce a package that looks
+        # complete while the corresponding business data is gone.
+        if missing:
+            raise DomainRuleError(
+                "PROJECT_PACKAGE_STATE_INVALID",
+                "解说项目包缺少必需领域列表",
+                {"missing": missing},
+            )
+        return []
+
     def _validate_state_structure(self, state: dict[str, Any]) -> list[str]:
         """Validate state types, record counts and required shape before use.
 
         Returns the fields an older package legitimately omitted, so callers can
         surface them instead of pretending the data was simply empty.
         """
+        if str(state.get("schema_version") or "") == EXPLAINER_STATE_SCHEMA:
+            return self._validate_explainer_state_structure(state)
         project = state.get("project")
         if not isinstance(project, dict):
             raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包 project 必须是对象")
@@ -675,17 +1234,25 @@ class ProjectPackageService:
                 if expanded > MAX_EXPANDED_BYTES or expanded / compressed > MAX_COMPRESSION_RATIO:
                     raise DomainRuleError("PROJECT_PACKAGE_EXPANSION_UNSAFE", "项目包展开大小或压缩比不安全")
                 manifest = self._require_json_object(
-                    self._load_metadata_json(archive, "package-manifest.json", declared["package-manifest.json"].file_size),
+                    self._load_metadata(archive, "package-manifest.json", declared["package-manifest.json"].file_size, ensure_ascii=False, sort_keys=True),
                     "package-manifest.json",
                 )
                 state = self._require_json_object(
-                    self._load_metadata_json(archive, "project-state.json", declared["project-state.json"].file_size),
+                    self._load_metadata(archive, "project-state.json", declared["project-state.json"].file_size, ensure_ascii=False, sort_keys=True),
                     "project-state.json",
                 )
                 if manifest.get("schema_version") != PACKAGE_SCHEMA:
                     raise DomainRuleError("PROJECT_PACKAGE_SCHEMA_UNSUPPORTED", "项目包 schema 不受支持")
                 if state.get("schema_version") not in SUPPORTED_STATE_SCHEMAS:
                     raise DomainRuleError("PROJECT_PACKAGE_SCHEMA_UNSUPPORTED", "项目包状态 schema 不受支持")
+                # The state's ``project.product_kind`` decides which domain the
+                # package actually describes.  Inspecting a package whose product
+                # kind this build cannot restore must fail here, before any write.
+                state_project = state.get("project")
+                if isinstance(state_project, Mapping):
+                    _require_package_supported_product(
+                        state_project, project_id=str(state_project.get("id") or "")
+                    )
                 manifest_project_id = manifest.get("project_id")
                 manifest_project_code = manifest.get("project_code")
                 if not isinstance(manifest_project_id, str) or not manifest_project_id:
@@ -817,6 +1384,1094 @@ class ProjectPackageService:
             raise DomainRuleError("PROJECT_PACKAGE_STAGE_NOT_FOUND", "staged 项目包不存在或完整性失败")
         return self.inspect_path(package)
 
+    def _read_explainer_state(
+        self, package: Path, state: dict[str, Any], missing_fields: list[str]
+    ) -> tuple[dict[str, Any], list[str]]:
+        """Normalise and cross-check an EXPLAINER state before any write.
+
+        The JSON-embedded columns are re-parsed from a package that was written by a
+        different build, and the referential identity of the domain is checked here
+        rather than during insertion, so a malformed package cannot half-import.
+        """
+
+        for key in sorted(_EXPLAINER_STATE_LIST_KEYS):
+            state[key] = state.get(key, [])
+        video_ids = {str(item.get("id")) for item in state["videos"]}
+        if len(video_ids) != len(state["videos"]):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "解说项目包包含重复作品 ID")
+        packet_ids = {str(item.get("id")) for item in state["research_packets"]}
+        source_ids = {str(item.get("id")) for item in state["sources"]}
+        span_ids = {str(item.get("id")) for item in state["source_spans"]}
+        claim_ids = {str(item.get("id")) for item in state["claims"]}
+        segment_ids = {str(item.get("id")) for item in state["narration_segments"]}
+        beat_ids = {str(item.get("id")) for item in state["visual_beats"]}
+        edition_ids = {str(item.get("id")) for item in state["editions"]}
+        take_ids = {str(item.get("id")) for item in state["narration_takes"]}
+        revision_ids = {str(item.get("id")) for item in state["script_revisions"]}
+        composition_ids = {str(item.get("id")) for item in state["compositions"]} if "compositions" in state else {
+            str(item.get("id")) for item in state["composition_revisions"]
+        }
+        for key, values in (
+            ("research_packets", video_ids),
+            ("sources", video_ids),
+            ("claims", video_ids),
+            ("entities", video_ids),
+            ("script_revisions", video_ids),
+            ("narration_segments", video_ids),
+            ("visual_beats", video_ids),
+            ("editions", video_ids),
+            ("narration_takes", video_ids),
+            ("narration_alignment_revisions", video_ids),
+            ("subtitle_revisions", video_ids),
+            ("composition_revisions", video_ids),
+            ("composition_items", video_ids),
+            ("runs", video_ids),
+        ):
+            if any(str(item.get("video_id")) not in values for item in state[key]):
+                raise DomainRuleError(
+                    "PROJECT_PACKAGE_STATE_INVALID", f"解说项目包 {key} 引用了未知作品", {"key": key}
+                )
+        if any(str(item.get("packet_id")) not in packet_ids for item in state["sources"]):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "解说项目包来源引用了未知研究包")
+        if any(str(item.get("source_id")) not in source_ids for item in state["source_spans"]):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "解说项目包片段引用了未知来源")
+        if any(
+            str(item.get("claim_id")) not in claim_ids
+            or str(item.get("source_id")) not in source_ids
+            or str(item.get("source_span_id")) not in span_ids
+            for item in state["claim_evidence"]
+        ):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "解说项目包证据引用了未知事实/来源/片段")
+        if any(
+            str(item.get("script_revision_id")) not in revision_ids for item in state["chapters"]
+        ):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "解说项目包章节引用了未知讲稿修订")
+        if any(
+            str(item.get("beat_id")) not in beat_ids
+            or str(item.get("narration_segment_id")) not in segment_ids
+            for item in state["beat_narration_links"]
+        ):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "解说项目包画面-旁白关联引用了未知对象")
+        if any(
+            str(item.get("composition_revision_id")) not in composition_ids
+            for item in state["composition_items"]
+        ):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "解说项目包合成项引用了未知合成修订")
+        for take in state["narration_takes"]:
+            if take.get("segment_id") is not None and str(take.get("segment_id")) not in segment_ids:
+                raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "解说项目包旁白 take 引用了未知段落")
+        for edition in state["editions"]:
+            for take_id in edition.get("frozen_narration_take_ids") or []:
+                if str(take_id) not in take_ids:
+                    raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "解说输出版本冻结了未知旁白 take")
+        media_asset_ids = {str(item.get("id")) for item in state["media_assets"]}
+        media_version_ids = {str(item.get("id")) for item in state["media_versions"]}
+        if len(media_asset_ids) != len(state["media_assets"]) or len(media_version_ids) != len(state["media_versions"]):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "解说项目包包含重复媒体 ID")
+        if any(str(item.get("media_asset_id")) not in media_asset_ids for item in state["media_versions"]):
+            raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "解说媒体版本引用了未知资产")
+        return state, missing_fields
+
+    def _import_explainer_copy(
+        self,
+        stage_token: str,
+        package: Path,
+        state: dict[str, Any],
+        missing_fields: list[str],
+        *,
+        code: str,
+        title: str,
+        actor: str,
+        request_id: str | None,
+        simulate_failure: bool,
+    ) -> dict[str, Any]:
+        """Restore an EXPLAINER package as a new project (PKG-02).
+
+        Every row is re-inserted with a fresh identity and the whole reference graph
+        is rewritten together: videos, editions, script revisions, segments, beats,
+        compositions and the media asset/version identity inside JSON columns.  The
+        run/publication domains are NOT replayed — a copy never restarts a job or
+        restores a publication grant — and the copied project carries the real
+        ``product_kind`` instead of becoming a DRAMA shell.
+        """
+
+        source_project_id = str(state["videos"][0]["project_id"]) if state["videos"] else ""
+        identity_mode = "IMPORT_AS_COPY_REWRITE_IDENTITY"
+        operation_key = hashlib.sha256(f"{stage_token}\0{identity_mode}\0{code}".encode()).hexdigest()
+        now = _utc_now()
+        with self.database.transaction() as connection:
+            receipt = connection.execute(
+                "SELECT * FROM project_package_imports WHERE operation_key=?", (operation_key,)
+            ).fetchone()
+            if receipt is not None and receipt["status"] == "COMPLETED":
+                result = cast(dict[str, Any], json.loads(str(receipt["result_json"])))
+                target = connection.execute(
+                    "SELECT id,code FROM projects WHERE id=?", (receipt["target_project_id"],)
+                ).fetchone()
+                if target is None or str(target["code"]) != code:
+                    raise DomainRuleError("PROJECT_PACKAGE_RECEIPT_INCONSISTENT", "项目包 receipt 与项目记录不一致")
+                result["reused"] = True
+                return result
+            if receipt is not None and receipt["status"] == "PREPARING":
+                updated_at = datetime.fromisoformat(str(receipt["updated_at"]).replace("Z", "+00:00"))
+                if datetime.now(UTC) - updated_at < timedelta(minutes=15):
+                    raise DomainRuleError("PROJECT_PACKAGE_IMPORT_IN_PROGRESS", "相同项目包导入仍在进行，请稍后重试")
+            if receipt is None:
+                project_id = str(uuid.uuid4())
+                connection.execute(
+                    """INSERT INTO project_package_imports (operation_key,stage_token,identity_mode,source_project_id,
+                    target_project_id,target_code,status,result_json,created_at,updated_at,created_by)
+                    VALUES (?,?,?,?,?,?,'PREPARING','{}',?,?,?)""",
+                    (operation_key, stage_token, identity_mode, source_project_id, project_id, code, now, now, actor),
+                )
+                prior_status = None
+            else:
+                project_id = str(receipt["target_project_id"])
+                prior_status = str(receipt["status"])
+                connection.execute(
+                    "UPDATE project_package_imports SET status='PREPARING',last_error_code=NULL,updated_at=? WHERE operation_key=?",
+                    (now, operation_key),
+                )
+
+        def fail_receipt(error_code: str) -> None:
+            with self.database.transaction() as connection:
+                connection.execute(
+                    "UPDATE project_package_imports SET status='FAILED',last_error_code=?,updated_at=? WHERE operation_key=?",
+                    (error_code, _utc_now(), operation_key),
+                )
+
+        final_root = (self.projects_root / code).resolve()
+        if final_root.parent != self.projects_root:
+            fail_receipt("PROJECT_PACKAGE_IMPORT_TARGET_INVALID")
+            raise DomainRuleError("PROJECT_PACKAGE_IMPORT_TARGET_INVALID", "项目导入目标目录越界")
+        with self.database.connect() as connection:
+            if connection.execute("SELECT id FROM projects WHERE code=?", (code,)).fetchone() is not None:
+                fail_receipt("PROJECT_CODE_EXISTS")
+                raise DomainRuleError("PROJECT_CODE_EXISTS", "项目 code 已存在", {"code": code})
+        if final_root.exists():
+            marker = final_root / "project.json"
+            marker_data: dict[str, Any] = {}
+            try:
+                marker_data = json.loads(marker.read_text(encoding="utf-8"))
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
+            owned_recovery = (
+                prior_status in {"FAILED", "PREPARING"}
+                and marker_data.get("project_id") == project_id
+                and marker_data.get("imported_from_package_sha256") == stage_token
+            )
+            if not owned_recovery:
+                fail_receipt("PROJECT_ROOT_EXISTS")
+                raise DomainRuleError("PROJECT_ROOT_EXISTS", "目标项目目录已存在，未覆盖", {"code": code})
+            shutil.rmtree(final_root)
+
+        temporary_root = self.projects_root / f".{code}.import-{uuid.uuid4().hex}"
+        promoted = False
+        counts = {
+            key: 0
+            for key in (
+                "payload_files", "videos", "research_packets", "sources", "source_spans", "claims",
+                "claim_evidence", "events", "entities", "entity_state_revisions", "script_revisions",
+                "chapters", "narration_segments", "visual_beats", "beat_narration_links", "editions",
+                "narration_takes", "narration_alignment_revisions", "subtitle_revisions",
+                "composition_revisions", "composition_items", "media_assets", "media_versions",
+                "channel_profile_versions", "runs",
+            )
+        }
+        try:
+            self._extract_payload(package, temporary_root)
+            counts["payload_files"] = sum(1 for item in temporary_root.rglob("*") if item.is_file())
+            now = _utc_now()
+            project_json = {
+                "schema_version": "localdrama.project.v2",
+                "project_id": project_id,
+                "project_code": code,
+                "title": title,
+                "created_at": now,
+                "template_version": TEMPLATE_VERSION,
+                "product_kind": "EXPLAINER",
+                "imported_from_package_sha256": stage_token,
+            }
+            (temporary_root / "project.json").write_text(
+                json.dumps(project_json, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+            if _sha256(package) != stage_token:
+                raise DomainRuleError("PROJECT_PACKAGE_STAGE_NOT_FOUND", "提交前 staged 项目包完整性失败")
+            replace_path(temporary_root, final_root)
+            promoted = True
+
+            video_map = {str(item["id"]): str(uuid.uuid4()) for item in state["videos"]}
+            packet_map = {str(item["id"]): str(uuid.uuid4()) for item in state["research_packets"]}
+            source_map = {str(item["id"]): str(uuid.uuid4()) for item in state["sources"]}
+            span_map = {str(item["id"]): str(uuid.uuid4()) for item in state["source_spans"]}
+            claim_map = {str(item["id"]): str(uuid.uuid4()) for item in state["claims"]}
+            entity_map = {str(item["id"]): str(uuid.uuid4()) for item in state["entities"]}
+            entity_state_map = {str(item["id"]): str(uuid.uuid4()) for item in state["entity_state_revisions"]}
+            revision_map = {str(item["id"]): str(uuid.uuid4()) for item in state["script_revisions"]}
+            chapter_map = {str(item["id"]): str(uuid.uuid4()) for item in state["chapters"]}
+            segment_map = {str(item["id"]): str(uuid.uuid4()) for item in state["narration_segments"]}
+            beat_map = {str(item["id"]): str(uuid.uuid4()) for item in state["visual_beats"]}
+            edition_map = {str(item["id"]): str(uuid.uuid4()) for item in state["editions"]}
+            take_map = {str(item["id"]): str(uuid.uuid4()) for item in state["narration_takes"]}
+            composition_map = {str(item["id"]): str(uuid.uuid4()) for item in state["composition_revisions"]}
+            media_asset_map = {str(item["id"]): str(uuid.uuid4()) for item in state["media_assets"]}
+            media_version_map = {str(item["id"]): str(uuid.uuid4()) for item in state["media_versions"]}
+
+            def rewritten(value: Any) -> Any:
+                """Rewrite any embedded id that belongs to the copied graph."""
+
+                maps = {
+                    "video_id": video_map,
+                    "packet_id": packet_map,
+                    "source_id": source_map,
+                    "source_span_id": span_map,
+                    "claim_id": claim_map,
+                    "entity_id": entity_map,
+                    "entity_state_revision_id": entity_state_map,
+                    "script_revision_id": revision_map,
+                    "chapter_id": chapter_map,
+                    "narration_segment_id": segment_map,
+                    "segment_id": segment_map,
+                    "beat_id": beat_map,
+                    "edition_id": edition_map,
+                    "narration_take_id": take_map,
+                    "take_id": take_map,
+                    "composition_revision_id": composition_map,
+                    "media_asset_id": media_asset_map,
+                    "media_version_id": media_version_map,
+                }
+                if isinstance(value, dict):
+                    result: dict[str, Any] = {}
+                    for key, item in value.items():
+                        mapping = maps.get(key)
+                        if mapping is not None and item is not None and str(item) in mapping:
+                            result[key] = mapping[str(item)]
+                        else:
+                            result[key] = rewritten(item)
+                    return result
+                if isinstance(value, list):
+                    return [rewritten(item) for item in value]
+                return value
+
+            def ids(values: object, mapping: Mapping[str, str]) -> list[str]:
+                return [mapping[str(item)] for item in (values or []) if str(item) in mapping]
+
+            def insert(table: str, columns: tuple[str, ...], values: Mapping[str, Any]) -> None:
+                placeholders = ",".join("?" for _ in columns)
+                connection.execute(
+                    f"INSERT INTO {table} ({','.join(columns)}) VALUES ({placeholders})",
+                    tuple(values.get(column) for column in columns),
+                )
+
+            with self.database.transaction() as connection:
+                source_project = connection.execute(
+                    "SELECT * FROM projects WHERE id=?", (source_project_id,)
+                ).fetchone()
+                if source_project is None:
+                    raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包来源项目不存在")
+                connection.execute(
+                    """INSERT INTO projects (id,code,title,status,template_version,root_rel,aspect_ratio,fps_num,fps_den,
+                    timezone,width,height,primary_language,subtitle_mode,subtitle_language,target_duration_ms,
+                    product_kind,created_at,updated_at,created_by,revision,schema_version)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,'v2')""",
+                    (
+                        project_id, code, title[:200], "ACTIVE", str(source_project["template_version"]), code,
+                        source_project["aspect_ratio"], source_project["fps_num"], source_project["fps_den"],
+                        source_project["timezone"], source_project["width"], source_project["height"],
+                        source_project["primary_language"], source_project["subtitle_mode"],
+                        source_project["subtitle_language"], source_project["target_duration_ms"],
+                        "EXPLAINER", now, now, actor,
+                    ),
+                )
+                for item in state["channel_profile_versions"]:
+                    # Channel profiles are shared configuration; the copy re-declares
+                    # the profile rows it needs and re-points videos at them.
+                    profile_id = str(item["channel_profile_id"])
+                    existing = connection.execute(
+                        "SELECT id FROM channel_profiles WHERE project_id=? AND id=?",
+                        (project_id, profile_id),
+                    ).fetchone()
+                    if existing is None:
+                        connection.execute(
+                            """INSERT INTO channel_profiles (id,project_id,code,title,status,current_version_id,scope,
+                            created_at,updated_at,created_by,revision,schema_version)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,1,'v2')""",
+                            (
+                                profile_id, project_id, f"CHANNEL_{profile_id[:8]}", "频道配置", "PUBLISHED",
+                                str(item["id"]), "PROJECT", now, now, actor,
+                            ),
+                        )
+                    insert(
+                        "channel_profile_versions",
+                        (
+                            "id", "channel_profile_id", "version_no", "title", "status", "render_style",
+                            "palette_json", "camera_grammar_json", "lighting_json", "typography_json",
+                            "subtitle_safe_area_json", "transition_set_json", "voice_json", "bgm_policy_json",
+                            "negative_constraints_json", "license_policy_json", "content_hash", "source_version_id",
+                            "created_at", "updated_at", "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            **rewritten(item),
+                            "id": str(item["id"]),
+                            "channel_profile_id": profile_id,
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                        },
+                    )
+                    counts["channel_profile_versions"] += 1
+                for item in state["videos"]:
+                    insert(
+                        "explainer_videos",
+                        (
+                            "id", "project_id", "title", "topic", "content_kind", "source_locale", "input_kind",
+                            "input_payload_json", "duration_mode", "target_seconds", "tolerance_percent",
+                            "automation_mode", "inference_mode", "research_mode", "research_allowed_domains_json",
+                            "current_script_revision_id", "current_channel_profile_version_id", "status",
+                            "created_at", "updated_at", "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            **rewritten(item),
+                            "id": video_map[str(item["id"])],
+                            "project_id": project_id,
+                            "input_payload_json": json.dumps(item.get("input_payload") or {}, ensure_ascii=False, sort_keys=True),
+                            "research_allowed_domains_json": json.dumps(item.get("research_allowed_domains") or [], ensure_ascii=False, sort_keys=True),
+                            "current_script_revision_id": (
+                                revision_map.get(str(item.get("current_script_revision_id")))
+                                if item.get("current_script_revision_id")
+                                else None
+                            ),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                        },
+                    )
+                    counts["videos"] += 1
+                for item in state["research_packets"]:
+                    insert(
+                        "explainer_research_packets",
+                        (
+                            "id", "video_id", "revision_no", "status", "mode", "topic", "allowed_domains_json",
+                            "external_request_count", "max_external_requests", "content_hash", "blockers_json",
+                            "created_at", "updated_at", "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            **rewritten(item),
+                            "id": packet_map[str(item["id"])],
+                            "allowed_domains_json": json.dumps(item.get("allowed_domains") or [], ensure_ascii=False, sort_keys=True),
+                            "blockers_json": json.dumps(item.get("blockers") or [], ensure_ascii=False, sort_keys=True),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                        },
+                    )
+                    counts["research_packets"] += 1
+                for item in state["sources"]:
+                    insert(
+                        "explainer_sources",
+                        (
+                            "id", "packet_id", "video_id", "project_id", "source_kind", "url", "title",
+                            "author_or_publisher", "published_at", "updated_at_source", "event_date",
+                            "event_date_precision", "fetched_at", "language", "body_sha256", "rel_path", "byte_size",
+                            "credibility_kind", "rights_json", "upstream_source_id", "import_session_id",
+                            "source_document_version_id", "retrieved_via", "created_at", "updated_at", "created_by",
+                            "revision", "schema_version",
+                        ),
+                        {
+                            **rewritten(item),
+                            "id": source_map[str(item["id"])],
+                            "packet_id": packet_map[str(item["packet_id"])],
+                            "project_id": project_id,
+                            "rights_json": json.dumps(item.get("rights") or {}, ensure_ascii=False, sort_keys=True),
+                            "upstream_source_id": None,
+                            "import_session_id": None,
+                            "source_document_version_id": None,
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                        },
+                    )
+                    counts["sources"] += 1
+                for item in state["source_spans"]:
+                    insert(
+                        "explainer_source_spans",
+                        (
+                            "id", "source_id", "packet_id", "ordinal", "start_offset", "end_offset", "quote_text",
+                            "span_hash", "page_no", "paragraph_no", "created_at", "updated_at", "created_by",
+                            "revision", "schema_version",
+                        ),
+                        {
+                            "id": span_map[str(item["id"])],
+                            "source_id": source_map[str(item["source_id"])],
+                            "packet_id": packet_map.get(str(item.get("packet_id"))) or packet_map[str(item["source_id"])] if item.get("packet_id") else None,
+                            "ordinal": item.get("ordinal"),
+                            "start_offset": item.get("start_offset"),
+                            "end_offset": item.get("end_offset"),
+                            "quote_text": item.get("quote_text"),
+                            "span_hash": item.get("span_hash"),
+                            "page_no": item.get("page_no"),
+                            "paragraph_no": item.get("paragraph_no"),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                            "revision": 1,
+                            "schema_version": "v2",
+                        },
+                    )
+                    counts["source_spans"] += 1
+                for item in state["claims"]:
+                    insert(
+                        "explainer_claims",
+                        (
+                            "id", "video_id", "packet_id", "code", "statement", "statement_kind", "status",
+                            "importance", "confidence_reason", "verified_as_history", "disambiguation_json",
+                            "verification_json", "created_at", "updated_at", "created_by", "revision",
+                            "schema_version",
+                        ),
+                        {
+                            **rewritten(item),
+                            "id": claim_map[str(item["id"])],
+                            "disambiguation_json": json.dumps(item.get("disambiguation") or {}, ensure_ascii=False, sort_keys=True),
+                            "verification_json": json.dumps(item.get("verification") or {}, ensure_ascii=False, sort_keys=True),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                        },
+                    )
+                    counts["claims"] += 1
+                for item in state["claim_evidence"]:
+                    insert(
+                        "claim_evidence",
+                        (
+                            "id", "claim_id", "source_id", "source_span_id", "stance", "independence_key", "note",
+                            "created_at", "updated_at", "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            "id": str(uuid.uuid4()),
+                            "claim_id": claim_map[str(item["claim_id"])],
+                            "source_id": source_map[str(item["source_id"])],
+                            "source_span_id": span_map[str(item["source_span_id"])],
+                            "stance": item.get("stance"),
+                            "independence_key": item.get("independence_key"),
+                            "note": item.get("note"),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                            "revision": 1,
+                            "schema_version": "v2",
+                        },
+                    )
+                    counts["claim_evidence"] += 1
+                for item in state["events"]:
+                    insert(
+                        "explainer_events",
+                        (
+                            "id", "video_id", "code", "title", "story_time_start", "story_time_end",
+                            "story_time_precision", "calendar_system", "place_entity_id", "place_label",
+                            "participant_entity_ids_json", "claim_ids_json", "causal_note", "sequence_no",
+                            "created_at", "updated_at", "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            **rewritten(item),
+                            "id": str(uuid.uuid4()),
+                            "video_id": video_map[str(item["video_id"])],
+                            "place_entity_id": (
+                                entity_map.get(str(item.get("place_entity_id")))
+                                if item.get("place_entity_id")
+                                else None
+                            ),
+                            "participant_entity_ids_json": _json(ids(item.get("participant_entity_ids"), entity_map)),
+                            "claim_ids_json": _json(ids(item.get("claim_ids"), claim_map)),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                        },
+                    )
+                    counts["events"] += 1
+                for item in state["entities"]:
+                    insert(
+                        "explainer_entities",
+                        (
+                            "id", "video_id", "project_id", "code", "entity_type", "name", "latin_name",
+                            "aliases_json", "fictional", "descriptive_only", "disambiguation_json",
+                            "story_asset_id", "status", "canonical_state_revision_id", "created_at", "updated_at",
+                            "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            **rewritten(item),
+                            "id": entity_map[str(item["id"])],
+                            "project_id": project_id,
+                            "disambiguation_json": json.dumps(item.get("disambiguation") or {}, ensure_ascii=False, sort_keys=True),
+                            "story_asset_id": None,
+                            "canonical_state_revision_id": (
+                                entity_state_map.get(str(item.get("canonical_state_revision_id")))
+                                if item.get("canonical_state_revision_id")
+                                else None
+                            ),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                        },
+                    )
+                    counts["entities"] += 1
+                for item in state["entity_state_revisions"]:
+                    insert(
+                        "entity_state_revisions",
+                        (
+                            "id", "entity_id", "revision_no", "label", "age", "wardrobe", "condition",
+                            "carried_prop_entity_ids_json", "valid_from_story_time", "valid_to_story_time",
+                            "identity_pack_version_id", "reference_media_version_ids_json", "content_hash",
+                            "source_state_id", "created_at", "updated_at", "created_by", "revision",
+                            "schema_version",
+                        ),
+                        {
+                            **rewritten(item),
+                            "id": entity_state_map[str(item["id"])],
+                            "entity_id": entity_map[str(item["entity_id"])],
+                            "carried_prop_entity_ids_json": _json(
+                                ids(item.get("carried_prop_entity_ids"), entity_map)
+                            ),
+                            "reference_media_version_ids_json": _json(
+                                ids(item.get("reference_media_version_ids"), media_version_map)
+                            ),
+                            "source_state_id": (
+                                entity_state_map.get(str(item.get("source_state_id")))
+                                if item.get("source_state_id")
+                                else None
+                            ),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                        },
+                    )
+                    counts["entity_state_revisions"] += 1
+                for item in state["script_revisions"]:
+                    insert(
+                        "explainer_script_revisions",
+                        (
+                            "id", "video_id", "revision_no", "locale", "source_script_revision_id", "title",
+                            "outline_json", "terminology_json", "status", "frozen_at", "frozen_by", "content_hash",
+                            "parent_plan_id", "provenance_json", "created_at", "updated_at", "created_by",
+                            "revision", "schema_version",
+                        ),
+                        {
+                            **rewritten(item),
+                            "id": revision_map[str(item["id"])],
+                            "video_id": video_map[str(item["video_id"])],
+                            "source_script_revision_id": None,
+                            "outline_json": json.dumps(item.get("outline") or {}, ensure_ascii=False, sort_keys=True),
+                            "terminology_json": json.dumps(item.get("terminology") or {}, ensure_ascii=False, sort_keys=True),
+                            "parent_plan_id": None,
+                            "provenance_json": json.dumps(item.get("provenance") or {}, ensure_ascii=False, sort_keys=True),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                        },
+                    )
+                    counts["script_revisions"] += 1
+                for item in state["chapters"]:
+                    insert(
+                        "explainer_chapters",
+                        (
+                            "id", "script_revision_id", "ordinal", "code", "title", "audience_question",
+                            "summary", "claim_ids_json", "source_ids_json", "created_at", "updated_at",
+                            "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            "id": str(uuid.uuid4()),
+                            "script_revision_id": revision_map[str(item["script_revision_id"])],
+                            "ordinal": item.get("ordinal"),
+                            "code": item.get("code"),
+                            "title": item.get("title"),
+                            "audience_question": item.get("audience_question"),
+                            "summary": item.get("summary"),
+                            "claim_ids_json": _json(ids(item.get("claim_ids"), claim_map)),
+                            "source_ids_json": _json(ids(item.get("source_ids"), source_map)),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                            "revision": 1,
+                            "schema_version": "v2",
+                        },
+                    )
+                    counts["chapters"] += 1
+                for item in state["narration_segments"]:
+                    insert(
+                        "narration_segments",
+                        (
+                            "id", "video_id", "script_revision_id", "chapter_id", "canonical_segment_id", "locale",
+                            "ordinal", "display_text", "spoken_text", "statement_type", "claim_ids_json",
+                            "pronunciation_map_json", "speaker", "emotion", "pause_after_ms", "target_duration_ms",
+                            "content_locked_by_human", "locked_by", "locked_at", "segment_hash", "previous_segment_id",
+                            "created_at", "updated_at", "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            "id": segment_map[str(item["id"])],
+                            "video_id": video_map[str(item["video_id"])],
+                            "script_revision_id": (
+                                revision_map.get(str(item.get("script_revision_id")))
+                                if item.get("script_revision_id")
+                                else None
+                            ),
+                            "chapter_id": None,
+                            "canonical_segment_id": item.get("canonical_segment_id"),
+                            "locale": item.get("locale"),
+                            "ordinal": item.get("ordinal"),
+                            "display_text": item.get("display_text"),
+                            "spoken_text": item.get("spoken_text"),
+                            "statement_type": item.get("statement_type"),
+                            "claim_ids_json": _json(ids(item.get("claim_ids"), claim_map)),
+                            "pronunciation_map_json": json.dumps(item.get("pronunciation_map") or [], ensure_ascii=False, sort_keys=True),
+                            "speaker": item.get("speaker"),
+                            "emotion": item.get("emotion"),
+                            "pause_after_ms": item.get("pause_after_ms"),
+                            "target_duration_ms": item.get("target_duration_ms"),
+                            "content_locked_by_human": item.get("content_locked_by_human"),
+                            "locked_by": item.get("locked_by"),
+                            "locked_at": item.get("locked_at"),
+                            "segment_hash": item.get("segment_hash"),
+                            "previous_segment_id": (
+                                segment_map.get(str(item.get("previous_segment_id")))
+                                if item.get("previous_segment_id")
+                                else None
+                            ),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                            "revision": 1,
+                            "schema_version": "v2",
+                        },
+                    )
+                    counts["narration_segments"] += 1
+                for item in state["visual_beats"]:
+                    insert(
+                        "explainer_visual_beats",
+                        (
+                            "id", "video_id", "code", "ordinal", "render_type", "visual_intent", "must_be_motion",
+                            "reference_policy", "allowed_fallbacks_json", "preferred_duration_ms",
+                            "entity_refs_json", "claim_refs_json", "visual_factuality", "shot_grammar_json",
+                            "prompt_intent", "status", "actual_fallback_type", "fallback_reason", "locked_by_human",
+                            "locked_by", "locked_at", "origin", "created_at", "updated_at", "created_by",
+                            "revision", "schema_version",
+                        ),
+                        {
+                            **rewritten(item),
+                            "id": beat_map[str(item["id"])],
+                            "video_id": video_map[str(item["video_id"])],
+                            "allowed_fallbacks_json": json.dumps(item.get("allowed_fallbacks") or [], ensure_ascii=False, sort_keys=True),
+                            "entity_refs_json": _json(rewritten(item.get("entity_refs") or [])),
+                            "claim_refs_json": _json(ids(item.get("claim_refs"), claim_map)),
+                            "shot_grammar_json": json.dumps(item.get("shot_grammar") or {}, ensure_ascii=False, sort_keys=True),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                        },
+                    )
+                    counts["visual_beats"] += 1
+                for item in state["beat_narration_links"]:
+                    insert(
+                        "beat_narration_links",
+                        (
+                            "id", "beat_id", "narration_segment_id", "video_id", "ordinal", "created_at",
+                            "updated_at", "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            "id": str(uuid.uuid4()),
+                            "beat_id": beat_map[str(item["beat_id"])],
+                            "narration_segment_id": segment_map[str(item["narration_segment_id"])],
+                            "video_id": video_map[str(item["video_id"])],
+                            "ordinal": item.get("ordinal"),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                            "revision": 1,
+                            "schema_version": "v2",
+                        },
+                    )
+                    counts["beat_narration_links"] += 1
+                for item in state["editions"]:
+                    insert(
+                        "explainer_editions",
+                        (
+                            "id", "video_id", "edition_key", "revision_no", "voice_locale",
+                            "subtitle_locales_json", "subtitle_mode", "aspect_ratio", "fps_num", "fps_den",
+                            "width", "height", "audio_sample_rate_hz", "duration_policy", "target_seconds",
+                            "tolerance_percent", "allow_soft_subtitle_fallback", "frozen_script_revision_id",
+                            "frozen_narration_take_ids_json", "frozen_subtitle_revision_id", "status", "created_at",
+                            "updated_at", "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            **rewritten(item),
+                            "id": edition_map[str(item["id"])],
+                            "video_id": video_map[str(item["video_id"])],
+                            "subtitle_locales_json": json.dumps(item.get("subtitle_locales") or [], ensure_ascii=False, sort_keys=True),
+                            "frozen_script_revision_id": (
+                                revision_map.get(str(item.get("frozen_script_revision_id")))
+                                if item.get("frozen_script_revision_id")
+                                else None
+                            ),
+                            "frozen_narration_take_ids_json": _json(
+                                ids(item.get("frozen_narration_take_ids"), take_map)
+                            ),
+                            # A subtitle revision is re-derivable text; the copy keeps
+                            # the edition usable and clears the pointer.
+                            "frozen_subtitle_revision_id": None,
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                        },
+                    )
+                    counts["editions"] += 1
+                for item in state["media_assets"]:
+                    insert(
+                        "media_assets",
+                        (
+                            "id", "project_id", "owner_type", "owner_id", "purpose", "media_kind",
+                            "version_counter", "metadata_json", "created_at", "updated_at", "created_by",
+                            "revision", "schema_version",
+                        ),
+                        {
+                            "id": media_asset_map[str(item["id"])],
+                            "project_id": project_id,
+                            "owner_type": item.get("owner_type"),
+                            "owner_id": video_map.get(str(item.get("owner_id"))) or str(item.get("owner_id")),
+                            "purpose": item.get("purpose"),
+                            "media_kind": item.get("media_kind"),
+                            "version_counter": item.get("version_counter"),
+                            "metadata_json": _json(rewritten(item.get("metadata") or {})),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                            "revision": 1,
+                            "schema_version": "v2",
+                        },
+                    )
+                    counts["media_assets"] += 1
+                for item in state["media_versions"]:
+                    insert(
+                        "media_versions",
+                        (
+                            "id", "media_asset_id", "version_no", "take_no", "stage", "rel_path", "mime_type",
+                            "byte_size", "sha256", "duration_ms", "fps_num", "fps_den", "parent_version_id",
+                            "integrity_status", "source_name", "import_source", "probe_json", "created_at",
+                            "updated_at", "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            "id": media_version_map[str(item["id"])],
+                            "media_asset_id": media_asset_map[str(item["media_asset_id"])],
+                            "version_no": item.get("version_no"),
+                            "take_no": int(item.get("take_no") or 0),
+                            "stage": item.get("stage"),
+                            "rel_path": item.get("rel_path"),
+                            "mime_type": item.get("mime_type"),
+                            "byte_size": item.get("byte_size"),
+                            "sha256": item.get("sha256"),
+                            "duration_ms": item.get("duration_ms"),
+                            "fps_num": item.get("fps_num"),
+                            "fps_den": item.get("fps_den"),
+                            "parent_version_id": (
+                                media_version_map.get(str(item.get("parent_version_id")))
+                                if item.get("parent_version_id")
+                                else None
+                            ),
+                            # Copied bytes must be re-verified before the copy is
+                            # trusted; the source's PASS is not inherited.
+                            "integrity_status": "UNVERIFIED",
+                            "source_name": item.get("source_name"),
+                            "import_source": "PROJECT_PACKAGE_IMPORT",
+                            "probe_json": json.dumps(item.get("probe") or {}, ensure_ascii=False, sort_keys=True),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                            "revision": 1,
+                            "schema_version": "v2",
+                        },
+                    )
+                    counts["media_versions"] += 1
+                for item in state["narration_takes"]:
+                    insert(
+                        "narration_takes",
+                        (
+                            "id", "video_id", "segment_id", "canonical_segment_id", "locale", "take_no",
+                            "media_asset_id", "media_version_id", "media_sha256", "segment_hash",
+                            "voice_profile_version_id", "model_ref", "emotion", "speech_rate",
+                            "measured_duration_ms", "measured_sample_count", "sample_rate_hz", "lead_silence_ms",
+                            "trail_silence_ms", "status", "selected", "source_job_attempt_id", "generation_json",
+                            "created_at", "updated_at", "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            **rewritten(item),
+                            "id": take_map[str(item["id"])],
+                            "video_id": video_map[str(item["video_id"])],
+                            "segment_id": segment_map.get(str(item.get("segment_id"))) if item.get("segment_id") else None,
+                            "media_asset_id": media_asset_map.get(str(item.get("media_asset_id"))) if item.get("media_asset_id") else None,
+                            "media_version_id": media_version_map.get(str(item.get("media_version_id"))) if item.get("media_version_id") else None,
+                            "source_job_attempt_id": None,
+                            "generation_json": json.dumps(item.get("generation") or {}, ensure_ascii=False, sort_keys=True),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                        },
+                    )
+                    counts["narration_takes"] += 1
+                for item in state["narration_alignment_revisions"]:
+                    insert(
+                        "narration_alignment_revisions",
+                        (
+                            "id", "take_id", "segment_id", "video_id", "revision_no", "locale", "script_hash",
+                            "media_sha256", "sample_rate_hz", "sample_offset", "total_samples",
+                            "word_timings_json", "display_map_json", "alignment_status", "unaligned_tokens_json",
+                            "asr_review_json", "detector_version", "created_at", "updated_at", "created_by",
+                            "revision", "schema_version",
+                        ),
+                        {
+                            "id": str(uuid.uuid4()),
+                            "take_id": take_map[str(item["take_id"])],
+                            "segment_id": segment_map[str(item["segment_id"])],
+                            "video_id": video_map[str(item["video_id"])],
+                            "revision_no": item.get("revision_no"),
+                            "locale": item.get("locale"),
+                            "script_hash": item.get("script_hash"),
+                            "media_sha256": item.get("media_sha256"),
+                            "sample_rate_hz": item.get("sample_rate_hz"),
+                            "sample_offset": item.get("sample_offset"),
+                            "total_samples": item.get("total_samples"),
+                            "word_timings_json": json.dumps(item.get("word_timings") or [], ensure_ascii=False, sort_keys=True),
+                            "display_map_json": json.dumps(item.get("display_map") or {}, ensure_ascii=False, sort_keys=True),
+                            "alignment_status": item.get("alignment_status"),
+                            "unaligned_tokens_json": json.dumps(item.get("unaligned_tokens") or [], ensure_ascii=False, sort_keys=True),
+                            "asr_review_json": json.dumps(item.get("asr_review") or {}, ensure_ascii=False, sort_keys=True),
+                            "detector_version": item.get("detector_version"),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                            "revision": 1,
+                            "schema_version": "v2",
+                        },
+                    )
+                    counts["narration_alignment_revisions"] += 1
+                for item in state["subtitle_revisions"]:
+                    insert(
+                        "explainer_subtitle_revisions",
+                        (
+                            "id", "video_id", "edition_id", "revision_no", "locale", "paired_locale", "format",
+                            "text_authority", "script_revision_id", "narration_alignment_revision_ids_json",
+                            "style_version_id", "content_text", "cues_json", "content_hash", "layout_report_json",
+                            "status", "created_at", "updated_at", "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            **rewritten(item),
+                            "id": str(uuid.uuid4()),
+                            "video_id": video_map[str(item["video_id"])],
+                            "edition_id": edition_map[str(item["edition_id"])],
+                            "script_revision_id": (
+                                revision_map.get(str(item.get("script_revision_id")))
+                                if item.get("script_revision_id")
+                                else None
+                            ),
+                            "narration_alignment_revision_ids_json": _json(
+                                [str(uuid.uuid4()) for _ in (item.get("narration_alignment_revision_ids") or [])]
+                            )
+                            if item.get("narration_alignment_revision_ids")
+                            else "[]",
+                            "cues_json": json.dumps(item.get("cues") or [], ensure_ascii=False, sort_keys=True),
+                            "layout_report_json": json.dumps(item.get("layout_report") or {}, ensure_ascii=False, sort_keys=True),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                        },
+                    )
+                    counts["subtitle_revisions"] += 1
+                for item in state["composition_revisions"]:
+                    insert(
+                        "composition_revisions",
+                        (
+                            "id", "edition_id", "video_id", "project_id", "revision_no", "status",
+                            "manifest_json", "manifest_hash", "fps_num", "fps_den", "total_frames",
+                            "audio_sample_rate_hz", "total_samples", "duration_policy", "target_frames",
+                            "frozen_media_hash", "frozen_at", "frozen_by", "validation_json", "created_at",
+                            "updated_at", "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            "id": composition_map[str(item["id"])],
+                            "edition_id": edition_map[str(item["edition_id"])],
+                            "video_id": video_map[str(item["video_id"])],
+                            "project_id": project_id,
+                            "revision_no": item.get("revision_no"),
+                            "status": item.get("status"),
+                            "manifest_json": _json(rewritten(item.get("manifest") or {})),
+                            "manifest_hash": item.get("manifest_hash"),
+                            "fps_num": item.get("fps_num"),
+                            "fps_den": item.get("fps_den"),
+                            "total_frames": item.get("total_frames"),
+                            "audio_sample_rate_hz": item.get("audio_sample_rate_hz"),
+                            "total_samples": item.get("total_samples"),
+                            "duration_policy": item.get("duration_policy"),
+                            "target_frames": item.get("target_frames"),
+                            "frozen_media_hash": item.get("frozen_media_hash"),
+                            "frozen_at": item.get("frozen_at"),
+                            "frozen_by": item.get("frozen_by"),
+                            "validation_json": json.dumps(item.get("validation") or {}, ensure_ascii=False, sort_keys=True),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                            "revision": 1,
+                            "schema_version": "v2",
+                        },
+                    )
+                    counts["composition_revisions"] += 1
+                for item in state["composition_items"]:
+                    insert(
+                        "composition_items",
+                        (
+                            "id", "composition_revision_id", "edition_id", "video_id", "ordinal", "item_kind",
+                            "track", "beat_id", "narration_segment_id", "narration_take_id", "media_asset_id",
+                            "media_version_id", "media_sha256", "start_frame", "end_frame_exclusive",
+                            "source_in_us", "source_out_us", "sample_start", "sample_end_exclusive", "layer_json",
+                            "transform_json", "subtitle_json", "audio_json", "transition_json",
+                            "render_type_planned", "render_type_actual", "media_kind", "item_hash", "created_at",
+                            "updated_at", "created_by", "revision", "schema_version",
+                        ),
+                        {
+                            "id": str(uuid.uuid4()),
+                            "composition_revision_id": composition_map[str(item["composition_revision_id"])],
+                            "edition_id": edition_map[str(item["edition_id"])],
+                            "video_id": video_map[str(item["video_id"])],
+                            "ordinal": item.get("ordinal"),
+                            "item_kind": item.get("item_kind"),
+                            "track": item.get("track"),
+                            "beat_id": beat_map.get(str(item.get("beat_id"))) if item.get("beat_id") else None,
+                            "narration_segment_id": (
+                                segment_map.get(str(item.get("narration_segment_id")))
+                                if item.get("narration_segment_id")
+                                else None
+                            ),
+                            "narration_take_id": (
+                                take_map.get(str(item.get("narration_take_id")))
+                                if item.get("narration_take_id")
+                                else None
+                            ),
+                            "media_asset_id": (
+                                media_asset_map.get(str(item.get("media_asset_id")))
+                                if item.get("media_asset_id")
+                                else None
+                            ),
+                            "media_version_id": (
+                                media_version_map.get(str(item.get("media_version_id")))
+                                if item.get("media_version_id")
+                                else None
+                            ),
+                            "media_sha256": item.get("media_sha256"),
+                            "start_frame": item.get("start_frame"),
+                            "end_frame_exclusive": item.get("end_frame_exclusive"),
+                            "source_in_us": item.get("source_in_us"),
+                            "source_out_us": item.get("source_out_us"),
+                            "sample_start": item.get("sample_start"),
+                            "sample_end_exclusive": item.get("sample_end_exclusive"),
+                            "layer_json": json.dumps(item.get("layer") or {}, ensure_ascii=False, sort_keys=True),
+                            "transform_json": json.dumps(item.get("transform") or {}, ensure_ascii=False, sort_keys=True),
+                            "subtitle_json": json.dumps(item.get("subtitle") or {}, ensure_ascii=False, sort_keys=True),
+                            "audio_json": json.dumps(item.get("audio") or {}, ensure_ascii=False, sort_keys=True),
+                            "transition_json": json.dumps(item.get("transition") or {}, ensure_ascii=False, sort_keys=True),
+                            "render_type_planned": item.get("render_type_planned"),
+                            "render_type_actual": item.get("render_type_actual"),
+                            "media_kind": item.get("media_kind"),
+                            "item_hash": item.get("item_hash"),
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                            "revision": 1,
+                            "schema_version": "v2",
+                        },
+                    )
+                    counts["composition_items"] += 1
+                # Runs are carried as history so a reader can see what happened, but
+                # they are written in a terminal, non-executable state: a copy must
+                # never restart work the source already performed.
+                for item in state["runs"]:
+                    insert(
+                        "explainer_runs",
+                        (
+                            "id", "project_id", "video_id", "status", "automation_mode", "plan_hash",
+                            "parent_plan_id", "plan_json", "plan_revision", "frozen_inputs_json",
+                            "policy_snapshot_json", "capability_snapshot_json", "budget_json", "inference_mode",
+                            "research_mode", "inference_egress_denied_count", "automation_workflow_run_id",
+                            "automation_workflow_id", "current_stage_code", "progress_json", "blockers_json",
+                            "budget_used_json", "idempotency_key", "started_at", "finished_at",
+                            "cancel_requested_at", "created_at", "updated_at", "created_by", "revision",
+                            "schema_version",
+                        ),
+                        {
+                            "id": str(uuid.uuid4()),
+                            "project_id": project_id,
+                            "video_id": video_map[str(item["video_id"])],
+                            "status": "CANCELLED",
+                            "automation_mode": item.get("automation_mode"),
+                            "plan_hash": item.get("plan_hash"),
+                            "parent_plan_id": None,
+                            "plan_json": _json(rewritten(item.get("plan") or {})),
+                            "plan_revision": item.get("plan_revision"),
+                            "frozen_inputs_json": _json(rewritten(item.get("frozen_inputs") or {})),
+                            "policy_snapshot_json": json.dumps(item.get("policy_snapshot") or {}, ensure_ascii=False, sort_keys=True),
+                            "capability_snapshot_json": json.dumps(item.get("capability_snapshot") or {}, ensure_ascii=False, sort_keys=True),
+                            "budget_json": json.dumps(item.get("budget") or {}, ensure_ascii=False, sort_keys=True),
+                            "inference_mode": item.get("inference_mode"),
+                            "research_mode": item.get("research_mode"),
+                            "inference_egress_denied_count": 0,
+                            "automation_workflow_run_id": None,
+                            "automation_workflow_id": None,
+                            "current_stage_code": "IMPORTED_HISTORY",
+                            "progress_json": json.dumps(item.get("progress") or {}, ensure_ascii=False, sort_keys=True),
+                            "blockers_json": _json(
+                                [*(item.get("blockers") or []), "PROJECT_PACKAGE_COPY_REQUIRES_RESTART"]
+                            ),
+                            "budget_used_json": json.dumps(item.get("budget_used") or {}, ensure_ascii=False, sort_keys=True),
+                            "idempotency_key": None,
+                            "started_at": item.get("started_at"),
+                            "finished_at": item.get("finished_at") or now,
+                            "cancel_requested_at": None,
+                            "created_at": now,
+                            "updated_at": now,
+                            "created_by": actor,
+                            "revision": 1,
+                            "schema_version": "v2",
+                        },
+                    )
+                    counts["runs"] += 1
+                if simulate_failure:
+                    raise DomainRuleError("PROJECT_PACKAGE_IMPORT_SIMULATED_FAILURE", "模拟导入失败")
+                result = {
+                    "schema_version": PACKAGE_SCHEMA,
+                    "product_kind": "EXPLAINER",
+                    "target_project_id": project_id,
+                    "target_project_code": code,
+                    "target_root_rel": code,
+                    "source_project_id": source_project_id,
+                    "copy_status": "IMPORTED",
+                    "identity_mode": identity_mode,
+                    "missing_fields": missing_fields,
+                    "excluded_domains": sorted(_EXPLAINER_EXCLUDED_DOMAINS),
+                    "incomplete_domains": state.get("incomplete_domains") or [],
+                    "counts": counts,
+                    "media_integrity_status": "UNVERIFIED",
+                    "reused": False,
+                }
+                connection.execute(
+                    """UPDATE project_package_imports SET status='COMPLETED',result_json=?,updated_at=?
+                    WHERE operation_key=?""",
+                    (json.dumps(result, ensure_ascii=False, sort_keys=True), _utc_now(), operation_key),
+                )
+            return result
+        except Exception as error:
+            if promoted:
+                shutil.rmtree(final_root, ignore_errors=True)
+            else:
+                shutil.rmtree(temporary_root, ignore_errors=True)
+            fail_receipt(
+                error.code if isinstance(error, DomainRuleError) else "PROJECT_PACKAGE_IMPORT_FAILED"
+            )
+            raise
+
     def _staged_package(self, stage_token: str) -> Path:
         self.dry_run_staged(stage_token)
         return (self.staging_root / "staged" / f"{stage_token}.ldspkg").resolve()
@@ -828,6 +2483,8 @@ class ProjectPackageService:
             raw_state = json.loads(archive.read("project-state.json"))
         state = self._require_json_object(raw_state, "project-state.json")
         missing_fields = [str(item) for item in inspected.get("missing_fields") or []]
+        if str(state.get("schema_version") or "") == EXPLAINER_STATE_SCHEMA:
+            return self._read_explainer_state(package, state, missing_fields)
         required_lists = REQUIRED_STATE_LIST_KEYS
         if any(not isinstance(state.get(key), list) for key in required_lists):
             raise DomainRuleError("PROJECT_PACKAGE_STATE_INVALID", "项目包结构状态不完整")
@@ -843,14 +2500,14 @@ class ProjectPackageService:
         for key in (*OPTIONAL_STATE_MEDIA_KEYS, *OPTIONAL_STATE_LIST_KEYS, *MANUSCRIPT_STATE_KEYS):
             state[key] = state.get(key, [])
         for session in state["import_sessions"]:
-            session["preview"] = self._parsed_or_raw_json(session, "preview", "preview_json", "import_sessions.preview_json")
+            session["preview"] = self._parsed_or_raw(session, "preview", "preview_json", "import_sessions.preview_json", ensure_ascii=False, sort_keys=True)
             if "committed_scope" not in session:
                 raw_scope = session.pop("committed_scope_json", None)
-                session["committed_scope"] = None if raw_scope is None else self._embedded_json(raw_scope, "import_sessions.committed_scope_json")
+                session["committed_scope"] = None if raw_scope is None else self._embedded(raw_scope, "import_sessions.committed_scope_json", ensure_ascii=False, sort_keys=True)
         for item in state["import_session_items"]:
-            item["payload"] = self._parsed_or_raw_json(item, "payload", "payload_json", "import_session_items.payload_json")
+            item["payload"] = self._parsed_or_raw(item, "payload", "payload_json", "import_session_items.payload_json", ensure_ascii=False, sort_keys=True)
         for version in state["source_document_versions"]:
-            version["metadata"] = self._parsed_or_raw_json(version, "metadata", "metadata_json", "source_document_versions.metadata_json")
+            version["metadata"] = self._parsed_or_raw(version, "metadata", "metadata_json", "source_document_versions.metadata_json", ensure_ascii=False, sort_keys=True)
         media_asset_ids = {str(item.get("id")) for item in state["media_assets"]}
         media_version_ids = {str(item.get("id")) for item in state["media_versions"]}
         if len(media_asset_ids) != len(state["media_assets"]) or len(media_version_ids) != len(state["media_versions"]):
@@ -996,7 +2653,7 @@ class ProjectPackageService:
         return state, missing_fields
 
     @staticmethod
-    def _embedded_json(value: object, label: str) -> Any:
+    def _embedded(value: object, label: str, ensure_ascii=False, sort_keys=True) -> Any:
         if isinstance(value, (dict, list)):
             return value
         try:
@@ -1008,7 +2665,7 @@ class ProjectPackageService:
         return parsed
 
     @classmethod
-    def _parsed_or_raw_json(cls, container: dict[str, Any], parsed_key: str, raw_key: str, label: str) -> Any:
+    def _parsed_or_raw(cls, container: dict[str, Any], parsed_key: str, raw_key: str, label: str, ensure_ascii=False, sort_keys=True) -> Any:
         """Accept both the parsed form (current exports) and the raw JSON string.
 
         Packages written by older versions stored only ``*_json`` text columns,
@@ -1016,7 +2673,7 @@ class ProjectPackageService:
         """
         if parsed_key in container:
             return container[parsed_key]
-        return cls._embedded_json(container.pop(raw_key, None), label)
+        return cls._embedded(container.pop(raw_key, None), label, ensure_ascii=False, sort_keys=True)
 
     @staticmethod
     def _validate_manuscript_references(state: dict[str, Any]) -> None:
@@ -1104,6 +2761,22 @@ class ProjectPackageService:
             raise DomainRuleError("INVALID_PROJECT_TITLE", "项目标题必须是 1—200 个字符")
         package = self._staged_package(stage_token)
         state, missing_fields = self._read_state(package)
+        if str(state.get("schema_version") or "") == EXPLAINER_STATE_SCHEMA:
+            # PKG-02: an EXPLAINER package has no seasons or episodes to copy, and its
+            # domain has its own identity graph.  It must not be fed to the DRAMA path
+            # (which is what produced the empty DRAMA shell) nor refused (which is what
+            # the interim product-kind blocker did before this adapter existed).
+            return self._import_explainer_copy(
+                stage_token,
+                package,
+                state,
+                missing_fields,
+                code=code,
+                title=title,
+                actor=actor,
+                request_id=request_id,
+                simulate_failure=simulate_failure,
+            )
         source_project = state["project"]
         copyable = TemplateCopyableConfiguration.from_project_row(source_project)
         copied_default_duration_ms = copyable.explicit_default_duration_ms()
@@ -1593,6 +3266,20 @@ class ProjectPackageService:
                         raise DomainRuleError("PROJECT_PACKAGE_MANUSCRIPT_FILE_MISSING", "导入原稿文件缺失或越界", {"rel_path": str(relative)})
                     if source_path.stat().st_size != int(version["byte_size"]) or _sha256(source_path) != str(version["sha256"]):
                         raise DomainRuleError("PROJECT_PACKAGE_MANUSCRIPT_HASH_MISMATCH", "导入原稿文件 hash/size 不匹配", {"rel_path": str(relative)})
+                    # ``metadata_json`` is not descriptive text: it carries the live
+                    # ``media_version_id`` the read path resolves.  Copying it
+                    # verbatim left the copy pointing at the *source* project's media
+                    # (or at nothing at all in a fresh database, which then failed
+                    # with MEDIA_VERSION_NOT_FOUND while the import reported
+                    # IMPORTED).  Runtime references are rewritten explicitly — never
+                    # by blind string replacement over the whole JSON — and a missing
+                    # binding is a named blocker.
+                    rewritten_metadata = _rewrite_manuscript_metadata(
+                        version.get("metadata"),
+                        media_version_map=media_version_map,
+                        version_id=str(version["id"]),
+                        rel_path=relative.as_posix(),
+                    )
                     connection.execute(
                         """INSERT INTO source_document_versions
                         (id,source_document_id,version_no,rel_path,source_name,mime_type,byte_size,sha256,text_sha256,
@@ -1606,7 +3293,7 @@ class ProjectPackageService:
                          str(version["sha256"]), version.get("text_sha256"), version.get("extracted_text_rel"),
                          str(version.get("parse_status") or "PARSED"), int(version.get("parser_version") or 1),
                          int(version.get("structure_version") or 1),
-                         json.dumps(version.get("metadata") or {}, ensure_ascii=False, sort_keys=True),
+                         json.dumps(rewritten_metadata, ensure_ascii=False, sort_keys=True),
                          version.get("created_at") or now, version.get("updated_at") or now,
                          version.get("created_by") or actor, int(version.get("revision") or 1),
                          version.get("schema_version") or "v2"),

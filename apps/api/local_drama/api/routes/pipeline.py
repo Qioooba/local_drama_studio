@@ -238,7 +238,14 @@ async def continue_pipeline_analysis(
                 expected_next_window_index=payload.expected_next_window_index,
             )
         )
-        return {"run": run}
+        # PR-04: the client needs the Job's REAL state and the server's recovery
+        # action, so it can offer "重试本批" instead of guessing from a stale
+        # creation-time response.
+        return {
+            "run": run,
+            "job_state": run.get("job_state"),
+            "recovery_action": run.get("recovery_action"),
+        }
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
 

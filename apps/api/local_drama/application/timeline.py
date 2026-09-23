@@ -250,7 +250,9 @@ class TimelineService:
     def _episode(self, episode_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             row = connection.execute(
-                """SELECT e.*, s.project_id, p.root_rel, p.subtitle_mode FROM episodes e
+                """SELECT e.*, s.project_id, p.root_rel, p.subtitle_mode,
+                p.fps_num AS project_fps_num, p.fps_den AS project_fps_den
+                FROM episodes e
                 JOIN seasons s ON s.id=e.season_id JOIN projects p ON p.id=s.project_id
                 WHERE e.id=?""",
                 (episode_id,),
@@ -2245,7 +2247,7 @@ class TimelineService:
             input_snapshot_items.append({"media_version_id": str(media["id"]), "sha256": str(media["sha256"]), "byte_size": int(media["byte_size"]), "start_us": int(item["start_us"]), "end_us": int(item["end_us"]), "track_type": str(item["track_type"]), "parameters": item["parameters"]})
         bindings = self._audio_bindings_for_timeline(timeline, str(episode["id"]))
         include_source_audio = self._include_source_audio(timeline)
-        timeline_plan = self._timeline_render_plan(episode, video_items)
+        timeline_plan = self._timeline_render_plan(episode, video_items, production_spec=production_spec)
         timeline_duration_us = self._timeline_video_duration_us(video_items) - int(timeline_plan["transition_overlap_us"])
         input_snapshot = {
             "schema_version": "localdrama.episode-render-input.v1",
@@ -2336,7 +2338,7 @@ class TimelineService:
                 raise DomainRuleError("SOURCE_INTEGRITY_FAILED", "Compose 音频输入 hash/size 与不可变 MediaVersion 不一致", {"media_version_id": str(binding["media_version_id"])})
         # Freeze the ONE time/frame plan here so the plan this preflight reports
         # and the plan the renderer executes are literally the same dict.
-        timeline_plan = self._timeline_render_plan(episode, items)
+        timeline_plan = self._timeline_render_plan(episode, items, production_spec=production_spec)
         snapshot: dict[str, Any] = {
             "schema_version": "localdrama.episode-render-input.v1",
             "renderer_contract": RENDERER_CONTRACT,
@@ -2783,27 +2785,94 @@ class TimelineService:
         return result
 
     @staticmethod
+    @staticmethod
+    def _transition_plan(
+        video_items: list[dict[str, Any]],
+        *,
+        fps_num: int,
+        fps_den: int,
+        leading_blank_us: int,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Freeze every transition's output frame window, in ONE interpretation.
+
+        TM-04 root cause: preflight derived each overlap from the *previous item's
+        own duration* while the renderer passed its *accumulated frame count* into
+        the very same helper.  For a 2 s / 0.5 s / 2 s timeline the frozen plan
+        therefore promised 4.000 s (96 frames at 24 fps), the renderer executed
+        3.750 s (90 frames) and the result was still registered as VERIFIED.
+
+        The plan is now the single interpretation: each transition records the
+        frame window it occupies in the OUTPUT stream, computed exactly as the
+        encoder applies it, and the renderer consumes these numbers instead of
+        re-deriving them.  The returned frame count is the plan's own prediction
+        of the encoded picture length.
+        """
+        if fps_num <= 0 or fps_den <= 0:
+            raise DomainRuleError("TIMELINE_FPS_REQUIRED", "冻结转场计划需要显式的有理数帧率")
+        fps = fps_num / fps_den
+        transitions: list[dict[str, Any]] = []
+        current_frames = round(max(0, int(leading_blank_us)) / 1_000_000 * fps)
+        for index, item in enumerate(video_items):
+            item_frames = max(0, round((int(item["end_us"]) - int(item["start_us"])) / 1_000_000 * fps))
+            if index == 0:
+                current_frames += item_frames
+                continue
+            kind = TimelineService._timeline_transition_kind(item)
+            if kind == "CUT":
+                current_frames += item_frames
+                continue
+            previous_frames = max(
+                0, round((int(video_items[index - 1]["end_us"]) - int(video_items[index - 1]["start_us"])) / 1_000_000 * fps)
+            )
+            transition_seconds = TimelineService._timeline_transition_seconds(
+                previous_frames / fps, item_frames / fps, fps=fps
+            )
+            if transition_seconds <= 0:
+                current_frames += item_frames
+                continue
+            transition_frames = max(1, round(transition_seconds * fps))
+            offset_frames = max(0, current_frames - transition_frames)
+            transitions.append(
+                {
+                    "from_item_index": index - 1,
+                    "to_item_index": index,
+                    "kind": kind,
+                    "duration_frames": transition_frames,
+                    "duration_seconds": transition_frames / fps,
+                    "offset_frames": offset_frames,
+                }
+            )
+            # ``xfade`` places the incoming element so that its first frame lands at
+            # ``offset``; from there the output simply continues for that element's
+            # full length.  Accumulating anything else here would make the plan and
+            # the encoder disagree about where every later transition begins.
+            current_frames = offset_frames + item_frames
+        return transitions, current_frames
+
+    @staticmethod
     def _timeline_transition_overlap_us(video_items: list[dict[str, Any]], *, fps: float) -> int:
         """Total overlap the non-CUT transitions remove from the episode span.
 
         ``xfade`` renders both clips across the transition window, so a timeline
         with one 0.5 s DISSOLVE between two 1.0 s clips plays for 1.5 s — not
         2.0 s and not 0.5 s.  The render and the OTIO/EDL exports must agree on
-        this number, so it is computed once from the same per-item durations the
-        renderer uses.
+        this number, so it is computed once, from the same frozen transition
+        table the renderer consumes.
         """
         if len(video_items) < 2 or fps <= 0:
             return 0
-        overlap_us = 0
-        for index in range(1, len(video_items)):
-            if TimelineService._timeline_transition_kind(video_items[index]) == "CUT":
-                continue
-            previous_seconds = (int(video_items[index - 1]["end_us"]) - int(video_items[index - 1]["start_us"])) / 1_000_000
-            current_seconds = (int(video_items[index]["end_us"]) - int(video_items[index]["start_us"])) / 1_000_000
-            overlap_us += round(TimelineService._timeline_transition_seconds(previous_seconds, current_seconds, fps=fps) * 1_000_000)
-        return overlap_us
+        transitions = TimelineService._transition_plan(
+            video_items, fps_num=round(fps * 1_000_000), fps_den=1_000_000, leading_blank_us=0
+        )[0]
+        return int(round(sum(item["duration_frames"] / fps for item in transitions) * 1_000_000))
 
-    def _timeline_render_plan(self, episode: dict[str, Any], video_items: list[dict[str, Any]]) -> dict[str, Any]:
+    def _timeline_render_plan(
+        self,
+        episode: dict[str, Any],
+        video_items: list[dict[str, Any]],
+        *,
+        production_spec: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Freeze the ONE authoritative time/frame plan for a timeline revision.
 
         MED-03 and MED-05 share a single root cause: the working frame rate and
@@ -2811,8 +2880,16 @@ class TimelineService:
         exports could each assume something different.  This plan makes both
         explicit and is carried inside the immutable render snapshot, so a
         preflight plan and the render that consumes it cannot disagree.
+
+        TM-04 adds the per-transition frame table and the exact expected video
+        frame count, so "the plan" is a checkable statement about the encoded
+        file rather than a second JSON document that merely has to equal itself.
         """
-        fps_num, fps_den = self._resolve_timeline_fps(episode, video_items)
+        if production_spec is None:
+            production_spec = self._production_spec_for_episode(episode)
+        fps_num, fps_den, fps_source = self._resolve_timeline_fps_with_source(
+            episode, video_items, production_spec=production_spec
+        )
         fps = fps_num / fps_den
         starts = [int(item["start_us"]) for item in video_items]
         ends = [int(item["end_us"]) for item in video_items]
@@ -2823,13 +2900,22 @@ class TimelineService:
         # the renderer must never silently shift video to 0 while audio and
         # subtitles stay on absolute time.
         origin_us = 0
+        leading_blank_us = max(0, min(starts) - origin_us)
+        transitions, expected_video_frames = self._transition_plan(
+            video_items, fps_num=fps_num, fps_den=fps_den, leading_blank_us=leading_blank_us
+        )
         return {
             "fps_num": fps_num,
             "fps_den": fps_den,
+            "fps_source": fps_source,
             "time_origin_us": origin_us,
             "timeline_span_us": span_us,
-            "leading_blank_us": max(0, min(starts) - origin_us),
-            "transition_overlap_us": self._timeline_transition_overlap_us(video_items, fps=fps),
+            "leading_blank_us": leading_blank_us,
+            "transition_overlap_us": int(
+                round(sum(item["duration_frames"] / fps for item in transitions) * 1_000_000)
+            ),
+            "transitions": transitions,
+            "expected_video_frames": expected_video_frames,
         }
 
     def _timeline_plan_from_probes(self, video_items: list[dict[str, Any]], probes: list[dict[str, Any]]) -> dict[str, Any]:
@@ -2839,19 +2925,74 @@ class TimelineService:
         render and preflight entry points always pass the frozen plan, so this
         fallback can never cause preflight and render to disagree.
         """
-        fps_num, fps_den = self._resolve_timeline_fps({}, video_items, probes=probes)
+        fps_num, fps_den, fps_source = self._resolve_timeline_fps_with_source({}, video_items, probes=probes)
         fps = fps_num / fps_den
         starts = [int(item["start_us"]) for item in video_items]
         ends = [int(item["end_us"]) for item in video_items]
         span_us = max(ends)
+        leading_blank_us = max(0, min(starts))
+        transitions, expected_video_frames = self._transition_plan(
+            video_items, fps_num=fps_num, fps_den=fps_den, leading_blank_us=leading_blank_us
+        )
         return {
             "fps_num": fps_num,
             "fps_den": fps_den,
+            "fps_source": fps_source,
             "time_origin_us": 0,
             "timeline_span_us": span_us,
-            "leading_blank_us": max(0, min(starts)),
-            "transition_overlap_us": self._timeline_transition_overlap_us(video_items, fps=fps),
+            "leading_blank_us": leading_blank_us,
+            "transition_overlap_us": int(
+                round(sum(item["duration_frames"] / fps for item in transitions) * 1_000_000)
+            ),
+            "transitions": transitions,
+            "expected_video_frames": expected_video_frames,
         }
+
+    def _resolve_timeline_fps_with_source(
+        self,
+        episode: dict[str, Any],
+        video_items: list[dict[str, Any]],
+        *,
+        probes: list[dict[str, Any]] | None = None,
+        production_spec: dict[str, Any] | None = None,
+    ) -> tuple[int, int, str]:
+        """``_resolve_timeline_fps`` plus the provenance of the chosen rate."""
+
+        delivery = self._production_delivery_fps(production_spec)
+        if delivery is not None:
+            return delivery[0], delivery[1], "PRODUCTION_SPEC"
+        raw_num = episode.get("project_fps_num", episode.get("fps_num"))
+        raw_den = episode.get("project_fps_den", episode.get("fps_den"))
+        try:
+            if int(raw_num) > 0 and int(raw_den) > 0:
+                return int(raw_num), int(raw_den), "PROJECT"
+        except (TypeError, ValueError):
+            pass
+        inferred = self._resolve_timeline_fps(episode, video_items, probes=probes)
+        return inferred[0], inferred[1], "MEDIA_PROBE"
+
+    @staticmethod
+    def _production_delivery_fps(production_spec: dict[str, Any] | None) -> tuple[int, int] | None:
+        """The frozen delivery frame rate, when the project has an explicit plan.
+
+        TM-05: an explicitly configured delivery rate must win over whatever frame
+        rate the first imported clip happens to have.
+        """
+        if not isinstance(production_spec, dict) or str(production_spec.get("status")) != "READY":
+            return None
+        delivery = production_spec.get("delivery")
+        if not isinstance(delivery, dict):
+            return None
+        fps = delivery.get("fps")
+        if not isinstance(fps, dict):
+            return None
+        try:
+            numerator, denominator = int(fps["numerator"]), int(fps["denominator"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if numerator <= 0 or denominator <= 0:
+            return None
+        return numerator, denominator
 
     def _resolve_timeline_fps(
         self,
@@ -2859,10 +3000,21 @@ class TimelineService:
         video_items: list[dict[str, Any]],
         *,
         probes: list[dict[str, Any]] | None = None,
+        production_spec: dict[str, Any] | None = None,
     ) -> tuple[int, int]:
-        """Project fps when explicitly configured, else the sources' own fps."""
-        raw_num = episode.get("fps_num")
-        raw_den = episode.get("fps_den")
+        """Resolve THE one working frame rate, with an explicit precedence.
+
+        Frozen delivery specification -> explicit project configuration -> the
+        sources' own frame rate, and only as a last resort.  The previous first
+        branch read ``episode['fps_num']``, a column the episode query never
+        selected, so a project configured for 24 fps still exported 30 fps when
+        its first clip was 30 fps (TM-05).
+        """
+        delivery = self._production_delivery_fps(production_spec)
+        if delivery is not None:
+            return delivery
+        raw_num = episode.get("project_fps_num", episode.get("fps_num"))
+        raw_den = episode.get("project_fps_den", episode.get("fps_den"))
         try:
             fps_num, fps_den = int(raw_num), int(raw_den)  # type: ignore[arg-type]
         except (TypeError, ValueError):
@@ -3196,6 +3348,18 @@ class TimelineService:
 
             filter_pieces: list[str] = []
             transition_pieces: list[dict[str, Any]] = []
+            #: Every crossfaded transition overlaps the audio by the same window as
+            #: the picture, so the end trim below is a rounding guard rather than
+            #: the thing that repairs the mapping.
+            crossfaded_transitions = 0
+            # TM-04: the frozen plan is the only interpretation of "how long is this
+            # transition".  Re-deriving it here from the accumulated stream length
+            # made a 2 s / 0.5 s / 2 s timeline execute 0.75 s of overlap where the
+            # plan had promised 0.5 s, and the short film was still registered as
+            # VERIFIED.  Each entry is keyed by the ORIGINAL video item index.
+            frozen_by_target = {
+                int(entry["to_item_index"]): entry for entry in (plan.get("transitions") or [])
+            }
             for index in range(len(normalized)):
                 filter_pieces.append(f"[{index}:v:0]setpts=PTS-STARTPTS[v{index}]")
                 filter_pieces.append(f"[{index}:a:0]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a{index}]")
@@ -3211,7 +3375,10 @@ class TimelineService:
                 item_index = index - leader_offset
                 item = video_items[item_index]
                 transition_in = self._timeline_transition_kind(item)
-                if transition_in == "CUT":
+                frozen = frozen_by_target.get(item_index)
+                # A transition only exists where the frozen plan recorded one; the
+                # plan and the picture therefore cannot drift apart.
+                if transition_in == "CUT" or not frozen:
                     next_video = f"v{index}_concat"
                     next_audio = f"a{index}_concat"
                     filter_pieces.append(f"[{current_video_label}][v{index}]concat=n=2:v=1:a=0[{next_video}]")
@@ -3219,50 +3386,49 @@ class TimelineService:
                     current_video_label = next_video
                     current_audio_label = next_audio
                 else:
-                    transition_seconds = self._timeline_transition_seconds(
-                        current_frames / target_fps, item_durations_seconds[index], fps=target_fps
+                    transition_frames = max(1, int(frozen["duration_frames"]))
+                    offset_frames = max(0, int(frozen["offset_frames"]))
+                    transition_seconds = transition_frames / target_fps
+                    transition = self._xfade_name(transition_in)
+                    v_ext = f"v{index}_ext"
+                    v_out = f"v{index}_x"
+                    filter_pieces.append(f"[{current_video_label}]tpad=stop_mode=clone:stop_duration={transition_seconds:.6f}[{v_ext}]")
+                    filter_pieces.append(
+                        f"[{v_ext}][v{index}]xfade=transition={transition}:duration={transition_seconds:.6f}:offset={offset_frames / target_fps:.6f}[{v_out}]"
                     )
-                    if transition_seconds <= 0.0:
-                        next_video = f"v{index}_concat"
-                        next_audio = f"a{index}_concat"
-                        filter_pieces.append(f"[{current_video_label}][v{index}]concat=n=2:v=1:a=0[{next_video}]")
-                        filter_pieces.append(f"[{current_audio_label}][a{index}]concat=n=2:v=0:a=1[{next_audio}]")
-                        current_video_label = next_video
-                        current_audio_label = next_audio
-                    else:
-                        transition = self._xfade_name(transition_in)
-                        transition_frames = max(1, round(transition_seconds * target_fps))
-                        # xfade starts the overlap at ``offset``; the last
-                        # ``transition_frames`` of the accumulated stream are
-                        # shared with the incoming element, so the episode ends
-                        # at the accumulated length instead of overrunning by
-                        # the transition window.
-                        offset_frames = max(0, current_frames - transition_frames)
-                        v_ext = f"v{index}_ext"
-                        v_out = f"v{index}_x"
-                        filter_pieces.append(f"[{current_video_label}]tpad=stop_mode=clone:stop_duration={transition_seconds:.6f}[{v_ext}]")
-                        filter_pieces.append(
-                            f"[{v_ext}][v{index}]xfade=transition={transition}:duration={transition_seconds:.6f}:offset={offset_frames / target_fps:.6f}[{v_out}]"
-                        )
-                        next_audio = f"a{index}_concat"
-                        filter_pieces.append(f"[{current_audio_label}][a{index}]concat=n=2:v=0:a=1[{next_audio}]")
-                        current_video_label = v_out
-                        current_audio_label = next_audio
-                        current_frames = offset_frames + transition_frames + max(0, round(item_durations_seconds[index] * target_fps) - transition_frames)
-                        transition_pieces.append(
-                            {
-                                "stage": "timeline-transition",
-                                "from_item_index": item_index - 1,
-                                "to_item_index": item_index,
-                                "kind": transition_in,
-                                "duration_seconds": transition_seconds,
-                                "duration_frames": transition_frames,
-                                "offset_frames": offset_frames,
-                                "target_fps": target_fps,
-                            }
-                        )
-                        current_duration = current_frames / target_fps
-                        continue
+                    # The picture *overlaps* by the transition window, so the audio
+                    # must overlap by exactly the same window.  Plain ``concat``
+                    # kept the audio at its full source length, which shifted every
+                    # later clip's sound earlier than its picture (and the end trim
+                    # then cut the real tail off).  A hard cut still uses plain
+                    # concat: no picture time is removed there.
+                    a_out = f"a{index}_x"
+                    filter_pieces.append(
+                        f"[{current_audio_label}][a{index}]acrossfade=d={transition_seconds:.6f}:c1=tri:c2=tri[{a_out}]"
+                    )
+                    current_video_label = v_out
+                    current_audio_label = a_out
+                    crossfaded_transitions += 1
+                    current_frames = offset_frames + transition_frames + max(
+                        0, round(item_durations_seconds[index] * target_fps) - transition_frames
+                    )
+                    transition_pieces.append(
+                        {
+                            "stage": "timeline-transition",
+                            "from_item_index": item_index - 1,
+                            "to_item_index": item_index,
+                            "kind": transition_in,
+                            "duration_seconds": transition_seconds,
+                            "duration_frames": transition_frames,
+                            "offset_frames": offset_frames,
+                            "audio_overlap": "ACROSSFADE",
+                            "audio_overlap_seconds": transition_seconds,
+                            "target_fps": target_fps,
+                            "frozen": True,
+                        }
+                    )
+                    current_duration = current_frames / target_fps
+                    continue
 
                 current_frames += round(item_durations_seconds[index] * target_fps)
                 current_duration += item_durations_seconds[index]
@@ -3271,16 +3437,17 @@ class TimelineService:
             for clip_path in normalized:
                 args += ["-i", str(clip_path)]
 
-            # The transition branch removes real time from the video, so the
-            # concatenated audio is longer than the picture.  Without an explicit
-            # audio trim the AAC stream runs past the last video frame, the
-            # container reports the longer duration, and the episode ends with
-            # sound over a frozen frame (the A/V drift MED-03 warns about).
+            # The picture and the audio now overlap by exactly the same window at
+            # every transition, so the mixed audio already ends with the picture.
+            # The trim below is only a frame/sample rounding guard; it must never be
+            # the mechanism that removes a transition's worth of real tail audio.
             audio_out_label = current_audio_label
             if transition_present and target_duration_seconds > 0:
                 audio_out_label = "aout"
+                picture_seconds = current_frames / target_fps
+                guard_seconds = max(target_duration_seconds, picture_seconds)
                 filter_pieces.append(
-                    f"[{current_audio_label}]atrim=duration={target_duration_seconds:.6f},asetpts=PTS-STARTPTS[{audio_out_label}]"
+                    f"[{current_audio_label}]atrim=duration={guard_seconds:.6f},asetpts=PTS-STARTPTS[{audio_out_label}]"
                 )
 
             concat_execution = self._run_ffmpeg(
@@ -3702,6 +3869,155 @@ class TimelineService:
             timeout=900,
         )
 
+    def _count_video_frames(self, path: Path, probe: dict[str, Any] | None = None) -> int | None:
+        """Decoded/container frame count, so a plan can be checked against the file."""
+        source = probe if probe is not None else self._probe(path)
+        stream = next(
+            (item for item in source.get("streams", []) if str(item.get("codec_type")) == "video"),
+            None,
+        )
+        if isinstance(stream, dict):
+            for key in ("nb_frames", "nb_read_frames"):
+                try:
+                    value = int(str(stream.get(key) or ""))
+                except (TypeError, ValueError):
+                    continue
+                if value > 0:
+                    return value
+        ffprobe = self.settings.ffprobe_path
+        if not ffprobe or not Path(ffprobe).is_file():
+            return None
+        result = subprocess.run(
+            [ffprobe, "-v", "error", "-count_frames", "-select_streams", "v:0",
+             "-show_entries", "stream=nb_read_frames", "-of", "json", str(path)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900, check=False,
+        )
+        if result.returncode != 0:
+            return None
+        try:
+            stream = json.loads(result.stdout)["streams"][0]
+            value = int(str(stream.get("nb_read_frames") or ""))
+        except (IndexError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return None
+        return value if value > 0 else None
+
+    @staticmethod
+    def _effective_audio_seconds(stream: dict[str, Any]) -> float | None:
+        """A stream's real audible length: duration minus codec priming/padding.
+
+        The plan's own expectation already accounts for the picture's frame grid,
+        so AAC's priming samples and trailing padding must not be counted as
+        missing or extra content.
+        """
+        try:
+            duration = float(stream.get("duration") or 0.0)
+        except (TypeError, ValueError):
+            return None
+        if duration <= 0:
+            return None
+        if str(stream.get("codec_name") or "") == "aac":
+            padding = 0
+            for key in ("initial_padding", "trailing_padding", "delay"):
+                try:
+                    padding += int(str(stream.get(key) or "0"))
+                except (TypeError, ValueError):
+                    continue
+            try:
+                rate = int(str(stream.get("sample_rate") or "0") or 0)
+            except (TypeError, ValueError):
+                rate = 0
+            if padding > 0 and rate > 0:
+                duration -= padding / rate
+        return duration
+
+    def _verify_frozen_plan(self, path: Path, probe: dict[str, Any], input_snapshot: dict[str, Any]) -> None:
+        """Refuse to register VERIFIED when the file disagrees with the plan (TM-04).
+
+        Both historical defects here passed every existing gate: the 2 s / 0.5 s /
+        2 s timeline promised 96 frames and encoded 90, and the dissolve defect
+        encoded a picture and a sound of different lengths while still being
+        registered as VERIFIED.  ``ffmpeg`` returning 0 and two equal JSON
+        snapshots prove neither, so the encoded file is now measured.
+        """
+        plan = input_snapshot.get("timeline_plan")
+        if not isinstance(plan, dict):
+            return
+        fps_num = int(plan.get("fps_num") or 0)
+        fps_den = int(plan.get("fps_den") or 0)
+        if fps_num <= 0 or fps_den <= 0:
+            return
+        fps = fps_num / fps_den
+        expected_frames = int(plan.get("expected_video_frames") or 0)
+        if expected_frames <= 0:
+            return
+        observed_frames = self._count_video_frames(path, probe)
+        video_stream = next(
+            (item for item in probe.get("streams", []) if str(item.get("codec_type")) == "video"),
+            None,
+        )
+        audio_stream = next(
+            (item for item in probe.get("streams", []) if str(item.get("codec_type")) == "audio"),
+            None,
+        )
+        video_seconds = None
+        if isinstance(video_stream, dict):
+            try:
+                video_seconds = float(video_stream.get("duration") or 0.0) or None
+            except (TypeError, ValueError):
+                video_seconds = None
+        audio_seconds = self._effective_audio_seconds(audio_stream) if isinstance(audio_stream, dict) else None
+        # One frame of slack absorbs the encoder's own rounding; anything larger is
+        # a plan/command disagreement, not noise.
+        frame_tolerance = 1
+        # Half a frame for the picture, plus a small allowance for the container's
+        # own rounding of the sound.
+        time_tolerance = max(0.05, 0.5 / fps)
+        problems: list[dict[str, Any]] = []
+        if observed_frames is not None and abs(observed_frames - expected_frames) > frame_tolerance:
+            problems.append(
+                {
+                    "code": "VIDEO_FRAME_COUNT",
+                    "expected": expected_frames,
+                    "observed": observed_frames,
+                    "tolerance": frame_tolerance,
+                }
+            )
+        expected_seconds = expected_frames / fps
+        if video_seconds is not None and abs(video_seconds - expected_seconds) > time_tolerance:
+            problems.append(
+                {"code": "VIDEO_DURATION", "expected": expected_seconds, "observed": video_seconds}
+            )
+        if audio_seconds is not None and abs(audio_seconds - expected_seconds) > time_tolerance:
+            problems.append(
+                {"code": "AUDIO_DURATION", "expected": expected_seconds, "observed": audio_seconds}
+            )
+        if video_seconds is not None and audio_seconds is not None and abs(audio_seconds - video_seconds) > time_tolerance:
+            problems.append(
+                {"code": "AUDIO_VIDEO_LENGTH", "video": video_seconds, "audio": audio_seconds}
+            )
+        if not problems:
+            return
+        render_path_name = path.name
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise DomainRuleError(
+            "RENDER_FRAME_COUNT_MISMATCH",
+            "整集渲染产物与冻结的帧/时长计划不一致，拒绝登记为 VERIFIED",
+            {
+                "render_file": render_path_name,
+                "fps": {"num": fps_num, "den": fps_den},
+                "expected_video_frames": expected_frames,
+                "observed_video_frames": observed_frames,
+                "expected_seconds": expected_seconds,
+                "observed_video_seconds": video_seconds,
+                "observed_audio_seconds": audio_seconds,
+                "problems": problems,
+                "transitions": plan.get("transitions"),
+            },
+        )
+
     def _register_render(
         self,
         *,
@@ -3720,6 +4036,8 @@ class TimelineService:
         render version is registered with identical columns and provenance.
         """
         probe = self._probe(render_path)
+        # TM-04: the encoded file, not the plan's own echo, has to satisfy the plan.
+        self._verify_frozen_plan(render_path, probe, input_snapshot)
         production_spec = input_snapshot.get("production_spec")
         if isinstance(production_spec, dict) and str(production_spec.get("status")) == "READY":
             expected_geometry = self._production_snapshot_geometry(production_spec)

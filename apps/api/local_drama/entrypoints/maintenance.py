@@ -23,7 +23,7 @@ from local_drama.bootstrap.config_migrations import migrate_config, restore_conf
 from local_drama.bootstrap.resource_locator import ResourceLocator
 from local_drama.config import Settings
 from local_drama.infrastructure.database.backup import online_backup
-from local_drama.infrastructure.database.sqlite import Database
+from local_drama.infrastructure.database.sqlite import Database, connect_readonly
 from local_drama.model_platform.application.offline_import_execution import HostOfflineImportExecutor
 from local_drama.model_platform.application.trusted_download_execution import HostTrustedDownloadExecutor
 from local_drama.model_platform.application.trusted_download_plan_execution import HostTrustedDownloadPlanExecutor
@@ -85,7 +85,7 @@ def _expected_heads(locator: ResourceLocator) -> list[str]:
 def _database_state(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {"exists": False, "path": str(path)}
-    with sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as connection:
+    with connect_readonly(path) as connection:
         integrity = str(connection.execute("PRAGMA integrity_check").fetchone()[0])
         table = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='alembic_version'").fetchone()
         heads = sorted(str(row[0]) for row in connection.execute("SELECT version_num FROM alembic_version")) if table else []

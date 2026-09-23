@@ -91,7 +91,7 @@ def _is_ip_literal(host: str) -> bool:
 
 
 def _host_is_trusted(host: str, allowed_origins: set[str], trusted_hosts: tuple[str, ...] | None) -> bool:
-    """Decide whether a same-origin request may treat ``host`` as its own origin.
+    """Decide whether a request's ``Host`` authority may reach this server.
 
     Trust comes from three places:
 
@@ -108,13 +108,25 @@ def _host_is_trusted(host: str, allowed_origins: set[str], trusted_hosts: tuple[
     domain), so refusing unconfigured hostnames removes the rebinding path without
     breaking legitimate loopback or IP-based access.  Pinning ``trusted_hosts``
     disables the two built-in rules so the operator's list is authoritative.
+
+    ``testserver`` is the in-process Starlette ``TestClient``'s authority: it is not
+    a network name, a TCP client can never present it, and the ASGI transport never
+    resolves it, so accepting it does not widen the real boundary.  A deployment
+    that pins ``trusted_hosts`` loses even that exemption.
     """
+
     configured = _configured_hosts(allowed_origins, trusted_hosts)
     if configured is not None and host in configured:
         return True
     if trusted_hosts is not None:
         return False
+    if host == _IN_PROCESS_TEST_HOST:
+        return True
     return _is_loopback_host(host) or _is_ip_literal(host)
+
+
+#: Starlette's in-process ``TestClient`` authority (see :func:`_host_is_trusted`).
+_IN_PROCESS_TEST_HOST = "testserver"
 
 
 def _origin_matches_request_host(
@@ -377,6 +389,31 @@ class ApiContractMiddleware(BaseHTTPMiddleware):
         return response
 
 
+def _request_host_authority(request: Request) -> str:
+    """The bare hostname of a request's ``Host`` header, or ``""`` when unusable.
+
+    Repeated, missing, or malformed ``Host`` values resolve to ``""`` so the caller
+    refuses them; a bracketed IPv6 literal keeps its brackets stripped form.
+    """
+
+    raw = request.headers.get("host")
+    if raw is None:
+        return ""
+    raw = raw.strip()
+    if not raw or "," in raw:
+        return ""
+    try:
+        parsed = urlsplit(f"//{raw}")
+    except ValueError:
+        return ""
+    hostname = (parsed.hostname or "").strip()
+    if not hostname:
+        return ""
+    if any(character.isspace() for character in hostname):
+        return ""
+    return hostname
+
+
 class LocalOriginMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
@@ -407,6 +444,30 @@ class LocalOriginMiddleware(BaseHTTPMiddleware):
                         "details": {},
                         "retryable": False,
                         "suggested_action": "从本机 LocalDramaStudio 实例发起自动化请求",
+                    }
+                },
+                headers={"X-Request-Id": request_id, **SECURITY_REJECTION_HEADERS},
+            )
+        # The Host trust check applies to *every* method, not only writes.  It used
+        # to run only for a state-changing request that also carried an ``Origin``,
+        # so a DNS-rebound GET (which normally sends no Origin at all) could read
+        # project titles, ids and paths: "is this Host mine?" is a question about
+        # the connection, not about the verb.
+        host = _request_host_authority(request)
+        if not host or not _host_is_trusted(host, self.allowed_origins, self.trusted_hosts):
+            request_id, _trace_id = _ensure_request_context(request)
+            _log_request("request.rejected", request, status_code=403, error="UNTRUSTED_HOST")
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": {
+                        "code": "UNTRUSTED_HOST",
+                        "message": "请求的 Host 不在本机允许列表中",
+                        "request_id": request_id,
+                        # Never reflect the submitted Host back.
+                        "details": {},
+                        "retryable": False,
+                        "suggested_action": "通过本机地址（loopback 或已登记的局域网地址）访问，或在 trusted_hosts 中登记该域名后重启服务",
                     }
                 },
                 headers={"X-Request-Id": request_id, **SECURITY_REJECTION_HEADERS},

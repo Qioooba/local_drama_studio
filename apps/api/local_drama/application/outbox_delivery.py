@@ -130,19 +130,24 @@ class OutboxDeliveryService:
             lease = datetime.fromtimestamp(lease_until, UTC).isoformat()
             claimed: list[dict[str, Any]] = []
             for row in rows:
-                # Claiming reserves the event for this dispatcher only.  The
-                # retry budget is *not* consumed here: an event that is never
-                # actually sent (a previous event already failed the batch, a
-                # cancellation, a process exit) must keep its full budget.
+                # Claiming reserves the event for this dispatcher only, and the
+                # reservation carries a *token*: every later begin/ack/failure/
+                # release must prove it still owns the row.  Status alone is not
+                # ownership — after a lease expiry another dispatcher can hold the
+                # same row in the same status.  The retry budget is still *not*
+                # consumed here: an event that is never actually sent must keep its
+                # full budget.
+                claim_token = str(uuid.uuid4())
                 updated = connection.execute(
-                    "UPDATE outbox_delivery_attempts SET status='IN_FLIGHT',lease_until_at=?,next_attempt_at=NULL,updated_at=?,revision=revision+1 WHERE id=? AND status IN ('PENDING','RETRYING')",
-                    (lease, now, row["delivery_id"]),
+                    "UPDATE outbox_delivery_attempts SET status='IN_FLIGHT',claim_token=?,lease_until_at=?,next_attempt_at=NULL,updated_at=?,revision=revision+1 WHERE id=? AND status IN ('PENDING','RETRYING')",
+                    (claim_token, lease, now, row["delivery_id"]),
                 ).rowcount
                 if updated:
                     claimed.append(
                         {
                             "delivery_id": str(row["delivery_id"]),
                             "attempt": int(row["attempt_count"]),
+                            "claim_token": claim_token,
                             "event": {
                                 "event_id": int(row["event_id"]),
                                 "type": str(row["type"]),
@@ -208,14 +213,20 @@ class OutboxDeliveryService:
                 with self.database.transaction() as connection:
                     acknowledged = bool(
                         connection.execute(
-                            "UPDATE outbox_delivery_attempts SET status='DELIVERED',lease_until_at=NULL,next_attempt_at=NULL,last_error=NULL,last_response_status=?,updated_at=?,delivered_at=?,revision=revision+1 WHERE id=? AND status='ATTEMPTING'",
-                            (response_status, acknowledged_at, acknowledged_at, item["delivery_id"]),
+                            "UPDATE outbox_delivery_attempts SET status='DELIVERED',claim_token=NULL,lease_until_at=NULL,next_attempt_at=NULL,last_error=NULL,last_response_status=?,updated_at=?,delivered_at=?,revision=revision+1 WHERE id=? AND status='ATTEMPTING' AND claim_token=?",
+                            (
+                                response_status,
+                                acknowledged_at,
+                                acknowledged_at,
+                                item["delivery_id"],
+                                str(item.get("claim_token") or ""),
+                            ),
                         ).rowcount
                     )
                     if not acknowledged:
                         # The claim was reclaimed while this POST was in flight:
                         # the event stays retryable and this dispatcher must not
-                        # claim a success it no longer owns.
+                        # claim — or write — a success it no longer owns.
                         failed.append({"event_id": event["event_id"], "reason": "WEBHOOK_DELIVERY_CLAIM_LOST", "attempt": item["attempt"]})
                         continue
                     connection.execute(
@@ -247,16 +258,15 @@ class OutboxDeliveryService:
         ``IN_FLIGHT`` only means "reserved by this dispatcher".  The budget is
         consumed here, in its own committed transaction, so a crash during the
         POST cannot lose the attempt and an event that is never sent cannot
-        consume one.
+        consume one.  The compare-and-set includes the *claim token*, so a
+        dispatcher whose reservation was reclaimed cannot start (or count) the
+        attempt even though the status happens to read the same.
         """
 
         with self.database.transaction() as connection:
-            # One atomic compare-and-set: only the dispatcher that still owns an
-            # ``IN_FLIGHT`` claim may start the attempt, so two dispatchers can
-            # never both count (and POST) the same event.
             updated = connection.execute(
-                "UPDATE outbox_delivery_attempts SET status='ATTEMPTING',attempt_count=attempt_count+1,updated_at=?,revision=revision+1 WHERE id=? AND status='IN_FLIGHT'",
-                (now, item["delivery_id"]),
+                "UPDATE outbox_delivery_attempts SET status='ATTEMPTING',attempt_count=attempt_count+1,updated_at=?,revision=revision+1 WHERE id=? AND status='IN_FLIGHT' AND claim_token=?",
+                (now, item["delivery_id"], str(item.get("claim_token") or "")),
             ).rowcount
             if not updated:
                 # Another dispatcher reclaimed the claim; do not send it twice.
@@ -268,15 +278,21 @@ class OutboxDeliveryService:
         return int(row["attempt_count"])
 
     def _release_unsent(self, items: list[dict[str, Any]], *, now: str) -> None:
-        """Give un-sent claims back without consuming their retry budget."""
+        """Give back only the claims this dispatcher still owns.
+
+        The release used to accept ``ATTEMPTING`` as well, which meant a failure in
+        one batch stole the row from a *different* dispatcher that had reclaimed it
+        after a lease expiry and was already sending it.  Only this dispatcher's
+        own token is released, so an active sender is never disturbed.
+        """
 
         if not items:
             return
         with self.database.transaction() as connection:
             for item in items:
                 connection.execute(
-                    "UPDATE outbox_delivery_attempts SET status='RETRYING',lease_until_at=NULL,next_attempt_at=?,updated_at=?,revision=revision+1 WHERE id=? AND status IN ('IN_FLIGHT','ATTEMPTING')",
-                    (now, now, item["delivery_id"]),
+                    "UPDATE outbox_delivery_attempts SET status='RETRYING',claim_token=NULL,lease_until_at=NULL,next_attempt_at=?,updated_at=?,revision=revision+1 WHERE id=? AND claim_token=? AND status IN ('IN_FLIGHT','ATTEMPTING')",
+                    (now, now, item["delivery_id"], str(item.get("claim_token") or "")),
                 )
 
     def _record_failure(
@@ -294,8 +310,8 @@ class OutboxDeliveryService:
         status = "DEAD_LETTER" if dead else "RETRYING"
         with self.database.transaction() as connection:
             connection.execute(
-                "UPDATE outbox_delivery_attempts SET status=?,lease_until_at=NULL,next_attempt_at=?,last_error=?,last_response_status=?,updated_at=?,revision=revision+1 WHERE id=? AND status='ATTEMPTING'",
-                (status, next_at, reason[:200], response_status, now, item["delivery_id"]),
+                "UPDATE outbox_delivery_attempts SET status=?,claim_token=NULL,lease_until_at=NULL,next_attempt_at=?,last_error=?,last_response_status=?,updated_at=?,revision=revision+1 WHERE id=? AND status='ATTEMPTING' AND claim_token=?",
+                (status, next_at, reason[:200], response_status, now, item["delivery_id"], str(item.get("claim_token") or "")),
             )
             connection.execute(
                 "INSERT INTO audit_events (actor,role_context,action,subject_type,subject_id,summary,metadata_redacted_json) VALUES (?,'operator',?,?,?,?,?)",

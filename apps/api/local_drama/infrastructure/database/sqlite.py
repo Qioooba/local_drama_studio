@@ -6,6 +6,29 @@ from pathlib import Path
 from typing import Iterator
 
 
+def sqlite_readonly_uri(path: Path) -> str:
+    """Build a *read-only* SQLite URI for a real filesystem path.
+
+    Hand-assembling ``file:{path}?mode=ro`` breaks for any legal path that SQLite's
+    URI parser treats specially: a directory called ``work#draft`` made SQLite read
+    the file ``work`` (the ``#`` started a URI fragment) and silently dropped
+    ``mode=ro`` with it, so readiness reported a complete database as
+    ``schema_incomplete``, the server answered 503, and a stray zero-byte ``work``
+    file was created.  ``Path.as_uri()`` percent-encodes the path correctly and, on
+    Windows, produces the ``file:///C:/...`` form SQLite expects.
+    """
+
+    return Path(path).resolve().as_uri() + "?mode=ro"
+
+
+def connect_readonly(path: Path) -> sqlite3.Connection:
+    """Open an existing database read-only, without creating any file."""
+
+    connection = sqlite3.connect(sqlite_readonly_uri(path), uri=True)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
 class Database:
     def __init__(self, path: Path) -> None:
         self.path = path

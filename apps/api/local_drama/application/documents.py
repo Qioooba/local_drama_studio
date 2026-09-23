@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import posixpath
 import re
 import sqlite3
@@ -44,7 +45,7 @@ PREVIEW_TOTAL_CHARACTER_LIMIT = 12_000
 PASSAGE_CHARACTER_LIMIT = 8_000
 EPUB_MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
 
-_EPUB_TRAVERSAL_LIMIT = 20_000
+_EPUB_TRAVERSAL_LIMIT = 200_000
 _URI_PERCENT_DECODE_LIMIT = 4
 _SCOPE_SELECTION_MODES = ("EXPLICIT", "FULL_DOCUMENT_DEFAULT")
 
@@ -201,18 +202,36 @@ _EPUB_BLOCK_NAMES = {
     "main", "nav", "ol", "p", "pre", "section", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul",
 }
 
+#: Elements whose text is not prose.  Their own ``tail`` still belongs to the
+#: surrounding reading order and is preserved.
+_EPUB_SKIPPED_NAMES = {"style", "script", "head", "title", "meta", "link"}
+
+#: Elements that end the current inline run.  A ``<br>`` is an author's explicit
+#: line break, so it must not be collapsed into a space.
+_EPUB_BREAK_NAMES = {"br", "hr"}
+
 
 def _epub_text_blocks(root: ElementTree.Element) -> list[str]:
     """Return each source text node exactly once, in document order.
 
-    Parent blocks that contain extractable child blocks are not re-emitted as a
-    whole: their own direct text becomes its own block and their children are
-    traversed.  Genuinely repeated prose is preserved because nothing is ever
-    de-duplicated globally.
+    The traversal is an explicit ``ENTER``/``TAIL``/``EXIT`` event script rather
+    than a LIFO walk.  A LIFO walk of inline markup emits ``text -> children ->
+    tail`` in the wrong order: ``我<span>让<b>小王</b>去找<i>老李</i></span>回家。``
+    came out as ``我让回家。老李小王去找``.  Scheduling whole subtrees and each
+    node's own ``tail`` in reading order makes the result the document's text.
+
+    ``meta`` is filled with the traversal cost so the caller can refuse an
+    over-complex document *before* anything is persisted, instead of silently
+    returning a truncated body as if it were the whole source.
     """
+
+    return _epub_traversal(root)[0]
+
+
+def _epub_traversal(root: ElementTree.Element) -> tuple[list[str], dict[str, int]]:
     blocks: list[str] = []
-    stack: list[ElementTree.Element] = [root]
     inline_text: list[str] = []
+    events: list[tuple[str, ElementTree.Element | None, str | None]] = [("ENTER", root, None)]
     visited = 0
 
     def flush() -> None:
@@ -223,34 +242,83 @@ def _epub_text_blocks(root: ElementTree.Element) -> list[str]:
         if collapsed:
             blocks.append(collapsed)
 
-    while stack:
-        node = stack.pop()
-        visited += 1
-        if visited > _EPUB_TRAVERSAL_LIMIT:
-            break
-        name = _xml_local_name(node.tag)
-        if name == "style" or name == "script":
+    while events:
+        action, node, payload = events.pop()
+        if action == "TEXT":
+            if payload:
+                inline_text.append(payload)
             continue
-        if name in _EPUB_BLOCK_NAMES:
-            # "p" inside "li"/"blockquote"/"div" must not re-emit the parent.
+        if action == "TAIL":
+            if payload:
+                inline_text.append(payload)
+            continue
+        if action == "EXIT_BLOCK":
+            # The block's own inline run ends here, before its ``tail`` (already
+            # scheduled) and before the next sibling's text.
             flush()
-            for child in reversed(list(node)):
-                if isinstance(child.tag, str):
-                    stack.append(child)
-            if node.text and node.text.strip():
-                inline_text.append(node.text)
+            continue
+        assert node is not None
+        name = _xml_local_name(node.tag)
+        if name in _EPUB_SKIPPED_NAMES:
+            # Skipped content is dropped, but its tail still belongs to the
+            # surrounding reading order.
             if node.tail and node.tail.strip():
                 inline_text.append(node.tail)
             continue
-        if node.text:
+        if name in _EPUB_BREAK_NAMES:
+            # An author's explicit line break must survive extraction: collapsing
+            # it into a space would silently reflow the source text.
+            flush()
+            if node.tail and node.tail.strip():
+                inline_text.append(node.tail)
+            continue
+        visited += 1
+        limit = _epub_traversal_limit()
+        if visited > limit:
+            raise DomainRuleError(
+                "DOCUMENT_STRUCTURE_TOO_COMPLEX",
+                "EPUB 章节的解析节点数超过上限，正文可能不完整；请拆分后导入或提高 LOCAL_DRAMA_EPUB_NODE_LIMIT",
+                {"node_limit": limit, "blocks_extracted": len(blocks)},
+            )
+        is_block = name in _EPUB_BLOCK_NAMES
+        if is_block:
+            # "p" inside "li"/"blockquote"/"div" must not re-emit the parent.
+            flush()
+        if node.text and node.text.strip():
             inline_text.append(node.text)
-        for child in node:
+        if node.tail and node.tail.strip():
+            events.append(("TAIL", None, node.tail))
+        if is_block:
+            events.append(("EXIT_BLOCK", node, None))
+        for child in reversed(list(node)):
             if isinstance(child.tag, str):
-                stack.append(child)
-        if node.tail:
-            inline_text.append(node.tail)
+                events.append(("ENTER", child, None))
     flush()
-    return blocks
+    return blocks, {
+        "visited_nodes": visited,
+        "node_limit": _epub_traversal_limit(),
+        "blocks": len(blocks),
+    }
+
+
+def _epub_traversal_limit() -> int:
+    """Node budget for one EPUB chapter, tunable for very long novels.
+
+    The old constant was also used as a silent ``break``: a 21,000-paragraph
+    chapter was stored as ~19,998 paragraphs and reported ``PREVIEW_READY`` as if
+    it were the whole authority.  The budget is now an explicit refusal, and it is
+    configurable because a flat chapter with tens of thousands of paragraphs is
+    not the same thing as pathologically deep markup.
+    """
+
+    raw = os.environ.get("LOCAL_DRAMA_EPUB_NODE_LIMIT")
+    if raw is None:
+        return _EPUB_TRAVERSAL_LIMIT
+    try:
+        value = int(raw)
+    except ValueError:
+        return _EPUB_TRAVERSAL_LIMIT
+    return max(1_000, value)
 
 
 def _epub_document_text(payload: bytes) -> str:
@@ -368,6 +436,177 @@ def _read_text(path: Path) -> str:
         except UnicodeDecodeError:
             continue
     raise DomainRuleError("DOCUMENT_DECODE_FAILED", "TXT/Markdown 不是支持的本地文本编码")
+
+
+# --------------------------------------------------------------------------- #
+# shared document extraction port
+# --------------------------------------------------------------------------- #
+#: Binary container formats.  Sending these through a *text* decoder is the
+#: defect: the bytes are a ZIP (DOCX/EPUB) or a PDF object graph, so "try another
+#: encoding" can only ever produce mojibake, never the document's text.
+BINARY_DOCUMENT_SUFFIXES: frozenset[str] = frozenset({".docx", ".epub", ".pdf"})
+TEXT_DOCUMENT_SUFFIXES: frozenset[str] = frozenset({".txt", ".md", ".markdown", ".text", ".log"})
+
+#: Byte budget for the extraction *input*, independent of the upload budget.
+DOCUMENT_EXTRACTION_MAX_BYTES = 64 * 1024 * 1024
+
+#: Character budget for the extracted body, so a pathological container cannot
+#: turn into an unbounded string in the API process.
+DOCUMENT_EXTRACTION_MAX_CHARACTERS = 8 * 1024 * 1024
+
+
+def _text_extraction_encoding(path: Path) -> dict[str, Any]:
+    """Report the encoding facts of a plain-text document without guessing."""
+
+    raw = path.read_bytes()
+    had_bom = any(raw.startswith(bom) for bom, _ in _TEXT_BOMS)
+    for bom, encoding in _TEXT_BOMS:
+        if raw.startswith(bom):
+            try:
+                return {
+                    "encoding": encoding,
+                    "confidence": "HIGH",
+                    "had_bom": True,
+                    "text": raw.decode(encoding),
+                }
+            except UnicodeDecodeError:
+                break
+    for encoding in ("utf-8", "gb18030"):
+        try:
+            return {
+                "encoding": encoding,
+                "confidence": "HIGH" if encoding == "utf-8" else "LOW",
+                "had_bom": had_bom,
+                "text": raw.decode(encoding),
+            }
+        except UnicodeDecodeError:
+            continue
+    return {
+        "encoding": "gb18030",
+        "confidence": "LOW",
+        "had_bom": had_bom,
+        "text": raw.decode("gb18030", errors="replace"),
+    }
+
+
+_TEXT_BOMS: tuple[tuple[bytes, str], ...] = (
+    (b"\xef\xbb\xbf", "utf-8-sig"),
+    # BOM-consuming codecs first: ``utf-16`` strips the BOM it detects, while
+    # ``utf-16-le`` would keep it as a leading U+FEFF in the body.
+    (b"\xff\xfe\x00\x00", "utf-32"),
+    (b"\x00\x00\xfe\xff", "utf-32"),
+    (b"\xff\xfe", "utf-16"),
+    (b"\xfe\xff", "utf-16"),
+)
+
+
+def extract_document_text(
+    path: str | Path,
+    *,
+    maximum_bytes: int = DOCUMENT_EXTRACTION_MAX_BYTES,
+    maximum_characters: int = DOCUMENT_EXTRACTION_MAX_CHARACTERS,
+) -> dict[str, Any]:
+    """Extract a document's body by dispatching on its real format.
+
+    Callers must pass a *controlled* temporary file: this function only reads the
+    path it is given and never resolves a client-supplied location by itself.
+
+    The returned mapping is the traceable port described by the design:
+
+    ``text``
+        the extracted body, newline-normalised;
+    ``format``
+        ``TEXT`` / ``DOCX`` / ``PDF`` / ``EPUB``, i.e. which reader ran;
+    ``encoding`` / ``confidence`` / ``had_bom``
+        only meaningful for ``TEXT`` (``None``/``"N/A"`` otherwise), so a caller
+        can no longer ask a ZIP container to "choose another encoding";
+    ``quality``
+        ``complete`` / ``partial`` plus the paragraph and character counts;
+    ``budgets``
+        the limits that were enforced;
+    ``warnings``
+        structured, user-actionable notes (empty when the extraction is exact).
+
+    A container that cannot be parsed, an over-complex structure, an empty body
+    and a document over budget all raise ``DomainRuleError`` *before* the caller
+    persists anything, so a lossy result can never be stored as an authority.
+    """
+
+    target = Path(path)
+    suffix = target.suffix.lower()
+    if not target.is_file():
+        raise DomainRuleError("SOURCE_NOT_FOUND", "导入源文件不存在或无法读取", {"path": str(target)})
+    size = target.stat().st_size
+    if size <= 0:
+        raise DomainRuleError("DOCUMENT_TEXT_EMPTY", "文档为空，无法导入", {"byte_size": 0})
+    if size > int(maximum_bytes):
+        raise DomainRuleError(
+            "DOCUMENT_TOO_LARGE",
+            "文档超过解析大小上限，请拆分后导入",
+            {"byte_size": size, "max_bytes": int(maximum_bytes)},
+        )
+
+    if suffix in BINARY_DOCUMENT_SUFFIXES:
+        document_format = {".docx": "DOCX", ".pdf": "PDF", ".epub": "EPUB"}[suffix]
+        text = _read_text(target)
+        encoding: str | None = None
+        confidence = "CONTAINER_PARSED"
+        had_bom = False
+    elif suffix in TEXT_DOCUMENT_SUFFIXES or suffix == "":
+        decoded = _text_extraction_encoding(target)
+        text = decoded["text"]
+        encoding = str(decoded["encoding"])
+        confidence = str(decoded["confidence"])
+        had_bom = bool(decoded["had_bom"])
+        document_format = "TEXT"
+    else:
+        raise DomainRuleError(
+            "UNSUPPORTED_DOCUMENT_TYPE",
+            "仅支持 TXT、Markdown、DOCX、PDF、EPUB",
+            {"suffix": suffix},
+        )
+
+    normalised = text.replace("\r\n", "\n").replace("\r", "\n")
+    if len(normalised) > int(maximum_characters):
+        raise DomainRuleError(
+            "DOCUMENT_TOO_LARGE_EXTRACTED",
+            "文档提取后的正文字符数超过上限，请拆分后导入",
+            {"characters": len(normalised), "max_characters": int(maximum_characters)},
+        )
+    if not normalised.strip():
+        raise DomainRuleError(
+            "DOCUMENT_TEXT_EMPTY",
+            "文档没有可提取的正文；扫描版 PDF 请先完成 OCR",
+            {"format": document_format, "byte_size": size},
+        )
+    replacement_count = normalised.count("\ufffd")
+    warnings: list[dict[str, Any]] = []
+    if replacement_count:
+        warnings.append(
+            {
+                "code": "DECODE_REPLACEMENT_CHARACTERS",
+                "replacement_char_count": replacement_count,
+                "message": "文本解码产生了替换字符，请确认编码后再作为权威正文使用",
+            }
+        )
+    paragraph_count = len([line for line in normalised.split("\n") if line.strip()])
+    return {
+        "text": normalised,
+        "format": document_format,
+        "encoding": encoding,
+        "confidence": confidence,
+        "had_bom": had_bom,
+        "byte_size": size,
+        "character_count": len(normalised),
+        "paragraph_count": paragraph_count,
+        "replacement_char_count": replacement_count,
+        "quality": "complete" if not warnings else "partial",
+        "warnings": warnings,
+        "budgets": {
+            "max_bytes": int(maximum_bytes),
+            "max_characters": int(maximum_characters),
+        },
+    }
 
 
 def _validate_parsed_text(text: str, *, paragraph_layout: ParagraphLayoutHint) -> list[SourceParagraph]:
@@ -528,7 +767,7 @@ class DocumentImportService:
             "paragraph_layout_request": requested_layout,
         }
         version_no = self._next_version_no(source_document_id)
-        self._write_extracted_text(text_path, text)
+        staged_text = self._write_extracted_text(text_path, text)
         try:
             with self.database.transaction() as connection:
                 if not rows:
@@ -579,9 +818,14 @@ class DocumentImportService:
                     ),
                 )
         except Exception:
-            # NP04: a failed storage/output-contract step must never leave a
-            # usable "ready" session or a half-written extracted authority.
-            text_path.unlink(missing_ok=True)
+            # A failed storage/output-contract step must never leave a usable
+            # "ready" session, and it must never delete the *shared* extracted
+            # authority either: that published object may already be referenced by a
+            # transaction that succeeded.  Only this request's own staged partial is
+            # removed, and database rollback cannot restore a deleted file — which
+            # is exactly how a failing concurrent import used to destroy the winner's
+            # body.
+            self._discard_partial(staged_text)
             raise
         # FTS is a derived read model. Index its large payload outside the
         # authoritative source/session transaction, and surface failure so a
@@ -908,11 +1152,52 @@ class DocumentImportService:
         with path.open("r", encoding="utf-8", newline="") as handle:
             return handle.read()
 
-    def _write_extracted_text(self, path: Path, text: str) -> None:
+    def _write_extracted_text(self, path: Path, text: str) -> Path:
+        """Publish a content-addressed extracted text and return its staged path.
+
+        The caller must treat the return value as *its own* temporary object:
+
+        * the write always goes to a per-request unique name
+          (``.<name>.<token>.partial``), never to a fixed ``.partial`` suffix.  Two
+          concurrent imports of the same file used to compute the same ``.partial``
+          path, so one request's rename could move the other request's bytes — or
+          delete them — and the surviving session pointed at the wrong file;
+        * the token is deliberately short.  The published name is already long
+          (``<sha256>.<parser>.<structure>.extracted.txt``), and a full 32-character
+          UUID pushed the staging path past the Windows 260-character limit, so the
+          write failed with ``FileNotFoundError`` on deep project roots;
+        * the final path is a *shared, content-addressed* object.  If it already
+          exists with the same content it is reused as-is, and if the caller's
+          transaction fails the partial file is discarded without ever touching the
+          published object, which may already be referenced by a successful
+          transaction.
+
+        Returns the staged partial path so a failure can remove exactly that file.
+        """
+
         path.parent.mkdir(parents=True, exist_ok=True)
-        partial = path.with_name(f"{path.name}.partial")
+        partial = path.with_name(f".{path.name}.{uuid.uuid4().hex[:12]}.partial")
         partial.write_text(text, encoding="utf-8", newline="")
-        partial.replace(path)
+        try:
+            if path.is_file() and _sha256_file(path) == _sha256_bytes(text.encode("utf-8")):
+                # Identical content is already published: this request's bytes are
+                # redundant, and the existing object must not be replaced (another
+                # transaction may already hold a reference to it).
+                return partial
+            partial.replace(path)
+        except OSError:
+            return partial
+        return partial
+
+    def _discard_partial(self, partial: Path | None) -> None:
+        """Remove only a staged temporary file, never a published object."""
+
+        if partial is None:
+            return
+        try:
+            partial.unlink(missing_ok=True)
+        except OSError:
+            return
 
     def _replace_extracted_text(self, path: Path, text: str) -> None:
         """Keep a reused parse authority byte-identical (or repair a lost copy)."""
@@ -1383,3 +1668,4 @@ class DocumentImportService:
             source_paragraph_start=source_paragraph_start,
             source_paragraph_end=source_paragraph_end,
         )
+

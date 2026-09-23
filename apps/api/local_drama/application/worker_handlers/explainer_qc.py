@@ -468,6 +468,62 @@ def run_qc_layers(
 
 
 # --------------------------------------------------------------------- readers
+def _safe_area_pixels(
+    repo: ExplainerRepository,
+    *,
+    edition: Mapping[str, Any],
+    declared: Mapping[str, Any],
+    context: Mapping[str, Any],
+) -> dict[str, int]:
+    """The safe area as a pixel rectangle for the subtitle layout detector.
+
+    The layout detector compares cue boxes against pixels, but the product stores
+    a safe area as *fractions* of the frame (channel profile or documented default).
+    Passing the fractional mapping straight through made every subtitle check fail
+    with ``SCHEMA_INVALID`` before it measured anything, so the fraction is
+    converted here with the edition's own geometry.  A caller that already supplies
+    pixels is left untouched.
+    """
+
+    from local_drama.application.explainers.subtitles import default_safe_area
+
+    if isinstance(declared, Mapping) and (
+        {"left_px", "top_px", "right_px", "bottom_px"} <= set(declared)
+        or {"x", "y", "width", "height"} <= set(declared)
+    ):
+        return {str(key): int(value) for key, value in declared.items()}
+
+    profile_fractions: Mapping[str, Any] = {}
+    video_id = str(context.get("video_id") or "")
+    video = repo.find("explainer_videos", video_id) if video_id else None
+    profile_version_id = (video or {}).get("current_channel_profile_version_id")
+    if profile_version_id:
+        profile_version = repo.find("channel_profile_versions", str(profile_version_id))
+        raw = (profile_version or {}).get("subtitle_safe_area_json")
+        if isinstance(raw, Mapping):
+            profile_fractions = raw
+
+    aspect_ratio = str(edition.get("aspect_ratio") or "16:9")
+    fractions = dict(default_safe_area(aspect_ratio))
+    fractions.update(
+        {key: float(value) for key, value in profile_fractions.items() if key in fractions}
+    )
+    # The fallback must be the edition contract's own generation canvas (480p), not a
+    # hardcoded 1080p: a wrong default would measure the safe area of a canvas the
+    # edition never renders at.
+    from local_drama.domain.explainers.contracts import ASPECT_PIXELS
+
+    default_width, default_height = ASPECT_PIXELS.get(aspect_ratio, ASPECT_PIXELS["16:9"])
+    width = int(edition.get("width") or default_width)
+    height = int(edition.get("height") or default_height)
+    return {
+        "left_px": int(round(float(fractions["left"]) * width)),
+        "top_px": int(round(float(fractions["top"]) * height)),
+        "right_px": int(round((1.0 - float(fractions["right"])) * width)),
+        "bottom_px": int(round((1.0 - float(fractions["bottom"])) * height)),
+    }
+
+
 def build_qc_readers(*, database: Any = None, settings: Any = None) -> dict[str, Callable[..., Any]]:
     """Bind the measurement readers whose inputs are fully content-derived.
 
@@ -529,6 +585,7 @@ def build_qc_readers(*, database: Any = None, settings: Any = None) -> dict[str,
             import json
 
             safe_area = json.loads(safe_area) if safe_area else {}
+        safe_area = _safe_area_pixels(repo, edition=edition, declared=safe_area, context=context)
         return {
             "cues": normalised_cues,
             "safe_area": safe_area,

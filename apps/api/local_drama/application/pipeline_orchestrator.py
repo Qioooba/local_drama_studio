@@ -171,11 +171,31 @@ def _pipeline_quality_report(draft: dict[str, Any]) -> dict[str, Any]:
     assets = draft.get("assets") if isinstance(draft.get("assets"), dict) else {}
     story_plan = draft.get("story_plan") if isinstance(draft.get("story_plan"), dict) else {}
     generation = draft.get("generation") if isinstance(draft.get("generation"), dict) else {}
+    episodes = story_plan.get("episodes") if isinstance(story_plan.get("episodes"), list) else []
+    # PR-01: a plan that repeats an episode number cannot be applied, so the draft
+    # must be refused HERE rather than failing later on a SQLite unique constraint.
+    # Preview and apply share this report, so both refuse it.
+    numbers = [int(item.get("number") or 0) for item in episodes if isinstance(item, dict)]
+    codes = [str(item.get("code") or "") for item in episodes if isinstance(item, dict)]
+    unique_numbers = len(numbers) == len(set(numbers)) and 0 not in numbers
+    unique_codes = len(codes) == len(set(codes)) and "" not in codes
+    # Every input window that was actually processed must be represented by a planned
+    # episode.  A window whose unit is missing means the aggregation dropped its
+    # source range.
+    planned = {number for number in numbers}
+    processed_units = {
+        int(item["unit_number"])
+        for item in coverage.get("completed_ranges", [])
+        if isinstance(item, dict) and item.get("unit_number") is not None
+    }
+    windows_mapped = processed_units <= planned if processed_units else True
     rules = [
         ("SOURCE_FROZEN", "原稿快照已冻结", "BLOCKER", bool(source.get("sha256"))),
         ("SOURCE_COVERAGE_COMPLETE", "授权原稿范围已完整处理", "WARNING", coverage.get("status") == "FULL"),
         ("AI_GENERATION_CONFIRMED", "分集与核心资产由已配置大模型生成", "BLOCKER", bool(generation.get("model") and generation.get("provider"))),
-        ("EPISODES_PRESENT", "已生成分集规划和原文范围", "BLOCKER", bool(story_plan.get("episodes"))),
+        ("EPISODES_PRESENT", "已生成分集规划和原文范围", "BLOCKER", bool(episodes)),
+        ("EPISODE_NUMBERS_UNIQUE", "分集编号与代码唯一；输入窗口已按单元聚合", "BLOCKER", unique_numbers and unique_codes),
+        ("WINDOWS_MAPPED_TO_PLAN", "已完成的分析窗口都能映射到已规划分集", "BLOCKER", windows_mapped),
         ("CORE_CHARACTERS", "已识别可复用核心人物", "BLOCKER", bool(assets.get("characters"))),
         ("CORE_SCENES", "已识别可复用核心场景", "WARNING", bool(assets.get("scenes"))),
         ("EPISODE_DETAILS_DEFERRED", "分场与镜头将在制作每集时按需生成", "INFO", True),
@@ -260,6 +280,12 @@ class PipelineOrchestratorService:
             "draft": draft,
             "quality_report": _parse_json(_safe_col(row, "quality_report_json", "{}"), {}),
             "apply_state": str(_safe_col(row, "apply_state", "NOT_APPLIED") or "NOT_APPLIED"),
+            # PR-05: the applied WATERMARK, so a newer draft revision still has a
+            # computable diff instead of being refused as "already applied".
+            "applied_revision_hash": str(_safe_col(row, "applied_revision_hash") or "") or None,
+            "applied_episode_numbers": _parse_json(
+                _safe_col(row, "applied_episode_numbers_json", "[]"), []
+            ),
             "applied_sections": _parse_json(_safe_col(row, "applied_sections_json", "[]"), []),
             "applied_at": str(_safe_col(row, "applied_at")) if _safe_col(row, "applied_at") else None,
             "supersedes_run_id": str(_safe_col(row, "supersedes_run_id")) if _safe_col(row, "supersedes_run_id") else None,
@@ -281,6 +307,54 @@ class PipelineOrchestratorService:
             "application_authorization": authorization,
             "production_authorization": production_authorization,
         }
+
+    def _effective_applied_revision_hash(self, row: Any) -> str:
+        """The applied revision hash, backfilled for runs applied before the watermark.
+
+        The watermark migration cannot compute a content hash in SQL, so a run that was
+        applied by an earlier build has ``apply_state='APPLIED'`` and no hash.  Treating
+        that as "nothing applied" would let a re-apply rewrite episodes the user already
+        confirmed, so the current draft is adopted as the applied revision — the old
+        boolean semantics, preserved for exactly as long as no new draft revision exists.
+
+        This is read-only: the persisted backfill is a separate call so a caller that
+        already owns a write transaction can never nest a second one.
+        """
+
+        stored = str(_safe_col(row, "applied_revision_hash") or "")
+        if stored:
+            return stored
+        if str(_safe_col(row, "apply_state", "NOT_APPLIED")) != "APPLIED":
+            return ""
+        return self._draft_revision_hash(self._row_draft(row))
+
+    @staticmethod
+    def _row_draft(row: Any) -> dict[str, Any]:
+        draft = _parse_json(_safe_col(row, "draft_json", "{}"), {})
+        return draft if isinstance(draft, dict) else {}
+
+    def _backfill_applied_watermark(self, row: Any) -> None:
+        """Persist the adopted watermark for a pre-migration APPLIED run."""
+
+        if str(_safe_col(row, "applied_revision_hash") or ""):
+            return
+        if str(_safe_col(row, "apply_state", "NOT_APPLIED")) != "APPLIED":
+            return
+        draft = self._row_draft(row)
+        draft_hash = self._draft_revision_hash(draft)
+        if not draft_hash:
+            return
+        numbers = {
+            int(item["number"])
+            for item in ((draft.get("story_plan") or {}).get("episodes") or [])
+            if isinstance(item, dict) and item.get("number")
+        }
+        with self.database.transaction() as connection:
+            connection.execute(
+                """UPDATE pipeline_runs SET applied_revision_hash=?,applied_episode_numbers_json=?
+                WHERE id=? AND (applied_revision_hash IS NULL OR applied_revision_hash='')""",
+                (draft_hash, _json(sorted(numbers)), str(row["id"])),
+            )
 
     def _attach_apply_continuation(self, run: dict[str, Any]) -> dict[str, Any]:
         job_id = str(run["application_authorization"].get("continuation_job_id") or "")
@@ -765,6 +839,12 @@ class PipelineOrchestratorService:
             )
             connection.execute("UPDATE pipeline_runs SET job_id=? WHERE id=?", (job["id"], run_id))
             if endpoint == "APPLY_SELECTED_SECTIONS":
+                # PR-05: a NEW draft revision published by a continuation needs its OWN
+                # dependency Job.  The key used to be ``pipeline-apply:{run_id}``, so the
+                # second batch replayed the first batch's already-SUCCEEDED apply job and
+                # the new episodes never reached the project.  Keying on the revision is
+                # safe because the authorization is expressed in the run snapshot, not in
+                # the key: the sections are re-read and re-checked on every continuation.
                 continuation = self.jobs.create_job_in_transaction(
                     connection,
                     project_id,
@@ -773,7 +853,7 @@ class PipelineOrchestratorService:
                     run_id,
                     "CPU",
                     {"run_id": run_id, "project_id": project_id, "authorized_sections": sections},
-                    f"pipeline-apply:{run_id}",
+                    f"pipeline-apply:{run_id}:{str(authorization.get('authorized_draft_sha256') or '')}",
                     actor=actor,
                     subject_kind="PIPELINE_RUN",
                     scope_kind="PROJECT",
@@ -796,8 +876,13 @@ class PipelineOrchestratorService:
             ).fetchone()
         if row is None:
             raise DomainRuleError("PIPELINE_RUN_NOT_FOUND", "草案运行记录不存在", {"run_id": run_id})
+        run = self._row_to_run(row)
+        # PR-04: a run whose Job already reached a terminal state must never keep
+        # reporting RUNNING; reading it converges the projection.
+        if str(run.get("state") or "") == "RUNNING":
+            run = self._reconcile_run_with_job(run)
         return self._attach_production_continuation(
-            self._attach_apply_continuation(self._row_to_run(row))
+            self._attach_apply_continuation(run)
         )
 
     def get_latest_pipeline(self, project_id: str) -> dict[str, Any] | None:
@@ -874,7 +959,18 @@ class PipelineOrchestratorService:
         authorization = run["application_authorization"]
         if authorization.get("endpoint") != "APPLY_SELECTED_SECTIONS" or authorization.get("revoked_at"):
             raise DomainRuleError("PIPELINE_APPLICATION_NOT_AUTHORIZED", "本次运行未授权自动应用")
-        if run["apply_state"] == "APPLIED":
+        # PR-05: "already applied" means "THIS draft revision is applied".  The old check
+        # was a run-level boolean, so once the first batch was applied no later batch
+        # could ever be authorized into the project.
+        with self.database.connect() as connection:
+            watermark_row = connection.execute(
+                "SELECT * FROM pipeline_runs WHERE id=?", (run_id,)
+            ).fetchone()
+        applied_revision_hash = (
+            self._effective_applied_revision_hash(watermark_row) if watermark_row is not None else ""
+        )
+        current_revision_hash = self._draft_revision_hash(run.get("draft") or {})
+        if run["apply_state"] == "APPLIED" and applied_revision_hash and applied_revision_hash == current_revision_hash:
             production = self._continue_authorized_production(run_id)
             return {
                 "run": self.get_pipeline_by_id(run_id),
@@ -885,10 +981,21 @@ class PipelineOrchestratorService:
             raise DomainRuleError("PIPELINE_STATE_INVALID", "草案生成尚未成功，不能续接应用")
         authorized_draft_sha256 = str(authorization.get("authorized_draft_sha256") or "")
         if not authorized_draft_sha256 or authorized_draft_sha256 != _sha(_json(run["draft"])):
-            raise DomainRuleError(
-                "PIPELINE_AUTHORIZED_DRAFT_CHANGED",
-                "草案在生成完成后发生变化，原授权不能继续应用",
-            )
+            if not applied_revision_hash:
+                # Nothing was applied yet, so no continuation can be in play: the draft
+                # changed after the authorization was granted and must not be applied
+                # under it.
+                raise DomainRuleError(
+                    "PIPELINE_AUTHORIZED_DRAFT_CHANGED",
+                    "草案在生成完成后发生变化，原授权不能继续应用",
+                )
+            # A continuation published a NEW draft revision under the same still-standing
+            # authorization.  The grant is re-scoped to that revision, and only to it: the
+            # revision applied before the continuation stays applied and is never applied
+            # twice.
+            self._authorize_current_revision(run_id, run, authorization)
+            run = self.get_pipeline(run["project_id"], run_id)
+            authorization = run["application_authorization"]
         sections = list(authorization.get("sections") or [])
         preview = self.preview_pipeline_apply(
             run["project_id"], run_id, expected_revision=run["revision"], sections=sections
@@ -913,6 +1020,61 @@ class PipelineOrchestratorService:
             "run": self.get_pipeline_by_id(run_id),
             "production": production,
         }
+
+    def _authorize_current_revision(
+        self, run_id: str, run: dict[str, Any], authorization: dict[str, Any]
+    ) -> None:
+        """Re-scope an existing auto-apply authorization onto the current draft.
+
+        A continuation publishes a new draft revision; the user's grant was given for
+        the run and its selected sections, not for one frozen text.  The new revision is
+        adopted, recorded, and applied in the same operation, and the applied watermark
+        is untouched, so an already-applied revision can never be applied twice.
+        """
+
+        sections = list(authorization.get("sections") or [])
+        if not sections:
+            raise DomainRuleError("PIPELINE_APPLICATION_NOT_AUTHORIZED", "授权中没有可应用的区块")
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                "SELECT input_snapshot_json,revision FROM pipeline_runs WHERE id=?", (run_id,)
+            ).fetchone()
+            if row is None:
+                raise DomainRuleError("PIPELINE_RUN_NOT_FOUND", "草案运行记录不存在")
+            snapshot = _parse_json(row["input_snapshot_json"], {})
+            current = dict(snapshot.get("application_authorization") or {})
+            if current.get("endpoint") != "APPLY_SELECTED_SECTIONS" or current.get("revoked_at"):
+                raise DomainRuleError("PIPELINE_APPLICATION_NOT_AUTHORIZED", "本次运行未授权自动应用")
+            current["authorized_draft_sha256"] = _sha(_json(run["draft"]))
+            current["authorized_revision_no"] = int(run["revision"])
+            current["reauthorized_for_continuation"] = True
+            # The new revision gets its own durable command, so the second batch is
+            # observable and independently replayable instead of being hidden inside the
+            # first batch's already-SUCCEEDED job.
+            staged = self.jobs.create_job_in_transaction(
+                connection,
+                str(run["project_id"]),
+                PIPELINE_APPLY_JOB_TYPE,
+                "PIPELINE_RUN",
+                run_id,
+                "CPU",
+                {"run_id": run_id, "project_id": str(run["project_id"]), "authorized_sections": sections},
+                # A per-revision key: the same revision replays, a new revision is a new
+                # command.
+                f"pipeline-apply:{run_id}:{current['authorized_draft_sha256']}",
+                actor="pipeline-authorized-continuation",
+                subject_kind="PIPELINE_RUN",
+                scope_kind="PROJECT",
+                scope_project_id=str(run["project_id"]),
+                stage_code="STORY_PIPELINE",
+                max_attempts=3,
+            )
+            current["continuation_job_id"] = str(staged["id"])
+            snapshot["application_authorization"] = current
+            connection.execute(
+                "UPDATE pipeline_runs SET input_snapshot_json=?,revision=revision+1 WHERE id=?",
+                (_json(snapshot), run_id),
+            )
 
     def retry_pipeline(self, project_id: str, run_id: str, expected_revision: int) -> dict[str, Any]:
         run = self.get_pipeline(project_id, run_id)
@@ -1047,13 +1209,80 @@ class PipelineOrchestratorService:
                 stage_code="STORY_PIPELINE",
                 max_attempts=1,
             )
+            # PR-04: the continuation key is stable for a given cursor, so a second
+            # click after a FAILED batch replayed the original command and returned
+            # the FAILED Job while this method wrote ``state='RUNNING'`` — a run
+            # pinned at RUNNING with a Job nobody could claim, and no way back in
+            # because ``retry_pipeline`` requires ``state='FAILED'``.  The live Job
+            # state now decides what a continuation means.
+            job_state = str(job.get("state") or "QUEUED").upper()
+            recovery_action = "SUBMITTED"
+            if job.get("idempotent_replay") and job_state in {"FAILED", "NEEDS_ATTENTION", "ORPHANED"}:
+                # A continuation click is the user's explicit authorisation to retry
+                # THIS batch; the retry runs in this same transaction so the Job and
+                # the run can never disagree.
+                job = self.jobs.retry_in_transaction(connection, str(job["id"]), actor=actor)
+                job_state = str(job.get("state") or "QUEUED").upper()
+                recovery_action = "RETRIED_FAILED_BATCH"
+            elif job.get("idempotent_replay") and job_state == "SUCCEEDED":
+                # The batch already finished; the cursor, not a second Job, decides
+                # what is left to do.  Nothing is mutated here.
+                connection.execute(
+                    """UPDATE pipeline_runs SET updated_at=?,revision=revision+1 WHERE id=?""",
+                    (now, run_id),
+                )
+                recovered = self.get_pipeline(project_id, run_id)
+                recovered["recovery_action"] = "BATCH_ALREADY_SUCCEEDED"
+                recovered["job_state"] = job_state
+                return recovered
+            if job_state in {"FAILED", "CANCELLED", "NEEDS_ATTENTION", "ORPHANED"}:
+                raise DomainRuleError(
+                    "PIPELINE_CONTINUE_JOB_TERMINAL",
+                    "该批次的执行任务已进入终态，请先按失败重试或重新发起分析",
+                    {"job_id": str(job["id"]), "job_state": job_state},
+                )
             connection.execute(
                 """UPDATE pipeline_runs SET state='RUNNING',stage='QUEUED',
                 stage_label='已按续接位置重新进入任务队列',progress_pct=2,error_message=NULL,
                 job_id=?,updated_at=?,revision=revision+1 WHERE id=?""",
                 (job["id"], now, run_id),
             )
-        return self.get_pipeline(project_id, run_id)
+        result = self.get_pipeline(project_id, run_id)
+        result["recovery_action"] = recovery_action
+        result["job_state"] = job_state
+        return result
+
+    def _reconcile_run_with_job(self, run: dict[str, Any]) -> dict[str, Any]:
+        """Converge a stale RUNNING projection onto its Job's real terminal state.
+
+        PR-04: the audit's run was pinned at ``RUNNING`` while its Job was FAILED,
+        so ``retry_pipeline`` (which requires ``FAILED``) had no way in and the
+        workbench was permanently occupied.  Reading the project is now enough to
+        converge the two.
+        """
+
+        if str(run.get("state") or "") != "RUNNING" or not run.get("job_id"):
+            return run
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT state,last_error_code,last_error_detail_redacted FROM jobs WHERE id=?",
+                (str(run["job_id"]),),
+            ).fetchone()
+        if row is None:
+            return run
+        job_state = str(row["state"] or "")
+        target = {"FAILED": "FAILED", "CANCELLED": "FAILED", "NEEDS_ATTENTION": "FAILED", "ORPHANED": "FAILED"}.get(job_state)
+        if target is None:
+            return run
+        detail = str(row["last_error_detail_redacted"] or row["last_error_code"] or "")
+        with self.database.transaction() as connection:
+            connection.execute(
+                """UPDATE pipeline_runs SET state=?,stage='FAILED',stage_label='执行任务已结束，状态已对账',
+                error_message=?,updated_at=?,revision=revision+1
+                WHERE id=? AND state='RUNNING'""",
+                (target, detail or "执行任务未成功完成", _now(), str(run["run_id"])),
+            )
+        return self.get_pipeline(str(run["project_id"]), str(run["run_id"]))
 
     def _update_run(self, run_id: str, **values: Any) -> None:
         columns = {
@@ -1103,6 +1332,128 @@ class PipelineOrchestratorService:
             "source_character_count": len(text),
             "source_input_sha256": _sha(text),
         }
+
+    @staticmethod
+    def _planned_units(unit_numbers: list[int]) -> list[int]:
+        """Distinct unit numbers, in first-appearance order."""
+
+        ordered: list[int] = []
+        for number in unit_numbers:
+            if number not in ordered:
+                ordered.append(number)
+        return ordered
+
+    @staticmethod
+    def _merge_unit_windows(
+        generated: list[dict[str, Any]], window_specs: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Collapse the model's per-window outlines into ONE outline per episode unit.
+
+        PR-01 root cause: a long chapter is split into several bounded model *input
+        windows*, and the planner treated every window as its own episode.  A short
+        chapter plus one 31,500-character chapter therefore produced four windows
+        numbered ``[1, 2, 2, 2]``, so the draft proposed three duplicate ``EP02``
+        rows and ``apply`` failed on ``UNIQUE constraint failed:
+        episodes.season_id, episodes.code``.  Aggregating here — before anything is
+        persisted or applied — is what keeps the input-window mechanism from
+        becoming a duplicate-episode generator.  De-duplicating on the way into the
+        database would be wrong: it would silently drop the later half of the
+        chapter.
+        """
+
+        by_number: dict[int, list[dict[str, Any]]] = {}
+        for item in generated:
+            if not isinstance(item, dict):
+                continue
+            try:
+                number = int(item["number"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            by_number.setdefault(number, []).append(item)
+        units: list[dict[str, Any]] = []
+        for number, items in sorted(by_number.items()):
+            base = dict(items[0])
+            starts: list[int] = []
+            ends: list[int] = []
+            bodies: list[str] = []
+            windows: list[dict[str, Any]] = []
+            for spec in window_specs:
+                try:
+                    spec_number = int(spec["number"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if spec_number != number:
+                    continue
+                start = int(spec.get("source_start_paragraph") or 0)
+                end = int(spec.get("source_end_paragraph") or 0)
+                text = str(spec.get("source_text") or "")
+                starts.append(start)
+                ends.append(end)
+                bodies.append(text)
+                windows.append(
+                    {
+                        "window_index": int(spec.get("window_index") or 1),
+                        "start_paragraph": start,
+                        "end_paragraph": end,
+                        "character_count": len(text),
+                        "input_sha256": str(spec.get("source_input_sha256") or ""),
+                    }
+                )
+            if not starts:
+                starts = [int(item.get("source_start_paragraph") or 0) for item in items]
+                ends = [int(item.get("source_end_paragraph") or 0) for item in items]
+            if bodies:
+                # Every window's text travels with the unit so the episode keeps the
+                # whole authorised range instead of only the last window's slice.
+                base["source_text"] = "\n".join(bodies)
+                base["source_character_count"] = len(base["source_text"])
+            base["source_start_paragraph"] = min(starts)
+            base["source_end_paragraph"] = max(ends)
+            base["unit_number"] = number
+            base["window_count"] = len(items)
+            base["source_windows"] = windows
+            units.append(base)
+        return units
+
+    @staticmethod
+    def _merge_unit_observations(
+        window_episodes: list[dict[str, Any]], unit_episodes: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Carry every NON-EMPTY field a window produced onto its merged unit.
+
+        A window that yielded new characters would otherwise lose them when its
+        outline is folded into the unit's.  Empty values never overwrite the merged
+        outline, so a later window cannot erase what an earlier one found.
+        """
+
+        by_number: dict[int, list[dict[str, Any]]] = {}
+        for item in window_episodes:
+            if not isinstance(item, dict):
+                continue
+            try:
+                by_number.setdefault(int(item["number"]), []).append(item)
+            except (KeyError, TypeError, ValueError):
+                continue
+        merged: list[dict[str, Any]] = []
+        for unit in unit_episodes:
+            number = int(unit["number"])
+            result = dict(unit)
+            for item in by_number.get(number, []):
+                for key, value in item.items():
+                    if key in {"number", "code", "source_start_paragraph", "source_end_paragraph"}:
+                        continue
+                    if key in {"scenes", "entity_observations"}:
+                        existing = result.get(key)
+                        empty = not existing or (
+                            isinstance(existing, dict) and not any(existing.values())
+                        ) or (isinstance(existing, list) and not existing)
+                        if empty and value:
+                            result[key] = value
+                        continue
+                    if result.get(key) in (None, "", [], {}):
+                        result[key] = value
+            merged.append(result)
+        return merged
 
     @staticmethod
     def _episode_specs(
@@ -1462,6 +1813,16 @@ class PipelineOrchestratorService:
             episode_specs = remaining_specs[:PIPELINE_EPISODE_BATCH_LIMIT]
             saved_episodes = _parse_json(_safe_col(row, "episodes_json", "[]"), [])
             saved_episodes = saved_episodes if isinstance(saved_episodes, list) else []
+            # PR-03: the whole-drama assets and story memory a previous batch already
+            # published travel into this batch's synthesis, so continuing analysis can
+            # only accumulate them.
+            saved_draft = _parse_json(_safe_col(row, "draft_json", "{}"), {})
+            saved_draft = saved_draft if isinstance(saved_draft, dict) else {}
+            existing_analysis = {
+                "episodes": saved_episodes,
+                "assets": saved_draft.get("assets") if isinstance(saved_draft.get("assets"), dict) else None,
+                "story_bible": saved_draft.get("story_bible") if isinstance(saved_draft.get("story_bible"), dict) else None,
+            }
             prior_windows = resume_from_window
             completed = min(len(saved_episodes), len(episode_specs))
             initial_percent = 18 + round(57 * (prior_windows + completed) / max(1, len(all_episode_specs)))
@@ -1514,17 +1875,63 @@ class PipelineOrchestratorService:
                 # rewrite names or memory that production already consumed.
                 resume_episodes=[] if prior_windows else saved_episodes,
                 on_episode_checkpoint=episode_checkpoint,
+                # PR-03: a continuation is not a fresh drama.  The whole-drama
+                # synthesis must see what earlier batches already established, or each
+                # batch overwrites the assets and story memory of the ones before it.
+                existing_analysis=existing_analysis,
             )
             progress("ASSET_EXTRACTION", "正在合并核心人物、场景、道具与连续性记忆", 82)
             ai_episodes = generated["episodes"]
-            if prior_windows and saved_episodes:
-                merged_episodes = [*saved_episodes[:prior_windows], *ai_episodes]
-            else:
-                merged_episodes = ai_episodes
-            plan_episodes = [
-                {key: value for key, value in item.items() if key not in {"scenes", "entity_observations"}}
-                for item in merged_episodes
+            # PR-01: input windows are a model-batch unit, not an episode unit.  Every
+            # window outline is aggregated into ONE outline per episode unit, both for
+            # this batch and for the checkpoints a previous batch left behind, so a
+            # long chapter can never mint duplicate EP numbers.
+            planned = self._planned_units([int(spec["number"]) for spec in all_episode_specs])
+            retained_units = self._planned_units(
+                [int(item["number"]) for item in saved_episodes if isinstance(item, dict) and item.get("number")]
+            )
+            carried = [
+                item for item in self._merge_unit_observations(
+                    saved_episodes,
+                    self._merge_unit_windows(saved_episodes, all_episode_specs),
+                )
+                if int(item["number"]) in set(retained_units)
             ]
+            fresh_window_episodes = [
+                item
+                for item in ai_episodes
+                if int(item.get("number") or 0) in {int(spec["number"]) for spec in episode_specs}
+            ]
+            fresh = self._merge_unit_observations(
+                fresh_window_episodes,
+                self._merge_unit_windows(fresh_window_episodes, all_episode_specs),
+            )
+            # A unit belongs to exactly one side: the earlier batches that already
+            # settled it, or this batch.  That is what makes the merge idempotent and
+            # keeps the numbering unique without de-duplicating any source range.
+            retained_numbers = {int(item["number"]) for item in carried}
+            merged_units = [
+                *carried,
+                *[row for row in fresh if int(row["number"]) not in retained_numbers],
+            ]
+            merged_units.sort(key=lambda row: int(row["number"]))
+            plan_episodes = [
+                {key: value for key, value in item.items() if key != "entity_observations"}
+                for item in merged_units
+            ]
+            numbers = [int(item["number"]) for item in plan_episodes]
+            if len(numbers) != len(set(numbers)):
+                raise DomainRuleError(
+                    "PIPELINE_PLAN_UNIT_DUPLICATED",
+                    "分集规划出现重复编号，已拒绝生成会触发唯一约束的草案",
+                    {"planned_episode_numbers": numbers},
+                )
+            if any(number not in planned for number in numbers):
+                raise DomainRuleError(
+                    "PIPELINE_PLAN_UNIT_UNKNOWN",
+                    "分集规划包含不属于当前授权范围的单元编号",
+                    {"planned_units": planned, "planned_episode_numbers": numbers},
+                )
             assets = generated["assets"]
             bible = {
                 **generated["story_bible"],
@@ -1855,6 +2262,21 @@ class PipelineOrchestratorService:
         payload["impact_sha256"] = _sha(_json(payload))
         return payload
 
+    @staticmethod
+    def _draft_revision_hash(draft: dict[str, Any]) -> str:
+        """Stable identity of one draft revision's applicable content (PR-05)."""
+
+        story_plan = draft.get("story_plan") if isinstance(draft.get("story_plan"), dict) else {}
+        return _sha(
+            _json(
+                {
+                    "episodes": story_plan.get("episodes") or [],
+                    "story_bible": draft.get("story_bible") or {},
+                    "assets": draft.get("assets") or {},
+                }
+            )
+        )
+
     def preview_pipeline_apply(
         self,
         project_id: str,
@@ -1874,9 +2296,15 @@ class PipelineOrchestratorService:
                 raise DomainRuleError("PIPELINE_RUN_NOT_FOUND", "草案运行记录不存在")
             if int(row["revision"]) != expected_revision:
                 raise DomainRuleError("PIPELINE_REVISION_CONFLICT", "草案已更新，请刷新后再预览")
-            if str(row["state"]) != "SUCCEEDED" or str(_safe_col(row, "apply_state", "NOT_APPLIED")) != "NOT_APPLIED":
+            if str(row["state"]) != "SUCCEEDED" or str(_safe_col(row, "apply_state", "NOT_APPLIED")) not in {"NOT_APPLIED", "APPLIED"}:
                 raise DomainRuleError("PIPELINE_STATE_INVALID", "当前草案不能预览应用")
             draft = _parse_json(_safe_col(row, "draft_json", "{}"), {})
+            # PR-05: an already-applied RUN may still preview a NEWER draft revision.
+            # Only the identical revision is a no-op, and its diff is empty.
+            applied_hash = self._effective_applied_revision_hash(row)
+            draft_hash = self._draft_revision_hash(draft if isinstance(draft, dict) else {})
+            already_applied_revision = bool(applied_hash) and applied_hash == draft_hash
+            self._backfill_applied_watermark(row)
             quality = _pipeline_quality_report(draft)
             stored_quality = _parse_json(_safe_col(row, "quality_report_json", "{}"), {})
             if stored_quality.get("rule_version") != "pipeline-quality/v2":
@@ -1941,7 +2369,19 @@ class PipelineOrchestratorService:
                 draft=draft,
                 selected=selected,
             )
-        return {"impact": impact, "quality_report": quality, "can_apply": not quality["blockers"]}
+        return {
+            "impact": impact,
+            "quality_report": quality,
+            "can_apply": not quality["blockers"] and not already_applied_revision,
+            "apply_watermark": {
+                "applied_revision_hash": applied_hash or None,
+                "draft_revision_hash": draft_hash,
+                "already_applied": already_applied_revision,
+                "applied_episode_numbers": _parse_json(
+                    _safe_col(row, "applied_episode_numbers_json", "[]"), []
+                ),
+            },
+        }
 
     def apply_pipeline(
         self,
@@ -1975,9 +2415,18 @@ class PipelineOrchestratorService:
                 raise DomainRuleError("PIPELINE_REVISION_CONFLICT", "草案已更新，请刷新后再应用")
             if str(row["state"]) != "SUCCEEDED":
                 raise DomainRuleError("PIPELINE_STATE_INVALID", "只有生成完成的草案可以应用")
-            if str(_safe_col(row, "apply_state", "NOT_APPLIED")) == "APPLIED":
-                raise DomainRuleError("PIPELINE_ALREADY_APPLIED", "该草案已经应用过")
             draft = _parse_json(_safe_col(row, "draft_json", "{}"), {})
+            applied_hash = self._effective_applied_revision_hash(row)
+            applied_numbers = {
+                int(item)
+                for item in _parse_json(_safe_col(row, "applied_episode_numbers_json", "[]"), [])
+                if isinstance(item, int)
+            }
+            draft_hash = self._draft_revision_hash(draft if isinstance(draft, dict) else {})
+            if str(_safe_col(row, "apply_state", "NOT_APPLIED")) == "APPLIED" and applied_hash == draft_hash:
+                # The identical revision applied twice is a genuine no-op, not a
+                # second write of the same episodes (PR-05).
+                raise DomainRuleError("PIPELINE_ALREADY_APPLIED", "该草案版本已经应用过")
             stored_quality = _parse_json(_safe_col(row, "quality_report_json", "{}"), {})
             if draft.get("schema_version") not in {"pipeline.story-draft.v2", "pipeline.story-plan.v3"}:
                 raise DomainRuleError("PIPELINE_DRAFT_VERSION_UNSUPPORTED", "旧版草案不能安全应用，请生成新版本")
@@ -2066,6 +2515,13 @@ class PipelineOrchestratorService:
                     if existing is not None:
                         episode_id = str(existing["id"])
                         episode_ids[number] = episode_id
+                        # PR-05: an episode whose unit was ALREADY applied by an
+                        # earlier revision keeps its committed title and range.  Only
+                        # units this revision is newly adding may be written, so a
+                        # continuation delta cannot rewrite what a user already
+                        # confirmed (or what production already consumed).
+                        if number in applied_numbers:
+                            continue
                         if "STORY_PLAN" in selected:
                             shot = connection.execute("SELECT 1 FROM shots WHERE episode_id=? LIMIT 1", (episode_id,)).fetchone()
                             if shot is None:
@@ -2223,9 +2679,22 @@ class PipelineOrchestratorService:
                     created["breakdown_drafts"] += 1
 
             updated = connection.execute(
-                """UPDATE pipeline_runs SET apply_state='APPLIED',applied_sections_json=?,applied_at=?,updated_at=?,revision=revision+1
-                WHERE id=? AND revision=? AND apply_state='NOT_APPLIED'""",
-                (_json(selected), now, now, run_id, expected_revision),
+                """UPDATE pipeline_runs SET apply_state='APPLIED',applied_sections_json=?,applied_at=?,
+                applied_revision_hash=?,applied_episode_numbers_json=?,updated_at=?,revision=revision+1
+                WHERE id=? AND revision=?""",
+                (
+                    _json(selected),
+                    now,
+                    draft_hash,
+                    _json(sorted(applied_numbers | {
+                        int(item["number"])
+                        for item in (draft.get("story_plan", {}).get("episodes") or [])
+                        if isinstance(item, dict) and item.get("number")
+                    })),
+                    now,
+                    run_id,
+                    expected_revision,
+                ),
             )
             if updated.rowcount != 1:
                 raise DomainRuleError("PIPELINE_APPLY_CONFLICT", "草案应用冲突，请刷新后重试")

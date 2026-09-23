@@ -110,15 +110,69 @@ class AspectRatio(StrEnum):
 
     @property
     def pixels(self) -> tuple[int, int]:
-        return _ASPECT_PIXELS[self]
+        return _aspect_pixels_for_ratio(self)
 
 
-_ASPECT_PIXELS: dict[AspectRatio, tuple[int, int]] = {
-    AspectRatio.WIDE: (1920, 1080),
-    AspectRatio.PORTRAIT: (1080, 1920),
-    AspectRatio.THREE_FOUR: (1080, 1440),
-    AspectRatio.SQUARE: (1080, 1080),
-}
+#: Default generation canvas (480p).  The real value is configured —
+#: ``runtime.explainer_generation_height`` in ``config/config.json`` — and reaches
+#: the edition through :func:`aspect_pixels_for_height`.  A local run generates at
+#: this proxy size and a later super-resolution step lifts the accepted film to the
+#: delivery size, so rendering at delivery size here would only cost time and disk
+#: without adding picture detail.
+DEFAULT_GENERATION_HEIGHT = 480
+
+#: Aspect ratio -> generation pixels at :data:`DEFAULT_GENERATION_HEIGHT`.
+ASPECT_PIXELS: dict[str, tuple[int, int]] = {}
+
+
+def _even(value: float) -> int:
+    """Nearest even integer, never below 2.
+
+    H.264 with 4:2:0 chroma needs even dimensions, and "480p" itself is a rounded
+    even number (16:9 at 480 is 853.33 wide, published as 854).  Rounding to the
+    nearest even value keeps that convention instead of silently losing a pixel to
+    truncation.
+    """
+
+    rounded = int(round(value))
+    if rounded % 2:
+        rounded += 1
+    return max(2, rounded)
+
+
+def aspect_pixels_for_height(aspect_ratio: str, generation_height: int | None = None) -> tuple[int, int]:
+    """Generation canvas for an aspect ratio at the configured 480p-scale setting.
+
+    The configured value is the **short side** of the frame, which is what "480p"
+    means in the platform presets: 16:9 becomes 854x480 and 9:16 becomes 480x854,
+    i.e. portrait keeps a 480-pixel width instead of collapsing to 270 pixels.
+    """
+
+    ratio = str(aspect_ratio or AspectRatio.WIDE.value)
+    try:
+        numerator_text, denominator_text = ratio.split(":", 1)
+        numerator = int(numerator_text)
+        denominator = int(denominator_text)
+    except (ValueError, AttributeError) as error:  # pragma: no cover - guarded by callers
+        raise ExplainerContractError("SCHEMA_INVALID", "不支持的画幅", {"aspect_ratio": ratio}) from error
+    if numerator <= 0 or denominator <= 0:
+        raise ExplainerContractError("SCHEMA_INVALID", "不支持的画幅", {"aspect_ratio": ratio})
+    short_side = int(generation_height or DEFAULT_GENERATION_HEIGHT)
+    if short_side < 64:
+        short_side = DEFAULT_GENERATION_HEIGHT
+    short_side -= short_side % 2
+    if numerator >= denominator:
+        return (_even(short_side * numerator / denominator), short_side)
+    return (short_side, _even(short_side * denominator / numerator))
+
+
+ASPECT_PIXELS.update(
+    {ratio.value: aspect_pixels_for_height(ratio.value) for ratio in AspectRatio}
+)
+
+
+def _aspect_pixels_for_ratio(ratio: AspectRatio) -> tuple[int, int]:
+    return ASPECT_PIXELS[ratio.value]
 
 
 class SubtitleMode(StrEnum):

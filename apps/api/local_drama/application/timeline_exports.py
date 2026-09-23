@@ -11,6 +11,7 @@ from urllib.parse import quote
 from local_drama.application.export_archives import materialize_verified_export_archive
 from local_drama.application.local_artifacts import local_artifact_reference
 from local_drama.application.media import MediaService
+from local_drama.application.timeline import TimelineService
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
 from local_drama.infrastructure.database.sqlite import Database
@@ -72,27 +73,57 @@ def _video_probe_size(media: dict[str, Any]) -> tuple[int | None, int | None]:
 #: user believe the mix survived.
 _AUDIO_MIX_PARAMETERS = ("gain_db", "fade_in_us", "fade_out_us", "loop_enabled", "source_start_us")
 
-_TRANSITION_KIND_OTIO = {"DISSOLVE": "dissolve", "FADE": "fade"}
+_TRANSITION_OTIO_TYPE = {"DISSOLVE": "SMPTE_Dissolve", "FADE": "SMPTE_Dissolve"}
+
+#: What each writer can actually reproduce.  A capability that only one writer
+#: implements must never make another writer claim it too (TM-06).
+_WRITER_TRANSITION_CAPABILITY = {
+    "OTIO": True,
+    "EDL": True,
+    "JIANYING": False,
+}
+_WRITER_VERSIONS = {"OTIO": 4, "JIANYING": 4}
 
 
-def _otio_transition_effect(item: dict[str, Any], rate: float, transition_seconds: float) -> dict[str, object]:
-    """Encode a transition as a widely-readable OTIO ``LinearTimeWarp`` effect.
+def _transition_frames(item: dict[str, Any], rate: float) -> int:
+    parameters = item.get("parameters") or {}
+    seconds = float(parameters.get("transition_duration_seconds") or 0.0)
+    if seconds <= 0:
+        return 0
+    frames = max(1, round(seconds * rate))
+    # A dissolve cannot be longer than half of either neighbour, otherwise one
+    # clip disappears entirely and the timeline length is no longer the sum of
+    # its parts.
+    limit = max(1, int(item["duration_us"] * rate / 1_000_000) // 2)
+    return min(frames, max(1, limit))
 
-    OTIO has no first-class cross-dissolve object; a ``LinearTimeWarp`` is what
-    the OTIO adapters and most Python consumers understand.  The exact authored
-    value is also written into ``metadata.localdrama_transition`` so nothing is
-    lost even if a target editor ignores the effect.
+
+def _otio_transition(item: dict[str, Any], rate: float) -> dict[str, object] | None:
+    """A real OTIO ``Transition`` between two adjacent clips (TM-06).
+
+    The previous writer emitted a ``LinearTimeWarp`` with ``time_scalar=1.0``,
+    which is OTIO's *speed change* object — it carries no cross-dissolve meaning
+    at all, so every official adapter read the export back as two hard-cut clips.
+    ``Transition`` with in/out offsets is the first-class object for this, and the
+    offsets are the handles each neighbour gives up.
     """
     kind = str((item.get("parameters") or {}).get("transition_in") or "CUT").upper()
+    if kind not in _TRANSITION_OTIO_TYPE:
+        return None
+    frames = _transition_frames(item, rate)
+    if frames <= 0:
+        return None
+    half = frames / 2
     return {
-        "OTIO_SCHEMA": "LinearTimeWarp.1",
-        "name": f"localdrama_{kind.lower()}_transition",
-        "effect_name": _TRANSITION_KIND_OTIO.get(kind, "fade"),
-        "time_scalar": 1.0,
+        "OTIO_SCHEMA": "Transition.1",
+        "name": f"localdrama_{kind.lower()}",
+        "transition_type": _TRANSITION_OTIO_TYPE[kind],
+        "in_offset": _rational_time(half, rate),
+        "out_offset": _rational_time(half, rate),
         "metadata": {
             "localdrama_transition": kind,
-            "duration_seconds": transition_seconds,
-            "duration_frames": round(transition_seconds * rate),
+            "duration_frames": frames,
+            "duration_seconds": frames / rate,
         },
     }
 
@@ -170,7 +201,33 @@ class TimelineExportService:
             raise DomainRuleError("TIMELINE_ITEMS_REQUIRED", "时间线 revision 没有可导出 item")
         return dict(revision), items
 
+    def _frozen_transition_seconds(
+        self, revision: dict[str, Any], video_items: list[dict[str, Any]]
+    ) -> dict[int, float]:
+        """The transition window the RENDER actually applies, per target item index.
+
+        TM-06: the OTIO/EDL writers used to read ``transition_duration_seconds``
+        straight out of the user's item parameters.  A timeline whose dissolve came
+        from the editor's rule rather than from an explicit number therefore
+        exported with no transition at all, while the same revision's MP4 really
+        contained one — the exchange package and the rendered film disagreed about
+        the episode's length and about what happens at the cut.
+        """
+        fps_num = int(revision.get("fps_num") or 0)
+        fps_den = int(revision.get("fps_den") or 0)
+        if fps_num <= 0 or fps_den <= 0 or not video_items:
+            return {}
+        fps = fps_num / fps_den
+        starts = [int(item["start_us"]) for item in video_items]
+        transitions, _frames = TimelineService._transition_plan(
+            video_items, fps_num=fps_num, fps_den=fps_den, leading_blank_us=max(0, min(starts))
+        )
+        return {int(entry["to_item_index"]): float(entry["duration_seconds"]) for entry in transitions}
+
     def _verified_items(self, revision: dict[str, Any], items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        video_items = [item for item in items if str(item["track_type"]).upper() == "VIDEO" and item["media_version_id"]]
+        planned = self._frozen_transition_seconds(revision, video_items)
+        video_order = {str(item["id"]): index for index, item in enumerate(video_items)}
         verified: list[dict[str, Any]] = []
         for item in items:
             media_version_id = item["media_version_id"]
@@ -179,12 +236,24 @@ class TimelineExportService:
             media = self.media.verify_content_integrity(str(media_version_id))
             if media["project_id"] != revision["project_id"]:
                 raise DomainRuleError("MEDIA_PROJECT_MISMATCH", "导出媒体必须属于时间线项目")
-            parameters = item["parameters"]
+            parameters = dict(item["parameters"] or {})
             source_start_us = int(parameters.get("source_start_us", 0))
             duration_us = int(item["end_us"]) - int(item["start_us"])
             if source_start_us < 0:
                 raise DomainRuleError("TIMELINE_SOURCE_RANGE_INVALID", "source_start_us 不能为负数")
-            verified.append({**item, "media": media, "source_start_us": source_start_us, "duration_us": duration_us})
+            index = video_order.get(str(item["id"]))
+            if index is not None and index in planned:
+                # The plan wins over a missing or stale authored number.
+                parameters["transition_duration_seconds"] = planned[index]
+            verified.append(
+                {
+                    **item,
+                    "parameters": parameters,
+                    "media": media,
+                    "source_start_us": source_start_us,
+                    "duration_us": duration_us,
+                }
+            )
         return verified
 
     @staticmethod
@@ -196,7 +265,51 @@ class TimelineExportService:
         for track_type, track_items in grouped.items():
             children: list[dict[str, object]] = []
             cursor_us = 0
+            # TM-06: the official reader sums the children's source ranges PLUS each
+            # transition's in/out offsets, so the old writer's 0.5 s dissolve exported
+            # as a 4.0 s timeline while the rendered film was 3.5 s.  ``xfade`` moves
+            # the incoming picture T/2 earlier, so a dissolve takes ``in_offset`` from
+            # the clip that precedes it and ``out_offset`` from the clip that follows.
+            # Trimming those handles makes the reader's duration equal the rendered
+            # film's; this was verified against the official OpenTimelineIO 0.18.1
+            # reader.  Everything is computed in ONE linear pass over an explicit
+            # sequence, so the two sides of a transition can never be swapped.
+            sequence: list[tuple[str, Any]] = []
             for item in track_items:
+                transition = (
+                    _otio_transition(item, rate)
+                    if track_type == "VIDEO" and TimelineExportService._transition_kind(item) != "CUT"
+                    else None
+                )
+                if transition is not None:
+                    sequence.append(("transition", transition))
+                sequence.append(("clip", item))
+            trims: dict[str, dict[str, float]] = {}
+            for position, (kind, payload) in enumerate(sequence):
+                if kind != "transition":
+                    continue
+                in_offset = float(payload["in_offset"]["value"])
+                out_offset = float(payload["out_offset"]["value"])
+                if position > 0:
+                    trims.setdefault(str(sequence[position - 1][1]["id"]), {})["out"] = in_offset
+                if position + 1 < len(sequence):
+                    trims.setdefault(str(sequence[position + 1][1]["id"]), {})["in"] = out_offset
+            for kind, payload in sequence:
+                if kind == "transition":
+                    children.append(payload)
+                    continue
+                item = payload
+                handles = trims.get(str(item["id"]), {})
+                half_in = float(handles.get("in", 0.0))
+                half_out = float(handles.get("out", 0.0))
+                frames = int(item["duration_us"]) * rate / 1_000_000
+                visible = frames - half_in - half_out
+                if visible <= 0:
+                    raise DomainRuleError(
+                        "TIMELINE_EXPORT_TRANSITION_TOO_LONG",
+                        "转场重叠超过相邻镜头时长，交换包无法表达该时间线",
+                        {"timeline_item_id": str(item["id"]), "rate": rate},
+                    )
                 start_us = int(item["start_us"])
                 if start_us > cursor_us:
                     children.append(
@@ -211,16 +324,7 @@ class TimelineExportService:
                         }
                     )
                 media = item["media"]
-                source_start = int(item["source_start_us"]) * rate / 1_000_000
-                duration = int(item["duration_us"]) * rate / 1_000_000
-                clip_effects: list[dict[str, object]] = []
-                transition_seconds = 0.0
-                if track_type == "VIDEO":
-                    transition_seconds = float(
-                        ((item.get("parameters") or {}).get("transition_duration_seconds") or 0.0)
-                    )
-                    if TimelineExportService._transition_kind(item) != "CUT" and transition_seconds > 0:
-                        clip_effects.append(_otio_transition_effect(item, rate, transition_seconds))
+                source_start = int(item["source_start_us"]) * rate / 1_000_000 + half_in
                 clip_metadata: dict[str, Any] = {
                     "localdrama_timeline_item_id": item["id"],
                     # The authored parameters travel with the clip so a human can
@@ -231,11 +335,15 @@ class TimelineExportService:
                     clip_metadata["localdrama_audio_mix_parameters"] = {
                         name: (item.get("parameters") or {}).get(name) for name in _AUDIO_MIX_PARAMETERS
                     }
+                clip_metadata["localdrama_transition_handles"] = {
+                    "in_frames": half_in,
+                    "out_frames": half_out,
+                }
                 children.append(
                     {
                         "OTIO_SCHEMA": "Clip.2",
                         "name": str(media["source_name"]),
-                        "source_range": _time_range(source_start, duration, rate),
+                        "source_range": _time_range(source_start, visible, rate),
                         "media_references": {
                             "DEFAULT_MEDIA": {
                                 "OTIO_SCHEMA": "ExternalReference.1",
@@ -253,7 +361,7 @@ class TimelineExportService:
                         },
                         "active_media_reference_key": "DEFAULT_MEDIA",
                         "metadata": clip_metadata,
-                        "effects": clip_effects,
+                        "effects": [],
                         "markers": [],
                         "enabled": True,
                     }
@@ -406,10 +514,10 @@ class TimelineExportService:
         if nominal_fps <= 0 or nominal_fps > 99:
             raise DomainRuleError("EDL_FPS_UNSUPPORTED", "EDL 仅支持 1—99 的名义帧率")
         items = self._verified_items(revision, raw_items)
-        losses = self._export_losses(items, format_label="OTIO/EDL")
+        losses = self._export_losses(items, format_label="OTIO/EDL", writer="OTIO")
         identity = {
             "schema_version": "localdrama.timeline-export.v1",
-            "writer_version": 2,
+            "writer_version": _WRITER_VERSIONS["OTIO"],
             "timeline_revision_id": timeline_revision_id,
             "revision_hash": revision["revision_hash"],
             "fps_num": fps_num,
@@ -422,9 +530,13 @@ class TimelineExportService:
                     "start_us": item["start_us"],
                     "end_us": item["end_us"],
                     "source_start_us": item["source_start_us"],
+                    # TM-06: a writer change must invalidate the cached package, so
+                    # the effects that decide the OTIO output are part of the hash.
+                    "parameters": dict(item.get("parameters") or {}),
                 }
                 for item in items
             ],
+            "losses": losses,
         }
         export_hash = hashlib.sha256(_canonical(identity)).hexdigest()
         project_root = self.settings.resolve_project_root(str(revision["root_rel"]))
@@ -471,32 +583,52 @@ class TimelineExportService:
         return self._result(project_root, final, manifest, reused=False)
 
     @staticmethod
-    def _export_losses(items: list[dict[str, Any]], *, format_label: str) -> list[dict[str, Any]]:
-        """List every frozen effect this exchange format cannot reproduce.
+    def _export_losses(
+        items: list[dict[str, Any]],
+        *,
+        format_label: str,
+        writer: str,
+    ) -> list[dict[str, Any]]:
+        """List every frozen effect THIS writer cannot reproduce.
 
-        An export must never present "file written" as "editing effects fully
-        preserved".  Transitions that the format can express are encoded (see
-        ``_otio`` and ``_edl``) and therefore are NOT losses; everything else is
-        reported here with the item that owns it.
+        Two audit defects live here.  The old rule treated "a positive transition
+        duration exists" as "the transition was preserved" for every format at
+        once, so a base interchange writer's OTIO capability silently covered the
+        Jianying writer as well, and both reported ``losses=[]``.  A writer's
+        capability is now declared per writer, and each loss names the format it
+        belongs to.  ``FADE`` is never silently downgraded to a dissolve.
         """
         losses: list[dict[str, Any]] = []
+        can_encode_transition = _WRITER_TRANSITION_CAPABILITY.get(writer, False)
+        transition_expressible = {"DISSOLVE"} if can_encode_transition else set()
         for item in items:
             rel_path = str(item["media"]["rel_path"])
             track_type = str(item["track_type"])
             parameters = item.get("parameters") or {}
             if track_type == "VIDEO":
                 kind = TimelineExportService._transition_kind(item)
-                duration = float(parameters.get("transition_duration_seconds") or 0.0)
-                if kind != "CUT" and duration <= 0:
+                if kind != "CUT" and kind not in transition_expressible:
+                    duration = float(parameters.get("transition_duration_seconds") or 0.0)
+                    if kind in {"DISSOLVE", "FADE"}:
+                        reason = (
+                            f"{format_label} 的转场写入口尚未实现或尚未在目标客户端验证；"
+                            "文件写出不等于转场保真，恢复信息保留在导出 manifest 中"
+                        )
+                    else:
+                        reason = (
+                            f"{format_label} 无 {kind} 的原生表达；"
+                            "只有 DISSOLVE 被声明为已实现能力"
+                        )
                     losses.append(
                         {
                             "rel_path": rel_path,
                             "timeline_item_id": str(item["id"]),
                             "track_type": track_type,
+                            "format": format_label,
                             "feature": f"TRANSITION_{kind}",
                             "label": f"入场转场 {kind}",
-                            "value": kind,
-                            "reason": f"{format_label} 只能表达带时长的转场；该 item 冻结参数没有 transition_duration_seconds",
+                            "value": {"kind": kind, "duration_seconds": duration},
+                            "reason": reason,
                             "recoverable_from_manifest": True,
                         }
                     )
@@ -507,6 +639,7 @@ class TimelineExportService:
                                 "rel_path": rel_path,
                                 "timeline_item_id": str(item["id"]),
                                 "track_type": track_type,
+                                "format": format_label,
                                 "feature": name.upper(),
                                 "label": label,
                                 "value": parameters.get(name),
@@ -515,7 +648,8 @@ class TimelineExportService:
                             }
                         )
             else:
-                losses.extend(_audio_item_losses(item, rel_path))
+                for loss in _audio_item_losses(item, rel_path):
+                    losses.append({**loss, "format": format_label})
         return losses
 
     def _subtitle_revision(self, revision: dict[str, Any], subtitle_revision_id: str) -> dict[str, Any]:
@@ -653,7 +787,7 @@ class TimelineExportService:
             "tracks": tracks,
             "localdrama": {
                 "schema": "localdrama.timeline-export.v1",
-                "writer_version": 3,
+                "writer_version": _WRITER_VERSIONS["JIANYING"],
                 "timeline_revision_id": revision["id"],
                 "revision_hash": revision["revision_hash"],
                 "fps_num": fps_num,
@@ -671,7 +805,7 @@ class TimelineExportService:
         subtitle = self._subtitle_revision(revision, subtitle_revision_id) if subtitle_revision_id else None
         identity = {
             "schema_version": "localdrama.timeline-export.v1",
-            "writer_version": 3,
+            "writer_version": _WRITER_VERSIONS["JIANYING"],
             "format": "jianying",
             "timeline_revision_id": timeline_revision_id,
             "revision_hash": revision["revision_hash"],
@@ -687,6 +821,9 @@ class TimelineExportService:
                     "start_us": item["start_us"],
                     "end_us": item["end_us"],
                     "source_start_us": item["source_start_us"],
+                    # The frozen transition data decides what the draft says about
+                    # every cut, so a change there must invalidate the cached package.
+                    "parameters": dict(item.get("parameters") or {}),
                 }
                 for item in items
             ],
@@ -696,7 +833,10 @@ class TimelineExportService:
         if not project_root.is_relative_to(self.settings.projects_root.resolve()) or not project_root.is_dir() or project_root.is_symlink():
             raise DomainRuleError("PROJECT_ROOT_INVALID", "项目根目录无效")
         base = project_root / "05_timelines" / str(revision["episode_code"]) / "exports"
-        final = base / f'timeline-v{revision["revision_no"]}-{export_hash[:12]}'
+        # The download allowlist, the artifact title and the ``is_jianying`` detection
+        # all read this prefix, so a Jianying package must not be named like an OTIO
+        # package.
+        final = base / f'jianying-v{revision["revision_no"]}-{export_hash[:12]}'
         if final.exists():
             if not final.is_dir() or final.is_symlink():
                 raise DomainRuleError("TIMELINE_EXPORT_TAMPERED", "时间线导出目标不是安全目录")
@@ -752,7 +892,7 @@ class TimelineExportService:
             files.append(
                 {"rel_path": f"{draft_folder_name}/draft_content.json", "byte_size": draft_path.stat().st_size, "sha256": _sha256(draft_path)}
             )
-            losses = self._export_losses(items, format_label="剪映草稿")
+            losses = self._export_losses(items, format_label="jianying", writer="JIANYING")
             manifest = {
                 **identity,
                 "export_hash": export_hash,

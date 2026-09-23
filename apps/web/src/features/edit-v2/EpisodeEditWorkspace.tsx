@@ -113,6 +113,13 @@ export function EpisodeEditWorkspace({ projectId, episodeId }: { projectId: stri
   const loadedSnapshotRef = useRef<TimelineEditorSnapshot>({ clips: [], ...UNKNOWN_AUDIO_OPTIONS });
   const baselineRef = useRef("");
   const loadedRevisionIdRef = useRef<string | null>(null);
+  // The *upstream fingerprint* of the last snapshot this editor accepted, and the
+  // freshness the server reported with it.  A refresh can change the fingerprint
+  // without changing the revision id (upstream video/subtitle/audio moved), and a
+  // revision can already be stale.  Both must participate in "may I overwrite the
+  // local edits?" and in "must I create a new revision?".
+  const loadedUpstreamFingerprintRef = useRef<string | null>(null);
+  const loadedFreshnessRef = useRef<string>("");
   const dataRef = useRef<typeof data>(data);
   const entityKeyRef = useRef("本集时间线");
   const saveTimelineRef = useRef<(expectedVersion: number) => Promise<DraftSaveResult>>(async () => ({ status: "blocked", reason: "时间线草稿尚未就绪。" }));
@@ -138,16 +145,28 @@ export function EpisodeEditWorkspace({ projectId, episodeId }: { projectId: stri
     const loadedSignature = snapshotSignature(loaded);
     const revisionId = data.latest_revision?.id ?? null;
     const previousRevisionId = loadedRevisionIdRef.current;
+    const fingerprint = data.upstream_fingerprint ?? "";
+    const previousFingerprint = loadedUpstreamFingerprintRef.current;
     setAudioOptionsKnown(Boolean(reported));
     loadedRevisionIdRef.current = revisionId;
+    loadedUpstreamFingerprintRef.current = fingerprint;
+    loadedFreshnessRef.current = data.freshness ?? "";
     loadedSnapshotRef.current = loaded;
-    // A background refresh that moved the server forward must not throw away
-    // the user's unsaved edits; the decision stays explicit.
-    const isExternalAdvance = previousRevisionId !== null
-      && revisionId !== previousRevisionId
-      && snapshotSignature(snapshotRef.current) !== baselineRef.current;
+    // A background refresh that moved the server forward must not throw away the
+    // user's unsaved edits; the decision stays explicit.  This previously compared
+    // only the *revision id*, so an upstream change that kept the same revision id
+    // (video/subtitle/audio replaced under it) went straight through and silently
+    // reset the local edits to the server snapshot.
+    const editing = snapshotSignature(snapshotRef.current) !== baselineRef.current;
+    const isExternalAdvance =
+      editing &&
+      previousRevisionId !== null &&
+      (revisionId !== previousRevisionId || (previousFingerprint !== null && fingerprint !== previousFingerprint));
     if (isExternalAdvance) {
-      setSyncNotice(`服务器已有新的时间线版本 v${data.latest_revision?.revision_no ?? 0}；页面中的未保存编排已保留。请先保存或放弃，再载入服务器版本。`);
+      setSyncNotice(
+        `服务器已有新的输入或时间线版本${revisionId !== previousRevisionId ? ` v${data.latest_revision?.revision_no ?? 0}` : ""}；` +
+          "页面中的未保存编排已保留。请先保存或放弃，再载入服务器版本。",
+      );
       return;
     }
     setClips(nextClips);
@@ -158,7 +177,7 @@ export function EpisodeEditWorkspace({ projectId, episodeId }: { projectId: stri
     setSyncNotice(null);
     publishTimeline(versionRef.current, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.upstream_fingerprint, data?.latest_revision?.id]);
+  }, [data?.upstream_fingerprint, data?.latest_revision?.id, data?.freshness]);
 
   useEffect(() => {
     publishTimeline(timelineVersion, snapshotSignature(snapshotRef.current) !== baselineRef.current);
@@ -225,7 +244,15 @@ export function EpisodeEditWorkspace({ projectId, episodeId }: { projectId: stri
     }
     const submitted = snapshotRef.current;
     const submittedSignature = snapshotSignature(submitted);
-    if (submittedSignature === baselineRef.current) {
+    // "The editor holds the same values the server last sent" is NOT the same as
+    // "a persisted timeline revision exists".  A freshly entered episode whose
+    // upstream suggestion was loaded as the baseline has no revision at all, so the
+    // old short-circuit answered "saved" without calling the API and left the
+    // episode without a freezable v1.  A stale revision must also be replaced.
+    const latestRevisionId = dataRef.current?.latest_revision?.id ?? null;
+    const freshness = dataRef.current?.freshness ?? "";
+    const mustCreateRevision = !latestRevisionId || freshness !== "CURRENT" || !dataRef.current?.allowed_actions.includes("FREEZE_TIMELINE");
+    if (submittedSignature === baselineRef.current && !mustCreateRevision) {
       publishTimeline(expectedVersion, false);
       return { status: "saved", savedVersion: expectedVersion };
     }

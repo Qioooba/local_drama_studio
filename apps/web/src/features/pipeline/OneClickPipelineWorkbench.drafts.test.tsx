@@ -143,6 +143,46 @@ describe("OneClickPipelineWorkbench manuscript drafts", () => {
     expect(screen.getByText("选择小说或剧本文档")).toBeTruthy();
   });
 
+  it("keeps the newly pasted manuscript when a late launch response arrives", async () => {
+    // The success callback used to clear the draft and mark the *current* text as
+    // the submitted baseline, so a manuscript typed while the preflight was in
+    // flight was reported as already submitted and lost its protection.
+    const launch = deferred<unknown>();
+    vi.mocked(pipelineClient.preflightStoryPipeline).mockResolvedValue({ ai: { ready: true, message: "" } } as never);
+    vi.mocked(pipelineClient.startOneClickPipeline).mockReturnValue(launch.promise as never);
+
+    renderWorkbench();
+    await screen.findByRole("heading", { name: "从完整原稿开始制作" });
+    const pasteTab = await screen.findByRole("tab", { name: "粘贴正文" });
+    fireEvent.click(pasteTab);
+    const textarea = () => screen.getByPlaceholderText("粘贴小说正文或剧本内容") as HTMLTextAreaElement;
+    fireEvent.change(textarea(), { target: { value: "提交中的原稿 A：这是一段足够长的正文内容。" } });
+    fireEvent.click(screen.getByRole("button", { name: "开始 AI 制作" }));
+    await waitFor(() => expect(vi.mocked(pipelineClient.startOneClickPipeline)).toHaveBeenCalledTimes(1));
+    // ... the operator keeps editing while the request is in flight ...
+    fireEvent.change(textarea(), { target: { value: "预检期间输入的新原稿 B：这同样是一段足够长的正文内容。" } });
+
+    launch.resolve({ run: completedRun() });
+    await waitFor(() => expect(draftRegistry.get("one-click-pipeline:proj-1")?.dirty).toBe(true));
+    await act(async () => {});
+
+    // B survives, stays dirty and keeps its navigation protection.
+    const owner = draftRegistry.get("one-click-pipeline:proj-1")!;
+    expect(owner.dirty).toBe(true);
+    expect(draftRegistry.getDirty().map((item) => item.ownerId)).toContain("one-click-pipeline:proj-1");
+    // Saving the still-dirty draft persists the *newer* manuscript, not the
+    // submitted one, and an unsuccessful launch keeps it too.
+    await act(async () => {
+      await owner.save!(owner.version);
+    });
+    expect(
+      String(window.localStorage.getItem("local-drama:pipeline-manuscript:v1:proj-1")),
+    ).toContain("预检期间输入的新原稿 B");
+    // What was actually submitted is A, not B.
+    const submitted = vi.mocked(pipelineClient.startOneClickPipeline).mock.calls[0][1] as Record<string, unknown>;
+    expect(String(submitted.raw_text ?? submitted.paste_text ?? "")).toContain("提交中的原稿 A");
+  });
+
   it("applies only the newest of two source selections", async () => {
     const first = deferred<unknown>();
     const second = deferred<unknown>();
@@ -387,3 +427,7 @@ describe("OneClickPipelineWorkbench read failures", () => {
     expect(screen.queryByText(/当前项目还没有已解析的原稿版本/)).toBeNull();
   });
 });
+
+
+
+

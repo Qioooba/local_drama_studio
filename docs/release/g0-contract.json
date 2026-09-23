@@ -97,7 +97,7 @@
   ],
   "migration_heads": {
     "source": "docs/release/migration-contract.json",
-    "expected_heads": ["0102_explainer_factory_foundation"]
+    "expected_heads": ["0104_pipeline_apply_watermark"]
   },
   "quality_gates": [
     {

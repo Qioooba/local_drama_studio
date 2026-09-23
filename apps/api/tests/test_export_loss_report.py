@@ -122,7 +122,12 @@ def test_export_result_and_manifest_report_every_dropped_effect(workspace, datab
 
 
 def test_transition_is_encoded_in_otio_and_edl_not_silently_dropped(workspace, database) -> None:
-    """A DISSOLVE that the format CAN express must be encoded, not listed as loss."""
+    """A DISSOLVE that the format CAN express must be encoded, not listed as loss.
+
+    TM-06 replaced the old ``LinearTimeWarp`` clip effect (OTIO's *speed change*
+    object, which every official reader took for a hard cut) with a real
+    ``Transition`` between the two clips.
+    """
 
     project, _service, timeline = _fixture(workspace, database, "med09_transition")
     exported = TimelineExportService(database, workspace).export_revision(str(timeline["id"]), format="standard")
@@ -131,13 +136,18 @@ def test_transition_is_encoded_in_otio_and_edl_not_silently_dropped(workspace, d
     otio_file = next(export_dir / str(item["rel_path"]) for item in exported["files"] if str(item["rel_path"]).endswith(".otio"))
     timeline_payload = json.loads(otio_file.read_text(encoding="utf-8"))
     video_track = next(track for track in timeline_payload["tracks"]["children"] if track["name"] == "VIDEO")
-    dissolve_clip = video_track["children"][1]
-    assert dissolve_clip["effects"], "the DISSOLVE must be encoded as an OTIO effect, not effects=[]"
-    effect = dissolve_clip["effects"][0]
-    assert effect["effect_name"] == "dissolve"
-    assert effect["metadata"]["localdrama_transition"] == "DISSOLVE"
-    assert effect["metadata"]["duration_seconds"] == 0.5
-    # The authored parameters travel with the clip as well.
+    kinds = [child["OTIO_SCHEMA"] for child in video_track["children"]]
+    assert kinds == ["Clip.2", "Transition.1", "Clip.2"], kinds
+    transition = video_track["children"][1]
+    assert transition["transition_type"] == "SMPTE_Dissolve"
+    assert transition["in_offset"]["value"] == 6  # 0.5 s at 24 fps, half per neighbour
+    assert transition["out_offset"]["value"] == 6
+    assert transition["metadata"]["localdrama_transition"] == "DISSOLVE"
+    assert transition["metadata"]["duration_seconds"] == 0.5
+    # Neither clip carries a speed-change effect any more, and the authored
+    # parameters still travel with the clip.
+    dissolve_clip = video_track["children"][2]
+    assert [effect["OTIO_SCHEMA"] for effect in dissolve_clip["effects"]] == []
     assert dissolve_clip["metadata"]["localdrama_item_parameters"]["transition_in"] == "DISSOLVE"
 
     edl_file = next(export_dir / str(item["rel_path"]) for item in exported["files"] if str(item["rel_path"]).endswith(".edl"))
@@ -152,8 +162,14 @@ def test_transition_is_encoded_in_otio_and_edl_not_silently_dropped(workspace, d
     assert "TRANSITION_DISSOLVE" not in {str(item["feature"]) for item in exported["losses"]}
 
 
-def test_transition_without_a_frozen_duration_is_reported_as_a_loss(workspace, database) -> None:
-    """A transition the format cannot express faithfully must be listed."""
+def test_a_transition_the_writer_cannot_encode_is_reported_as_a_loss(workspace, database) -> None:
+    """A transition the format cannot express faithfully must be listed.
+
+    TM-06: the export now reads the frozen plan rather than the item's authored
+    number, so a DISSOLVE with no explicit duration IS encoded for OTIO.  What a
+    writer genuinely cannot carry — here, a FADE, which OTIO has no distinct object
+    for — must still be listed instead of being silently written as something else.
+    """
 
     projects = ProjectService(database, workspace.projects_root)
     project = projects.create_project(
@@ -169,15 +185,44 @@ def test_transition_without_a_frozen_duration_is_reported_as_a_loss(workspace, d
         str(episode["id"]),
         [
             {"track_type": "VIDEO", "media_version_id": str(first["media_version_id"]), "start_us": 0, "end_us": 2_000_000, "parameters": {"transition_in": "CUT"}},
-            # DISSOLVE with no frozen duration: the exporter cannot encode it.
-            {"track_type": "VIDEO", "media_version_id": str(second["media_version_id"]), "start_us": 2_000_000, "end_us": 4_000_000, "parameters": {"transition_in": "DISSOLVE"}},
+            # FADE has no dedicated OTIO object: it must not masquerade as a dissolve.
+            {"track_type": "VIDEO", "media_version_id": str(second["media_version_id"]), "start_us": 2_000_000, "end_us": 4_000_000, "parameters": {"transition_in": "FADE"}},
         ],
-        {"source": "med09-noduration"},
+        {"source": "med09_noduration"},
     )
     exported = TimelineExportService(database, workspace).export_revision(str(timeline["id"]), format="standard")
     features = {str(item["feature"]) for item in exported["losses"]}
-    assert "TRANSITION_DISSOLVE" in features
+    assert "TRANSITION_FADE" in features
+    assert "TRANSITION_DISSOLVE" not in features
     assert exported["fidelity"] == "BASE_EDITING_INTERCHANGE_WITH_LOSSES"
+
+
+def test_a_rule_derived_dissolve_is_encoded_not_listed_as_a_loss(workspace, database) -> None:
+    """The audit's own fixture: a DISSOLVE with no authored duration is expressible."""
+
+    projects = ProjectService(database, workspace.projects_root)
+    project = projects.create_project(
+        code="med09_plan_dissolve", title="plan dissolve", episode_count=1, aspect_ratio="16:9",
+        fps_num=24, fps_den=1, target_duration_ms=8000, allow_unconfigured_capabilities=True,
+    )
+    episode = projects.list_episodes(str(projects.list_seasons(str(project["id"]))[0]["id"]))[0]
+    media = MediaService(database, workspace)
+    first = media.import_file(str(project["id"]), _video(workspace, "med09-pd-a.mp4"), purpose="SHOT_VIDEO", media_kind="VIDEO")
+    second = media.import_file(str(project["id"]), _video(workspace, "med09-pd-b.mp4"), purpose="SHOT_VIDEO", media_kind="VIDEO")
+    service = TimelineService(database, workspace)
+    timeline = service.create_timeline_revision(
+        str(episode["id"]),
+        [
+            {"track_type": "VIDEO", "media_version_id": str(first["media_version_id"]), "start_us": 0, "end_us": 2_000_000, "parameters": {"transition_in": "CUT"}},
+            {"track_type": "VIDEO", "media_version_id": str(second["media_version_id"]), "start_us": 2_000_000, "end_us": 4_000_000, "parameters": {"transition_in": "DISSOLVE"}},
+        ],
+        {"source": "med09_plan_dissolve"},
+    )
+    exported = TimelineExportService(database, workspace).export_revision(str(timeline["id"]), format="standard")
+    assert "TRANSITION_DISSOLVE" not in {str(item["feature"]) for item in exported["losses"]}
+    payload = json.loads((_export_dir(workspace, project, exported) / str(exported["files"][0]["rel_path"])).read_text(encoding="utf-8"))
+    video_track = next(track for track in payload["tracks"]["children"] if track["name"] == "VIDEO")
+    assert [child["OTIO_SCHEMA"] for child in video_track["children"]] == ["Clip.2", "Transition.1", "Clip.2"]
 
 
 def test_export_without_effects_reports_an_empty_loss_list(workspace, database) -> None:

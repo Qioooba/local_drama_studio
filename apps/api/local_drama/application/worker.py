@@ -5,11 +5,12 @@ from __future__ import annotations
 import errno
 import subprocess
 import threading
+import traceback
 from collections import deque
 from pathlib import Path
 from queue import Empty, Queue
 from time import monotonic
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from local_drama.application.adaptation_analysis_execution import AdaptationAnalysisExecutionService
 from local_drama.application.automation_workflows import AutomationWorkflowService
@@ -18,7 +19,9 @@ from local_drama.application.configuration import ConfigurationService
 from local_drama.application.dialogue import DialogueService
 from local_drama.application.episode_front_half_actions import EpisodeFrontHalfActionService
 from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
+from local_drama.application.explainers.production_pipeline import build_explainer_pipeline_handlers
 from local_drama.application.explainers.runtime_adapters import (
+    ExplainerRepositoryRead,
     ExplainerRepositoryTransaction,
     LocalAiNarrationTtsRuntime,
     LocalAsrAdapter,
@@ -29,10 +32,15 @@ from local_drama.application.explainers.runtime_adapters import (
     build_planner_factory,
 )
 from local_drama.application.explainers.visual_qc import build_visual_qc_provider
+from local_drama.application.explainers.workflow_bridge import (
+    is_explainer_workflow_item,
+    run_explainer_workflow_step,
+)
 from local_drama.application.generation import GenerationService
 from local_drama.application.job_resources import GpuRuntime, gpu_runtime_for_job
 from local_drama.application.jobs import JobService
 from local_drama.application.local_llm import LocalLLMService
+from local_drama.logging_setup import get_logger
 from local_drama.application.media import MediaService
 from local_drama.application.production_choices import ProductionChoiceService
 from local_drama.application.production_identity_inputs import (
@@ -234,6 +242,37 @@ def _make_media_job_handler(
     return handler
 
 
+def _automation_item_payload(job: dict[str, Any], database: Any) -> dict[str, Any]:
+    """The batch item payload of one ``AUTOMATION_WORKFLOW_TASK`` job.
+
+    The generic dispatcher needs the item's payload to decide whether the task is a
+    drama action or an explainer step, so it is read here once, before either
+    branch runs.  A read failure is not fatal: the drama branch then reports the
+    payload problem itself with its own error code.
+    """
+
+    import json
+
+    snapshot = job.get("input_snapshot") or {}
+    run_id = str(snapshot.get("automation_run_id") or "")
+    task_id = str(snapshot.get("automation_task_id") or "")
+    if not run_id or not task_id:
+        return {}
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT item_json FROM automation_workflow_run_tasks WHERE id=? AND run_id=?",
+            (task_id, run_id),
+        ).fetchone()
+    if row is None:
+        return {}
+    try:
+        item = json.loads(str(row["item_json"] or "{}"))
+    except (TypeError, ValueError):
+        return {}
+    payload = item.get("payload") if isinstance(item, dict) else None
+    return dict(payload) if isinstance(payload, Mapping) else {}
+
+
 def _make_explainer_task_provider(
     worker: LocalMediaWorker,
 ) -> Callable[[dict[str, Any], Path], tuple[str, str, dict[str, Any], int]]:
@@ -256,6 +295,7 @@ def _make_explainer_task_provider(
             handlers=build_media_qc_handlers(
                 planner_factory=build_planner_factory(worker.database, worker.settings),
                 repo_factory=lambda: ExplainerRepositoryTransaction(worker.database),
+                read_repo_factory=lambda: ExplainerRepositoryRead(worker.database),
                 settings=worker.settings,
                 visual_provider=build_visual_qc_provider(
                     worker.database,
@@ -263,6 +303,23 @@ def _make_explainer_task_provider(
                     frame_root=worker.settings.explainer_frames_root,
                 ),
                 media_content_path=lambda media_version_id: worker.media.content_path(media_version_id)[1],
+                extra_handlers=build_explainer_pipeline_handlers(
+                    repo_factory=lambda: ExplainerRepositoryTransaction(worker.database),
+                    repo_factory_read=lambda: ExplainerRepositoryRead(worker.database),
+                    database=worker.database,
+                    settings=worker.settings,
+                    media_service=worker.media,
+                    atomic_writer=worker._atomic_file,
+                    narration_runtime=(
+                        None
+                        if worker.voxcpm_runtime is None
+                        else LocalAiNarrationTtsRuntime(worker.voxcpm_runtime, media=worker.media)
+                    ),
+                    media_ops=MediaServiceNarrationPort(worker.media),
+                    aligner=LocalForcedAlignerAdapter(worker.voxcpm_runtime),
+                    asr=LocalAsrAdapter(worker.voxcpm_runtime),
+                    work_root=worker.settings.work_root,
+                ),
             ),
             step_store=RepositoryExplainerStepStore(
                 repo_factory=lambda: ExplainerRepositoryTransaction(worker.database),
@@ -545,6 +602,101 @@ class LocalMediaWorker:
     def _set_expected_duration_ms(self, duration_ms: int | None) -> None:
         """Own the FFmpeg progress state that handlers feed before encoding."""
         self._ffmpeg_expected_duration_ms = duration_ms
+
+    def _run_with_lease_heartbeat(
+        self,
+        handler: Callable[[dict[str, Any], Path], Any],
+        job: dict[str, Any],
+        output_root: Path,
+        *,
+        attempt_id: str,
+        token: str,
+        worker_id: str,
+        lease_seconds: int = 240,
+        interval_seconds: float = 20.0,
+    ) -> Any:
+        """Run one long explainer stage while a dedicated thread renews its lease.
+
+        The explainer text stages call the local LLM, and a 27B local model can take
+        minutes for one long script.  Progress reporting is what renews a lease, and
+        a stage handler has nothing truthful to report while it waits — so the
+        previous behaviour let the 60-second lease expire mid-call, the reconciler
+        re-queued the job, and the same stage ran twice.  This runs the blocking work
+        on its own thread and renews the lease from the runner's own thread until it
+        settles.
+        """
+
+        outcome: dict[str, Any] = {}
+        finished = threading.Event()
+
+        def work() -> None:
+            try:
+                outcome["value"] = handler(job, output_root)
+            except BaseException as error:  # re-raised on the runner thread
+                outcome["error"] = error
+            finally:
+                finished.set()
+
+        thread = threading.Thread(
+            target=work, name=f"explainer-stage-{str(job.get('id'))[:8]}", daemon=True
+        )
+        thread.start()
+        get_logger("worker").info(
+            "explainer_lease_heartbeat_started job_id=%s attempt_id=%s lease_seconds=%s interval=%s",
+            str(job.get("id")),
+            attempt_id,
+            lease_seconds,
+            interval_seconds,
+        )
+        try:
+            while not finished.wait(interval_seconds):
+                try:
+                    heartbeat = self.jobs.heartbeat(
+                        attempt_id,
+                        token,
+                        worker_id,
+                        progress={**self._active_progress, "phase": "EXPLAINER_STAGE"},
+                        lease_seconds=int(lease_seconds),
+                    )
+                except BaseException as error:
+                    get_logger("worker").warning(
+                        "explainer_lease_heartbeat_failed job_id=%s attempt_id=%s error=%s",
+                        str(job.get("id")),
+                        attempt_id,
+                        f"{type(error).__name__}: {getattr(error, 'code', '')} {getattr(error, 'message', error)}",
+                    )
+                    break
+                if heartbeat.get("cancel_requested"):
+                    # The handler observes cancellation through its own port; the
+                    # runner only stops renewing so a cancelled job can be reclaimed.
+                    break
+        finally:
+            thread.join()
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome.get("value")
+
+    def _lease_heartbeat_wrapper(
+        self,
+        handler: WorkerHandler,
+        *,
+        attempt_id: str,
+        token: str,
+        worker_id: str,
+    ) -> WorkerHandler:
+        """Wrap one long explainer job family so it cannot lose its lease."""
+
+        def execute(job: dict[str, Any], output_root: Path) -> WorkerExecution:
+            return self._run_with_lease_heartbeat(
+                handler,
+                job,
+                output_root,
+                attempt_id=attempt_id,
+                token=token,
+                worker_id=worker_id,
+            )
+
+        return execute
 
     def _report_progress(self, progress: dict[str, Any], *, force: bool = False) -> bool:
         """Persist truthful, monotonic progress and return the cancel fact.
@@ -838,6 +990,44 @@ class LocalMediaWorker:
             heartbeat_stop.set()
             heartbeat_thread.join(timeout=2.0)
 
+    def _explainer_handlers(self) -> dict[str, Any]:
+        """Every explainer business stage this worker can execute, merged once.
+
+        Used by the explainer workflow dispatch so one workflow item executes
+        exactly one planned step through the same handler set a standalone stage
+        job would use.
+        """
+
+        return build_media_qc_handlers(
+            planner_factory=build_planner_factory(self.database, self.settings),
+            repo_factory=lambda: ExplainerRepositoryTransaction(self.database),
+            read_repo_factory=lambda: ExplainerRepositoryRead(self.database),
+            settings=self.settings,
+            visual_provider=build_visual_qc_provider(
+                self.database,
+                self.settings,
+                frame_root=self.settings.explainer_frames_root,
+            ),
+            media_content_path=lambda media_version_id: self.media.content_path(media_version_id)[1],
+            extra_handlers=build_explainer_pipeline_handlers(
+                repo_factory=lambda: ExplainerRepositoryTransaction(self.database),
+                repo_factory_read=lambda: ExplainerRepositoryRead(self.database),
+                database=self.database,
+                settings=self.settings,
+                media_service=self.media,
+                atomic_writer=self._atomic_file,
+                narration_runtime=(
+                    None
+                    if self.voxcpm_runtime is None
+                    else LocalAiNarrationTtsRuntime(self.voxcpm_runtime, media=self.media)
+                ),
+                media_ops=MediaServiceNarrationPort(self.media),
+                aligner=LocalForcedAlignerAdapter(self.voxcpm_runtime),
+                asr=LocalAsrAdapter(self.voxcpm_runtime),
+                work_root=self.settings.work_root,
+            ),
+        )
+
     def _dispatcher(
         self,
         *,
@@ -872,6 +1062,26 @@ class LocalMediaWorker:
         handlers: dict[str, WorkerHandler] = {
             job_type: adapt(handler) for job_type, handler in simple_handlers.items()
         }
+        # Every explainer business stage is a long local stage (LLM, TTS, render) and
+        # must keep its lease alive while it works.
+        explainer_job_types = {
+            "EXPLAINER_TASK",
+            "NARRATION_TTS",
+            "NARRATION_ALIGN",
+            *(
+                stage_code
+                for stage_code, provider in _EXTRACTED_HANDLER_PROVIDERS.items()
+                if provider is _make_explainer_task_provider
+            ),
+        }
+        for job_type in sorted(explainer_job_types):
+            if job_type in handlers:
+                handlers[job_type] = self._lease_heartbeat_wrapper(
+                    handlers[job_type],
+                    attempt_id=attempt_id,
+                    token=token,
+                    worker_id=worker_id,
+                )
         handlers["CPU_TEST"] = lambda job, root: self._run_cpu_test(job, root, worker_id)
         handlers["MODEL_PLATFORM_EXECUTION"] = self._run_model_platform_execution
         handlers["MODEL_PLATFORM_COMFY_SMOKE"] = self._run_comfy_capability_smoke
@@ -880,6 +1090,38 @@ class LocalMediaWorker:
         )
 
         def automation(job: dict[str, Any], root: Path) -> WorkerExecution:
+            if is_explainer_workflow_item(_automation_item_payload(job, self.database)):
+                # The explainer graph rides the same declarative workflow but its
+                # batch items carry a planned step code instead of an episode
+                # action, so they dispatch to the explainer task family and the
+                # report-carrying path that advances the owning run.
+                def run_step() -> tuple[str, str, dict[str, Any], int]:
+                    return run_explainer_workflow_step(
+                        job,
+                        root,
+                        database=self.database,
+                        work_root=self.settings.work_root,
+                        worker_id=worker_id,
+                        handlers=self._explainer_handlers(),
+                        step_store=RepositoryExplainerStepStore(
+                            repo_factory=lambda: ExplainerRepositoryTransaction(self.database),
+                        ),
+                        atomic_writer=self._atomic_file,
+                        policy_evaluator=QualityPolicyEvaluator(self.database),
+                        cancel_check=self._cancel_requested,
+                    )
+
+                kind, relative, report, produced_bytes = self._run_with_lease_heartbeat(
+                    lambda _job, _root: run_step(),
+                    job,
+                    root,
+                    attempt_id=attempt_id,
+                    token=token,
+                    worker_id=worker_id,
+                )
+                return self._execution_with_report(
+                    job, kind, relative, report, produced_bytes, worker_id=worker_id
+                )
             kind, relative, report, produced_bytes = run_automation_task(
                 job,
                 root,
@@ -1070,6 +1312,30 @@ class LocalMediaWorker:
                 attempt_id, token, worker_id, success=False,
                 error_code=code, error_detail_redacted="本地 worker 内存不足，任务已安全终止",
             )
+            return {"job": job, "attempt": attempt, "result": result, "error": code}
+        except BaseException as error:
+            # A handler that raises outside the declared error taxonomy must still
+            # settle its own job.  Letting it escape restarts the surrounding worker
+            # session and leaves the attempt dangling until its lease expires — the
+            # job then looks "running" while nothing at all is executing it.
+            code = type(error).__name__
+            get_logger("worker").warning(
+                "worker_handler_unexpected_error job_id=%s type=%s detail=%s",
+                str(job.get("id")),
+                code,
+                f"{error}\n{traceback.format_exc()[-3000:]}",
+            )
+            try:
+                result = self.jobs.complete(
+                    attempt_id,
+                    token,
+                    worker_id,
+                    success=False,
+                    error_code=code,
+                    error_detail_redacted=f"处理器异常（{code}）：{str(error)[:200]}",
+                )
+            except BaseException:
+                return {"job": job, "attempt": attempt, "error": code}
             return {"job": job, "attempt": attempt, "result": result, "error": code}
         finally:
             self._active_job_context = None

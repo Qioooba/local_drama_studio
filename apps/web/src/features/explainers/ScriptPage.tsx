@@ -6,13 +6,15 @@
  * script is an explicit action and it is blocked while a core claim conflicts.
  */
 
-import { useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "react-router-dom";
 import {
   createExplainerScriptRevision,
   freezeExplainerScript,
+  getExplainerClaimEvidence,
   importExplainerSource,
+  patchExplainerClaim,
   patchExplainerSegment,
   startExplainerResearchRun,
 } from "../../generated/api";
@@ -33,7 +35,13 @@ export function ExplainerScriptPage() {
   const [referenceUrls, setReferenceUrls] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState<{ id: string; display: string; spoken: string; revision: number } | null>(null);
+  // One draft per segment, keyed by project + script revision + canonical segment.
+  // The editor used to hold a single ``editing`` object, so clicking "修改这一段"
+  // on another paragraph replaced it and the unsaved text was gone — and the save
+  // callback cleared the editor unconditionally, which could discard a paragraph
+  // the operator started editing *while* the save was in flight.
+  const [drafts, setDrafts] = useState<Record<string, { display: string; spoken: string }>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const script = useExplainerScript(projectId);
   const revisionId = script.data?.revision ? String((script.data.revision as Record<string, unknown>).id) : null;
@@ -46,6 +54,99 @@ export function ExplainerScriptPage() {
   }, [claims]);
 
   const selected = segments.find((segment) => segment.id === selectedSegmentId) ?? segments[0] ?? null;
+  // FE-A11: the paragraph's "事实 Cxxx" button only wrote ``?claim=`` into the URL;
+  // nothing read it, so a conflicting fact could not be inspected or corrected and
+  // the "查看证据 → 修正/排除 → 再冻结" loop was impossible from the page.
+  const selectedClaimCode = searchParams.get("claim");
+  const selectedClaim = useMemo(
+    () => (selectedClaimCode ? claimByCode.get(selectedClaimCode) ?? null : null),
+    [claimByCode, selectedClaimCode],
+  );
+  const [claimNote, setClaimNote] = useState("");
+  const [claimFeedback, setClaimFeedback] = useState<string | null>(null);
+  const [claimError, setClaimError] = useState<string | null>(null);
+
+  const correctClaim = useMutation({
+    mutationFn: async ({ status, importance }: { status?: string; importance?: string }) => {
+      if (!selectedClaim) throw new Error("请先从段落或账本中选择一条事实");
+      if (!claimNote.trim()) throw new Error("修正事实状态必须填写理由");
+      const payload: Record<string, unknown> = {
+        expected_revision: Number(selectedClaim.revision ?? 1),
+        note: claimNote.trim(),
+        confidence_reason: claimNote.trim(),
+      };
+      if (status) payload.status = status;
+      if (importance) payload.importance = importance;
+      return patchExplainerClaim(projectId, String(selectedClaim.id), payload);
+    },
+    onSuccess: async () => {
+      setClaimError(null);
+      setClaimNote("");
+      setClaimFeedback("事实状态已更新；只有受该事实影响的讲稿与下游产物会失效，其它内容保持有效。");
+      await queryClient.invalidateQueries({ queryKey: queryKeys.explainers.all });
+    },
+    onError: (mutationError) => {
+      setClaimFeedback(null);
+      setClaimError(mutationError instanceof Error ? mutationError.message : String(mutationError));
+    },
+  });
+
+  const draftKeyFor = useCallback(
+    (segment: Record<string, unknown>) =>
+      `${projectId}:${String(revisionId ?? "")}:${String(segment.canonical_segment_id ?? segment.id)}`,
+    [projectId, revisionId],
+  );
+  const draftFor = useCallback(
+    (segment: Record<string, unknown>) => drafts[draftKeyFor(segment)],
+    [draftKeyFor, drafts],
+  );
+  const editing = useMemo(() => {
+    const segment = segments.find((item) => String(item.id) === editingId);
+    if (!segment) return null;
+    const draft = drafts[draftKeyFor(segment)];
+    if (!draft) return null;
+    return {
+      id: String(segment.id),
+      canonicalSegmentId: String(segment.canonical_segment_id ?? ""),
+      key: draftKeyFor(segment),
+      display: draft.display,
+      spoken: draft.spoken,
+      revision: Number(segment.revision ?? 1),
+      draftScriptRevisionId: revisionId,
+    };
+  }, [draftKeyFor, drafts, editingId, revisionId, segments]);
+  const editSegment = (segment: Record<string, unknown>) => {
+    const key = draftKeyFor(segment);
+    setDrafts((current) =>
+      current[key]
+        ? current
+        : {
+            ...current,
+            [key]: {
+              display: String(segment.display_text ?? ""),
+              spoken: String(segment.spoken_text ?? ""),
+            },
+          },
+    );
+    setEditingId(String(segment.id));
+  };
+  const updateDraft = (patch: { display?: string; spoken?: string }) => {
+    if (!editingId) return;
+    const segment = segments.find((item) => String(item.id) === editingId);
+    if (!segment) return;
+    // The key is derived here, from the values of *this* render.  A key captured
+    // inside a memoised updater can be stale (for example before the revision id
+    // resolves) and then the edit is written under a draft nobody displays.
+    const key = draftKeyFor(segment);
+    setDrafts((current) => ({
+      ...current,
+      [key]: {
+        display: patch.display ?? current[key]?.display ?? "",
+        spoken: patch.spoken ?? current[key]?.spoken ?? "",
+      },
+    }));
+  };
+  const closeEditing = () => setEditingId(null);
 
   const importSource = useMutation({
     mutationFn: async () => {
@@ -121,26 +222,40 @@ export function ExplainerScriptPage() {
   });
 
   const saveSegment = useMutation({
-    mutationFn: async () => {
-      if (!editing) throw new Error("没有正在编辑的段落");
-      return patchExplainerSegment(projectId, editing.id, {
-        expected_revision: editing.revision,
+    mutationFn: async (submitted: { id: string; key: string; display: string; spoken: string; revision: number }) => {
+      // The payload is frozen by the caller: the callbacks below act on this
+      // snapshot, never on "whatever the editor holds when the response arrives".
+      return patchExplainerSegment(projectId, submitted.id, {
+        expected_revision: submitted.revision,
         expected_script_revision_id: revisionId,
-        display_text: editing.display,
-        spoken_text: editing.spoken,
+        display_text: submitted.display,
+        spoken_text: submitted.spoken,
         allow_locked: false,
       });
     },
-    onSuccess: async (result) => {
+    onSuccess: async (result, submitted) => {
       setError(null);
       const invalidated = Array.isArray((result as Record<string, unknown>).invalidated)
         ? ((result as Record<string, unknown>).invalidated as unknown[]).length
         : 0;
       setFeedback(`已保存新讲稿版本；受影响下游 ${invalidated} 项被标记过期。`);
-      setEditing(null);
+      // Only the submitted segment's draft is retired.  Other paragraphs keep their
+      // drafts, and a paragraph started during the save keeps its own text.
+      setDrafts((current) => {
+        const next = { ...current };
+        delete next[submitted.key];
+        return next;
+      });
+      setEditingId((current) => (current === submitted.id ? null : current));
       await queryClient.invalidateQueries({ queryKey: queryKeys.explainers.all });
     },
-    onError: (mutationError) => setError(mutationError instanceof Error ? mutationError.message : String(mutationError)),
+    onError: (mutationError) => {
+      // A 409 keeps the local text: the user must be able to re-apply it rather
+      // than have the server version silently win.
+      const message = mutationError instanceof Error ? mutationError.message : String(mutationError);
+      setFeedback(null);
+      setError(`${message}（本地未保存文本已保留，可重新核对后再次保存）`);
+    },
   });
 
   const state = useMemo<PageState | null>(() => {
@@ -274,15 +389,33 @@ export function ExplainerScriptPage() {
                     <>
                       <label className="explainer-field">
                         显示文本
-                        <textarea value={editing.display} onChange={(event) => setEditing({ ...editing, display: event.target.value })} />
+                        <textarea value={editing.display} onChange={(event) => updateDraft({ display: event.target.value })} />
                       </label>
                       <label className="explainer-field">
                         朗读文本
-                        <textarea value={editing.spoken} onChange={(event) => setEditing({ ...editing, spoken: event.target.value })} />
+                        <textarea value={editing.spoken} onChange={(event) => updateDraft({ spoken: event.target.value })} />
                       </label>
                       <div className="explainer-actions" style={{ marginTop: 8 }}>
-                        <button type="button" className="primary-action" disabled={saveSegment.isPending} onClick={() => saveSegment.mutate()}>保存为新版本</button>
-                        <button type="button" onClick={() => setEditing(null)}>取消</button>
+                        <button
+                          type="button"
+                          className="primary-action"
+                          disabled={saveSegment.isPending}
+                          onClick={() => {
+                            // Read the live draft at click time rather than a value
+                            // captured when the button was rendered.
+                            const live = drafts[draftKeyFor(segment)];
+                            saveSegment.mutate({
+                              id: String(segment.id),
+                              key: draftKeyFor(segment),
+                              display: live?.display ?? String(segment.display_text ?? ""),
+                              spoken: live?.spoken ?? String(segment.spoken_text ?? ""),
+                              revision: Number(segment.revision ?? 1),
+                            });
+                          }}
+                        >
+                          保存为新版本
+                        </button>
+                        <button type="button" onClick={closeEditing}>取消</button>
                       </div>
                     </>
                   ) : (
@@ -292,10 +425,17 @@ export function ExplainerScriptPage() {
                       <div className="explainer-actions" style={{ marginTop: 8 }}>
                         <button
                           type="button"
-                          onClick={() => setEditing({ id: segment.id, display: segment.display_text, spoken: segment.spoken_text, revision: segment.revision })}
+                          onClick={() => editSegment(segment)}
                         >
                           修改这一段
                         </button>
+                        {/* Switching paragraphs keeps the other draft; the marker says
+                            so instead of letting the text silently disappear. */}
+                        {draftFor(segment) ? (
+                          <span className="badge warn">
+                            有未保存修改{drafts[draftKeyFor(segment)]?.display !== segment.display_text ? "" : "（内容与原文相同）"}
+                          </span>
+                        ) : null}
                       </div>
                     </>
                   )}
@@ -354,7 +494,105 @@ export function ExplainerScriptPage() {
             </>
           ) : <p className="muted">选择一个段落查看依据。</p>}
         </Panel>
+
+        {/* FE-A11: the deep-linked fact's own evidence and correction form. */}
+        {selectedClaimCode && (
+          <Panel
+            title={`事实 ${selectedClaimCode}`}
+            subtitle={selectedClaim ? "证据与修正" : "引用缺失"}
+            actions={<button type="button" className="pipeline-button quiet" onClick={() => setSearchParams((params) => { params.delete("claim"); return params; })}>关闭</button>}
+          >
+            {selectedClaim ? (
+              <>
+                <SettingRow label="状态" value={CLAIM_STATUS_LABELS[String(selectedClaim.status)] ?? String(selectedClaim.status)} />
+                <SettingRow label="重要度" value={String(selectedClaim.importance ?? "—")} />
+                <SettingRow label="修订" value={String(selectedClaim.revision ?? "—")} />
+                <p className="explainer-note">{String(selectedClaim.statement ?? "（这条事实没有保存陈述文本）")}</p>
+                <SettingRow label="独立来源数" value={String(selectedClaim.independent_source_count ?? "—")} />
+                <label className="explainer-field full">
+                  处理理由（必填）
+                  <textarea
+                    aria-label="处理理由"
+                    value={claimNote}
+                    onChange={(event) => setClaimNote(event.target.value)}
+                    placeholder="例如：来源仅有一家转载，无法独立核实，改为未核验。"
+                  />
+                </label>
+                <div className="explainer-actions">
+                  {(["SUPPORTED", "DISPUTED", "UNVERIFIED", "EXCLUDED"] as const).map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      disabled={correctClaim.isPending || !claimNote.trim()}
+                      onClick={() => correctClaim.mutate({ status })}
+                    >
+                      标记为 {CLAIM_STATUS_LABELS[status] ?? status}
+                    </button>
+                  ))}
+                </div>
+                <InlineError message={claimError} />
+                <InlineOk message={claimFeedback} />
+                <ClaimEvidence projectId={projectId} claimId={String(selectedClaim.id)} />
+              </>
+            ) : (
+              <p className="muted">该段落引用了不存在的事实代码；请修正段落引用或重新提取事实。</p>
+            )}
+          </Panel>
+        )}
       </div>
     </div>
   </div>;
 }
+
+/**
+ * FE-A11: the saved evidence windows for one fact.
+ *
+ * The ledger used to show only a code, a status and an importance, so a conflicting
+ * fact gave the operator nothing to read.  This fetches the frozen spans and shows
+ * each saved quote with its source and offsets, which is what turns "事实 C003" into
+ * an inspectable citation.  A fact with no span is reported as unsupported rather
+ * than as a load failure.
+ */
+function ClaimEvidence({ projectId, claimId }: { projectId: string; claimId: string }) {
+  const evidence = useQuery({
+    queryKey: ["explainer-claim-evidence", projectId, claimId],
+    queryFn: () => getExplainerClaimEvidence(projectId, claimId),
+    retry: false,
+  });
+  if (evidence.isPending) return <p className="muted">正在读取证据片段…</p>;
+  if (evidence.isError) {
+    return (
+      <div className="explainer-inline-error" role="alert">
+        <p>证据读取失败：{evidence.error instanceof Error ? evidence.error.message : "未知错误"}。这不表示该事实没有证据。</p>
+        <button type="button" className="pipeline-button quiet" onClick={() => { void evidence.refetch(); }}>重新读取证据</button>
+      </div>
+    );
+  }
+  const spans = evidence.data?.evidence ?? [];
+  if (spans.length === 0) {
+    return (
+      <p className="explainer-note" role="status">
+        该断言目前没有登记任何来源片段（{String(evidence.data?.empty_state ?? "NO_EVIDENCE_SPAN_RECORDED")}）：没有来源的断言不能靠标签变成有证据支持。
+      </p>
+    );
+  }
+  return (
+    <div className="explainer-evidence-list" aria-label="事实证据">
+      <small>独立来源 {Number(evidence.data?.independent_source_count ?? 0)} 个 · 片段 {spans.length} 条</small>
+      {spans.map((span) => (
+        <blockquote key={span.span_id}>
+          <p>{span.quote_text ? String(span.quote_text) : "（该片段没有保存可读引用文本）"}</p>
+          <small>
+            {String(span.source_title ?? span.source_id)}
+            {span.start_offset != null ? ` · [${span.start_offset}-${span.end_offset ?? span.start_offset}]` : ""}
+            {span.stance ? ` · ${String(span.stance)}` : ""}
+          </small>
+          {span.source_url ? (
+            <a href={String(span.source_url)} target="_blank" rel="noreferrer noopener">打开来源</a>
+          ) : null}
+        </blockquote>
+      ))}
+    </div>
+  );
+}
+

@@ -45,6 +45,92 @@ def _synthesis() -> dict:
     }
 
 
+def _synthesis_contract(facts: list[str], character: dict, scene: dict | None = None) -> dict:
+    return {
+        "story_bible": {**_synthesis()["story_bible"], "continuity_facts": facts},
+        "characters": [character],
+        "scenes": [scene] if scene else [],
+        "props": [],
+    }
+
+
+def _character(name: str) -> dict:
+    return {
+        "name": name,
+        "aliases": [],
+        "role": "主角",
+        "introduction": f"{name}是核心人物。",
+        "appearance": "青年修士",
+        "visual_prompt": f"{name}，全身设定",
+        "description": f"{name}是核心人物。",
+        "importance": "CORE",
+        "kind": "CHARACTER",
+    }
+
+
+def test_continuation_synthesis_keeps_the_earlier_batch_assets_and_memory() -> None:
+    """PR-03: batch 2 must not become the whole drama's cast and history.
+
+    The audit saw batch 1 discover 角色1 and batch 2 discover 角色2; the final
+    ``assets.characters`` became ``[角色2]`` and ``continuity_facts`` kept only the
+    second chapter's facts.  Earlier episodes were still visible but had lost the
+    characters they were built around.
+    """
+
+    class BatchClient:
+        def __init__(self) -> None:
+            self.call_count = 0
+            self.synthesis_prompts: list[str] = []
+
+        def chat_json(self, _system, prompt, *, json_schema, inference_options):
+            del json_schema, inference_options
+            # The episode prompt carries the manuscript body; the whole-drama
+            # synthesis prompt carries the digest payload.
+            if "原稿：" in prompt:
+                return _episode()
+            self.call_count += 1
+            self.synthesis_prompts.append(prompt)
+            # Each batch's synthesis only ever sees its own windows; batch 2 adds a
+            # character that batch 1 had never heard of.
+            if len(self.synthesis_prompts) == 1:
+                return _synthesis_contract(["第1章事实"], _character("角色1"))
+            return _synthesis_contract(["第2章事实"], _character("角色2"))
+
+    client = BatchClient()
+    service = object.__new__(FullStoryAIGenerationService)
+    service.resolve_client = lambda profile_version_id=None: (  # type: ignore[method-assign]
+        client,
+        {"profile_version_id": "p", "provider": "TEST_LLM", "model": "m"},
+    )
+
+    first = service.generate(
+        episode_specs=[{"number": 1, "code": "EP01", "title": "第1集", "summary": "第一章", "source_text": "第一章正文"}],
+        visual_style="国风仙侠",
+        target_seconds=120,
+    )
+    assert [item["name"] for item in first["assets"]["characters"]] == ["角色1"]
+    assert first["story_bible"]["continuity_facts"] == ["第1章事实"]
+
+    second = service.generate(
+        episode_specs=[{"number": 2, "code": "EP02", "title": "第2集", "summary": "第二章", "source_text": "第二章正文"}],
+        visual_style="国风仙侠",
+        target_seconds=120,
+        existing_analysis={
+            "episodes": first["episodes"],
+            "assets": first["assets"],
+            "story_bible": first["story_bible"],
+        },
+    )
+    # The earlier batch's episodes are replayed into the synthesis prompt: the second
+    # synthesis sees strictly more evidence than the first one did.
+    assert len(client.synthesis_prompts) == 2
+    assert "此前已确认的分集" in client.synthesis_prompts[1]
+    assert "此前已确认的分集" not in client.synthesis_prompts[0]
+    # ...and the whole-drama result accumulates instead of being replaced.
+    assert [item["name"] for item in second["assets"]["characters"]] == ["角色1", "角色2"]
+    assert set(second["story_bible"]["continuity_facts"]) == {"第1章事实", "第2章事实"}
+
+
 def test_episode_plan_accepts_lightweight_outline_without_shots() -> None:
     assert FullStoryAIGenerationService._validate_episode(_episode(), 1, 120) is None
 

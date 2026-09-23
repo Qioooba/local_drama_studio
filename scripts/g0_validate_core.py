@@ -274,15 +274,25 @@ def read_migration_graph(root: Path, spec: dict[str, Any]) -> tuple[dict[str, st
         revision: str | None = None
         raw_parents: object = None
         for node in tree.body:
-            if not isinstance(node, ast.Assign):
-                continue
-            for target in node.targets:
-                if not isinstance(target, ast.Name):
+            # Alembic's current template writes ``revision: str = "..."``
+            # (an ``AnnAssign``); older revisions use a plain ``Assign``.  Both
+            # spellings declare the same identifier and must be accepted, or the
+            # validator reports a false "declares no revision identifier".
+            if isinstance(node, ast.AnnAssign):
+                if not isinstance(node.target, ast.Name) or node.value is None:
                     continue
+                targets: list[ast.Name] = [node.target]
+                value_node = node.value
+            elif isinstance(node, ast.Assign):
+                targets = [target for target in node.targets if isinstance(target, ast.Name)]
+                value_node = node.value
+            else:
+                continue
+            for target in targets:
                 if target.id == "revision":
-                    revision = str(ast.literal_eval(node.value))
+                    revision = str(ast.literal_eval(value_node))
                 elif target.id == "down_revision":
-                    raw_parents = ast.literal_eval(node.value)
+                    raw_parents = ast.literal_eval(value_node)
         if revision is None:
             raise G0ValidationError(f"{path} declares no revision identifier")
         if isinstance(raw_parents, str):

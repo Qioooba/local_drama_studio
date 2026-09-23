@@ -81,6 +81,17 @@
 .explainer-candidate small { display: block; color: var(--text-muted); font-size: 11px; }
 .explainer-placeholder { display: grid; place-items: center; min-height: 120px; border-radius: var(--radius-md); border: 1px dashed var(--border-strong); background: var(--media-surface); color: var(--text-muted); font-size: 12px; text-align: center; padding: 12px; }
 
+/* Real media players.  ``min-width: 0`` stops the element from stretching its grid
+   cell, and the max-height keeps a tall film from pushing the issue list away. */
+.explainer-player { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.explainer-player-media { width: 100%; max-height: 420px; background: #000; border-radius: var(--radius-md); }
+.explainer-player-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.explainer-audio { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.explainer-audio audio { height: 32px; max-width: 100%; }
+.explainer-timeline-seg { min-width: 0; padding: 0 4px; white-space: nowrap; text-overflow: ellipsis; }
+.explainer-issue-row.selected { background: var(--surface-subtle); box-shadow: inset 2px 0 0 var(--attention); }
+.explainer-field textarea { width: 100%; min-height: 64px; font: inherit; padding: 6px 8px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); background: var(--surface-subtle); color: var(--text); }
+
 .explainer-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .explainer-table th, .explainer-table td { padding: 8px 10px; border-bottom: 1px solid var(--border-subtle); text-align: left; vertical-align: top; }
 .explainer-table th { color: var(--text-muted); font-weight: 500; font-size: 12px; }

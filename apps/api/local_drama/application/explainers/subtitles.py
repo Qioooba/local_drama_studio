@@ -593,7 +593,13 @@ class ExplainerSubtitleService:
 
     # ------------------------------------------------------------------ export
     def serialize(
-        self, *, cues: Sequence[Mapping[str, Any]], format: str, style: Mapping[str, Any] | None = None
+        self,
+        *,
+        cues: Sequence[Mapping[str, Any]],
+        format: str,
+        style: Mapping[str, Any] | None = None,
+        width: int | None = None,
+        height: int | None = None,
     ) -> str:
         target_format = str(format).upper()
         if target_format not in SUPPORTED_FORMATS:
@@ -615,7 +621,7 @@ class ExplainerSubtitleService:
                 lines.append("")
             return "\n".join(lines)
         style_payload = dict(style or {})
-        return self._serialize_ass(cues=normalised, style=style_payload)
+        return self._serialize_ass(cues=normalised, style=style_payload, width=width, height=height)
 
     def parse(self, *, content_text: str, format: str) -> list[dict[str, Any]]:
         target_format = str(format).upper()
@@ -899,19 +905,38 @@ class ExplainerSubtitleService:
             ),
         }
 
-    def _serialize_ass(self, *, cues: Sequence[Mapping[str, Any]], style: Mapping[str, Any]) -> str:
+    def _serialize_ass(
+        self,
+        *,
+        cues: Sequence[Mapping[str, Any]],
+        style: Mapping[str, Any],
+        width: int | None = None,
+        height: int | None = None,
+    ) -> str:
         position_to_alignment = {"TOP": 8, "CENTER": 5, "BOTTOM": 2}
         hex_color = str(style.get("color") or "#FFFFFF").lstrip("#").upper()
         while len(hex_color) < 6:
             hex_color += "0"
         ass_rgb = f"{hex_color[4:6]}{hex_color[2:4]}{hex_color[0:2]}"
         fontname = str(style.get("font") or "Microsoft YaHei")
-        fontsize = int(style.get("size") or 48)
+        # ``PlayRes`` is not optional.  Without it libass lays the script out on its
+        # 384x288 default canvas and scales the result up to the real frame, so a
+        # declared 48px caption was burned at roughly 240px on 1080p and ran off both
+        # edges of the delivered film.  The style's size is declared for 1080p and is
+        # scaled to whatever canvas is really rendered.
+        play_w = int(width) if width else 1920
+        play_h = int(height) if height else 1080
+        fontsize = max(16, int(round(int(style.get("size") or 48) * play_h / 1080)))
+        margin_h = max(10, int(round(play_w * 0.05)))
+        margin_v = max(10, int(round(play_h * 0.04)))
         outline = int(style.get("outline") or 2)
         alignment = position_to_alignment.get(str(style.get("position") or "BOTTOM"), 2)
+        cue_chars_per_line = max(8, int((play_w - 2 * margin_h) / max(1, fontsize)))
         lines = [
             "[Script Info]",
             "ScriptType: v4.00+",
+            f"PlayResX: {play_w}",
+            f"PlayResY: {play_h}",
             "WrapStyle: 0",
             "ScaledBorderAndShadow: yes",
             "YCbCr Matrix: TV.709",
@@ -921,20 +946,31 @@ class ExplainerSubtitleService:
             "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
             "Alignment, MarginL, MarginR, MarginV, Encoding",
             f"Style: Default,{fontname},{fontsize},&H00{ass_rgb}&,&H000000FF&,&H00000000&,&H80000000&,"
-            f"0,0,0,0,100,100,0,0,1,{outline},0,{alignment},10,10,10,1",
+            f"0,0,0,0,100,100,0,0,1,{outline},0,{alignment},{margin_h},{margin_h},{margin_v},1",
             "",
             "[Events]",
             "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
         ]
         for cue in cues:
             payload = _encode_payload(str(cue["text"]), str(cue["paired_text"]))
+            # ``WrapStyle: 0`` only breaks Latin runs at spaces, so a long Chinese cue
+            # was burned as one line wider than the frame.  The wrap is computed here
+            # from the real canvas and the rendered font size, exactly like the card
+            # layout, so no cue can leave the safe area at any output geometry.
+            safe_payload = "\n".join(
+                line
+                for part in payload.split("\n")
+                for line in (
+                    [""] if not part.strip() else wrap_text(part, max_chars_per_line=cue_chars_per_line)
+                )
+            )
             lines.append(
                 "Dialogue: 0,"
                 + format_ass_timestamp(int(cue["start_ms"]))
                 + ","
                 + format_ass_timestamp(int(cue["end_ms"]))
                 + ",Default,,0,0,0,,"
-                + payload.replace("\n", "\\N")
+                + safe_payload.replace("\n", "\\N")
             )
         return "\n".join(lines) + "\n"
 

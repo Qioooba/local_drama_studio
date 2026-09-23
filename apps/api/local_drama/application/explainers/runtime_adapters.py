@@ -48,8 +48,10 @@ from local_drama.domain.explainers.contracts import ExplainerContractError, Expl
 from local_drama.infrastructure.database.explainer_repository import ExplainerRepository
 from local_drama.infrastructure.local_ai_subprocess import LocalAiSubprocessRuntime
 
-#: Explainer stage codes and whether this build has a first-party handler for them.
-#: Every stage the production graph plans is now wired; a stage that cannot run
+#: The documented "use the local model's own voice" reference.  It is not a path.
+MODEL_DEFAULT_VOICE_SENTINEL = "LOCAL_MODEL_DEFAULT"
+
+#: Explainer stage codes and whether this build has a first-party handler for them.#: Every stage the production graph plans is now wired; a stage that cannot run
 #: still fails loudly instead of silently skipping, and the reason is stated here.
 STAGE_HANDLER_AVAILABILITY: dict[str, str] = {
     "RESEARCH_ACQUIRE": "WIRED_LOCAL_TEXT_PLANNER",
@@ -106,8 +108,12 @@ class LocalAiNarrationTtsRuntime:
                     {"voice_ref": voice_ref},
                 )
             _meta, prompt_path = self.media.content_path(prompt_ref.removeprefix("media:").strip())
-        elif prompt_ref.strip():
+        elif prompt_ref.strip() and prompt_ref.strip() != MODEL_DEFAULT_VOICE_SENTINEL:
             prompt_path = Path(prompt_ref.strip())
+        # ``MODEL_DEFAULT_VOICE_SENTINEL`` is the documented "no clone reference"
+        # voice: the local model narrates with its own voice, so no prompt audio is
+        # sent.  Treating the sentinel as a filesystem path made the runtime look for
+        # a file literally named after it and fail every narration take.
         result = self.runtime.synthesize(
             text,
             output,
@@ -120,6 +126,7 @@ class LocalAiNarrationTtsRuntime:
             "network_used": bool(result.payload.get("network_used", False)),
             "elapsed_seconds": result.payload.get("elapsed_seconds"),
             "speed_applied_natively": True,
+            "voice_mode": "MODEL_DEFAULT" if prompt_path is None else "CLONED_REFERENCE",
             "command": list(result.command),
         }
 
@@ -292,6 +299,34 @@ class ExplainerRepositoryTransaction:
         return self._context.__exit__(exc_type, exc, traceback)
 
 
+class ExplainerRepositoryRead:
+    """Context manager yielding a repository on a plain, non-transactional connection.
+
+    The explainer text stages call the local LLM between their reads and their
+    writes.  Running that call inside :class:`ExplainerRepositoryTransaction` held
+    the SQLite write lock for the whole inference, which blocked the job's own
+    lease heartbeat: it failed with ``database is locked``, the lease expired, and
+    the stage was re-queued while the model was still thinking.  A plain
+    connection takes no write lock, so a long local inference cannot starve the
+    queue it belongs to.
+    """
+
+    def __init__(self, database: Any) -> None:
+        self._database = database
+        self._connection: Any = None
+
+    def __enter__(self) -> ExplainerRepository:
+        self._connection = self._database.connect()
+        return ExplainerRepository(self._connection)
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        del exc_type, exc, traceback
+        if self._connection is not None:
+            self._connection.close()
+            self._connection = None
+        return None
+
+
 class QualityPolicyEvaluator:
     """The dedicated machine policy path (design §12.2, §14).
 
@@ -384,6 +419,7 @@ def build_explainer_task_handlers(
     *,
     planner_factory: Callable[[], "ExplainerStagePlanner"] | None = None,
     repo_factory: Callable[[], Any] | None = None,
+    read_repo_factory: Callable[[], Any] | None = None,
     visual_provider: Any | None = None,
     technical_reader: Callable[..., Any] | None = None,
     sampling_reader: Callable[..., Any] | None = None,
@@ -406,7 +442,11 @@ def build_explainer_task_handlers(
     if planner_factory is None or repo_factory is None:
         return {}
     handlers: dict[str, Callable[[dict[str, Any], Mapping[str, Any]], Any]] = dict(
-        build_stage_handlers(planner_factory=planner_factory, repo_factory=repo_factory)
+        build_stage_handlers(
+            planner_factory=planner_factory,
+            repo_factory=repo_factory,
+            read_repo_factory=read_repo_factory,
+        )
     )
     handlers.update(
         build_qc_handlers(
@@ -427,6 +467,8 @@ def build_media_qc_handlers(
     settings: Any,
     visual_provider: Any | None = None,
     media_content_path: Callable[[str], Path] | None = None,
+    extra_handlers: Mapping[str, Callable[[dict[str, Any], Mapping[str, Any]], Any]] | None = None,
+    read_repo_factory: Callable[[], Any] | None = None,
 ) -> dict[str, Callable[[dict[str, Any], Mapping[str, Any]], Any]]:
     """Explainer handlers with the real decoder-backed technical/sampling readers.
 
@@ -434,6 +476,11 @@ def build_media_qc_handlers(
     and binds the frame sampler to the instance work root.  Both tools are optional
     at runtime, and a machine without them keeps the corresponding layer at
     ``LAYER_NOT_RUN`` instead of reporting a pass nobody measured.
+
+    ``extra_handlers`` carries the production stages owned by
+    :mod:`local_drama.application.explainers.production_pipeline` (identity assets,
+    narration, pictures, subtitles, render and export).  They are merged here so one
+    dispatcher answers every planned step of the graph.
     """
 
     readers = build_media_qc_readers(
@@ -442,13 +489,17 @@ def build_media_qc_handlers(
         frame_root=settings.explainer_frames_root,
         content_path=media_content_path or _unavailable_content_path,
     )
-    return build_explainer_task_handlers(
+    handlers = build_explainer_task_handlers(
         planner_factory=planner_factory,
         repo_factory=repo_factory,
+        read_repo_factory=read_repo_factory,
         visual_provider=visual_provider,
         technical_reader=readers["technical_reader"],
         sampling_reader=readers["sampling_reader"],
     )
+    if extra_handlers:
+        handlers.update(dict(extra_handlers))
+    return handlers
 
 
 def _unavailable_content_path(media_version_id: str) -> Path:  # pragma: no cover - explicit failure path
@@ -596,7 +647,7 @@ class ExplainerScheduleExecutor:
 
         return ExplainerProductionService(
             self.database,
-            capability_probe=build_capability_probe(self.database),
+            capability_probe=build_capability_probe(self.database, self.settings),
             workflow_service=self.build_workflow_service(),
         )
 
@@ -799,39 +850,63 @@ class ExplainerScheduleExecutor:
             ]
         project_service = self.build_project_service()
         code = f"sched_{str(occurrence['id']).replace('-', '')[:16]}"
-        project = project_service.create_project(
-            code=code,
-            title=title,
-            episode_count=0,
-            season_count=0,
-            aspect_ratio=str(outputs[0].get("aspect_ratio") or "16:9"),
-            fps_num=int((outputs[0].get("fps") or {}).get("num") or 25),
-            fps_den=int((outputs[0].get("fps") or {}).get("den") or 1),
-            target_duration_ms=target_seconds * 1000,
-            allow_unconfigured_capabilities=True,
-            channel_profile_id=str(schedule["channel_profile_id"]),
-            channel_profile_version_id=str(schedule["channel_profile_version_id"]),
-            actor=f"schedule:{schedule['id']}",
-            product_kind="EXPLAINER",
+        # A channel-level schedule creates the project *and* its video through the
+        # same composite command the API uses.  The previous code passed the channel
+        # profile bindings to ``ProjectService.create_project`` — which has no such
+        # parameter, so it raised ``TypeError: unexpected keyword argument
+        # 'channel_profile_id'`` before writing anything — while ``create_video``,
+        # which does accept them, got neither.  The two writes were also separate
+        # transactions, so a failure in the second left an orphan project.
+        from local_drama.application.explainers.commands import (
+            ExplainerCreateCommand,
+            build_explainer_creation_service,
         )
-        project_id = str(project["id"])
-        video = self.build_production().create_video(
-            project_id=project_id,
+
+        first_output = dict(outputs[0])
+        fps = first_output.get("fps") or {}
+        content_kind = str(
+            (schedule.get("durations_json") or {}).get("content_kind") or "FACTUAL_EXPLAINER"
+        )
+        allowlist = tuple(str(item) for item in (schedule.get("source_allowlist_json") or []))
+        # The schedule's own topic scope and source allowlist are the creation
+        # input facts: a channel-level occurrence has no imported source document
+        # yet, so the scope is frozen into the input projection at creation time and
+        # the research mode mirrors whether the schedule declared allowed domains.
+        command = ExplainerCreateCommand(
             title=title,
             topic=topic_scope,
-            content_kind=str(schedule.get("durations_json", {}).get("content_kind") or "FACTUAL_EXPLAINER"),
-            input_kind="DOCUMENT_IMPORT",
-            input_payload={"source_refs": []},
+            content_kind=content_kind,
+            project_code=code,
+            input_kind="REFERENCE_LINKS" if allowlist else "TOPIC",
+            reference_urls=allowlist,
             duration_mode="TARGET",
             target_seconds=target_seconds,
             tolerance_percent=5.0,
-            source_locale=str(outputs[0].get("voice_locale") or "zh-CN"),
+            source_locale=str(first_output.get("voice_locale") or "zh-CN"),
             automation_mode=str(schedule.get("automation_mode") or "AUTO_WITH_EXCEPTIONS"),
             inference_mode="LOCAL_ONLY",
-            research_mode="WEB_RESEARCH" if schedule.get("source_allowlist_json") else "OFFLINE_IMPORT",
-            allowed_domains=[str(item) for item in (schedule.get("source_allowlist_json") or [])],
+            research_mode="WEB_RESEARCH" if allowlist else "OFFLINE_IMPORT",
+            allowed_domains=allowlist,
+            channel_profile_id=str(schedule["channel_profile_id"]),
+            channel_profile_version_id=str(schedule["channel_profile_version_id"]),
+            aspect_ratio=str(first_output.get("aspect_ratio") or "16:9"),
+            width=None,
+            height=None,
+            subtitle_mode=str(first_output.get("subtitle_mode") or "NONE"),
+            fps_num=int(fps.get("num") or 25),
+            fps_den=int(fps.get("den") or 1),
+            outputs=tuple(dict(item) for item in outputs),
+            actor=f"schedule:{schedule['id']}",
         )
-        del video
+        # ``occurrence_id`` is the creation command's idempotency identity, so a
+        # retried occurrence replays the same workspace instead of creating a second
+        # one, and the profile binding is stored on the video row rather than being
+        # silently dropped.
+        service = build_explainer_creation_service(
+            self.database, self.settings, project_service=project_service
+        )
+        created = service.create_workspace(command, idempotency_key=f"schedule-occurrence:{occurrence['id']}")
+        project_id = str(created["project"]["id"])
         with self.database.transaction() as connection:
             ExplainerRepository(connection).update(
                 "schedule_occurrences", str(occurrence["id"]), {"project_id": project_id}
@@ -872,39 +947,30 @@ class ExplainerScheduleExecutor:
         return self.default_schedule_outputs(service, occurrence_id)
 
 
-def build_capability_probe(database: Any) -> Callable[..., dict[str, Any]]:
-    """Resolve a capability through the real Model Platform V2 assignment chain.
+def build_capability_probe(database: Any, settings: Any | None = None) -> Callable[..., dict[str, Any]]:
+    """Resolve an explainer requirement through its canonical capability binding.
 
-    Shared by the API layer and the scheduled-production path so both judge
-    readiness the same way.  A resolution failure or an unpublished profile is
-    reported as unavailable, never optimistically as available.
+    Kept as the scheduler-facing factory name; the single implementation lives in
+    :mod:`local_drama.application.explainers.capability_binding` so the API layer
+    and the scheduled-production path judge readiness identically.  ``settings``
+    supplies the first-party local runtimes and the FFmpeg toolchain; without it
+    the probe fails closed instead of guessing.
     """
 
-    def build_probe(capability: str, *, project_id: str) -> dict[str, Any]:
-        from local_drama.model_platform.application.capability_resolution import (
-            CapabilityResolutionService,
-            CapabilityScopeContext,
-        )
+    from local_drama.application.explainers.capability_binding import (
+        build_explainer_capability_probe,
+    )
 
-        service = CapabilityResolutionService(database)
-        try:
-            resolution = service.resolve(capability, CapabilityScopeContext(project_id=project_id))
-        except DomainRuleError as error:
-            return {"available": False, "reason": error.code, "execution_class": "LOCAL"}
-        except Exception as error:  # resolution infrastructure failure is a gap
+    if settings is None:
+        def unavailable(capability: str, *, project_id: str) -> dict[str, Any]:
+            del project_id
             return {
                 "available": False,
-                "reason": f"CAPABILITY_RESOLUTION_FAILED:{type(error).__name__}",
+                "reason": "CAPABILITY_PROBE_SETTINGS_MISSING",
+                "requirement": capability,
                 "execution_class": "LOCAL",
             }
-        blocked = resolution.blocked_reason
-        available = blocked is None and bool(resolution.execution_profile_version_id)
-        return {
-            "available": available,
-            "reason": blocked or (None if available else "NO_PUBLISHED_PROFILE_VERSION"),
-            "profile_version_id": resolution.execution_profile_version_id,
-            "execution_class": "LOCAL",
-            "resolution_reason": resolution.resolution_reason,
-        }
 
-    return build_probe
+        return unavailable
+
+    return build_explainer_capability_probe(database, settings)

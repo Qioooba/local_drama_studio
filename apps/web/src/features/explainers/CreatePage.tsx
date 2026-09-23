@@ -132,28 +132,34 @@ export function ExplainerCreatePage() {
       if (inputKind === "DOCUMENT_IMPORT" && !sourceFile) throw new Error("请选择要上传的资料文件");
       if (inputKind === "REFERENCE_LINKS" && !referenceUrls.trim()) throw new Error("请填写参考链接");
 
-      const unique = title.trim() + ":" + inputKind + ":" + targetSeconds;
+      const payload = {
+        title: title.trim(),
+        topic: inputKind === "TOPIC" ? topic.trim() : title.trim(),
+        content_kind: contentKind,
+        input_kind: inputKind,
+        pasted_text: inputKind === "PASTED_SCRIPT" ? pastedText : null,
+        reference_urls: inputKind === "REFERENCE_LINKS" ? referenceUrls.split(/\s+/).filter(Boolean) : [],
+        duration_mode: "TARGET" as const,
+        target_seconds: targetSeconds,
+        tolerance_percent: 5,
+        source_locale: sourceLocale,
+        outputs,
+        automation_mode: automationMode,
+        inference_mode: "LOCAL_ONLY" as const,
+        research_mode: researchMode,
+        allowed_domains: researchMode === "WEB_RESEARCH" ? allowedDomains.split(/[\s,]+/).filter(Boolean) : [],
+        aspect_ratio: aspect,
+        primary_language: sourceLocale,
+      };
+      // FE-A02: the idempotency key must be bound to the WHOLE payload.  The old key
+      // hashed only `title:inputKind:targetSeconds`, so fixing a wrong configuration
+      // (topic, outputs, automation mode, pasted text) and clicking again reused the
+      // same key with a different body and the server answered
+      // IDEMPOTENCY_PAYLOAD_MISMATCH.  The scope stays stable per user operation, and
+      // the payload decides whether this is a retry or a new command.
       const created = await createExplainer(
-        {
-          title: title.trim(),
-          topic: inputKind === "TOPIC" ? topic.trim() : title.trim(),
-          content_kind: contentKind,
-          input_kind: inputKind,
-          pasted_text: inputKind === "PASTED_SCRIPT" ? pastedText : null,
-          reference_urls: inputKind === "REFERENCE_LINKS" ? referenceUrls.split(/\s+/).filter(Boolean) : [],
-          duration_mode: "TARGET",
-          target_seconds: targetSeconds,
-          tolerance_percent: 5,
-          source_locale: sourceLocale,
-          outputs,
-          automation_mode: automationMode,
-          inference_mode: "LOCAL_ONLY",
-          research_mode: researchMode,
-          allowed_domains: researchMode === "WEB_RESEARCH" ? allowedDomains.split(/[\s,]+/).filter(Boolean) : [],
-          aspect_ratio: aspect,
-          primary_language: sourceLocale,
-        },
-        stableIdempotencyKey("explainer-create", { unique }),
+        payload,
+        stableIdempotencyKey("explainer-create", payload),
       );
       const projectId = created.project.id;
       setCreatedProjectId(projectId);

@@ -124,6 +124,13 @@ class Settings(BaseModel):
     local_ai_model_root: Path | None = Field(default=None, exclude=True)
     latentsync_python: Path | None = Field(default=None, exclude=True)
     latentsync_root: Path | None = Field(default=None, exclude=True)
+    #: Explainer masters are generated at this proxy height (480p by default) and a
+    #: later super-resolution step lifts them to ``explainer_delivery_height``.
+    #: Both are machine-config keys (``runtime.explainer_generation_height`` /
+    #: ``runtime.explainer_delivery_height``), so the canvas is an operator setting
+    #: rather than something compiled into the renderer.
+    explainer_generation_height: int = Field(default=480, ge=240, le=2160)
+    explainer_delivery_height: int = Field(default=1080, ge=480, le=4320)
     frontend_dist_root: Path | None = None
     model_manifest_override: Path | None = None
     trusted_lan_unauthenticated: bool = False
@@ -390,6 +397,8 @@ class Settings(BaseModel):
             "llama_mtp_draft_tokens",
             "llama_startup_timeout_seconds",
             "gpu_switch_min_free_ratio",
+            "explainer_generation_height",
+            "explainer_delivery_height",
         ):
             env_name = f"LOCAL_DRAMA_{field_name.upper()}"
             if env_name in os.environ:
