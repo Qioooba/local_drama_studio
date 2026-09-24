@@ -92,6 +92,12 @@ class RuntimeConfig(BaseModel):
     explainer_generation_timeout_seconds: float = Field(default=600.0, gt=0, le=7200)
     #: Negative prompt applied to every generated beat picture.
     explainer_generation_negative_prompt: str = ""
+    #: VoxCPM2 narration diffusion steps.  The project default stays 4; the
+    #: upstream default is 10 and comparing them is a declared experiment.
+    explainer_tts_inference_timesteps: int = Field(default=4, ge=1, le=64)
+    #: VoxCPM2 generated-patch ceiling for one narration segment.  One patch is
+    #: about 0.16 s, so 256 is roughly 41 s against the 15-25 s segment target.
+    explainer_tts_max_len: int = Field(default=256, ge=16, le=4096)
 
     @field_validator("model_download_source_hosts")
     @classmethod
@@ -256,6 +262,8 @@ def settings_values(config: MachineConfig) -> dict[str, Any]:
         "explainer_generation_steps": config.runtime.explainer_generation_steps,
         "explainer_generation_timeout_seconds": config.runtime.explainer_generation_timeout_seconds,
         "explainer_generation_negative_prompt": config.runtime.explainer_generation_negative_prompt,
+        "explainer_tts_inference_timesteps": config.runtime.explainer_tts_inference_timesteps,
+        "explainer_tts_max_len": config.runtime.explainer_tts_max_len,
         "tool_fallback_dirs": config.tools.fallback_dirs,
         "ffmpeg_override": config.tools.ffmpeg,
         "ffprobe_override": config.tools.ffprobe,

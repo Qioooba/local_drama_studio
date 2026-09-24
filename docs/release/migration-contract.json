@@ -1,7 +1,7 @@
 {
   "schema_version": "localdrama.release-migration-contract.v1",
   "expected_heads": [
-    "0104_pipeline_apply_watermark"
+    "0105_explainer_beat_plan_scope"
   ],
   "upgrade_command": ".venv\\\\Scripts\\\\python.exe -m alembic upgrade heads",
   "rollback_policy": "restore_verified_pre_migration_backup_with_matching_code",
@@ -516,6 +516,14 @@
         "pipeline_runs.applied_revision_hash",
         "pipeline_runs.applied_episode_numbers_json",
         "a newer story-plan draft revision has an applicable diff instead of being refused as already applied"
+      ]
+    },
+    {
+      "revision": "0105_explainer_beat_plan_scope",
+      "facts": [
+        "explainer_visual_beats.plan_step_binding_id",
+        "beat code uniqueness scoped to the producing plan instead of the whole video",
+        "unattributed legacy beats keep a partial video+code unique index and are not backfilled without evidence"
       ]
     }
   ]

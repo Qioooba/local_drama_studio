@@ -22,6 +22,7 @@ Requirement mapping: REQ-05 (facts/evidence), REQ-06 (entities), REQ-07
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -632,11 +633,130 @@ def test_storyboard_refuses_an_unknown_segment_or_entity(database: Database) -> 
     assert "不存在的叙述段落" in error.value.message
 
 
-def test_storyboard_reports_uncovered_segments(database: Database) -> None:
+def test_storyboard_refuses_a_plan_that_leaves_segments_uncovered(database: Database) -> None:
+    """A partial plan is refused, not returned as PASS with a footnote.
+
+    The audit's A07 finding was exactly this: the shortfall was reported in
+    ``uncovered_segment_ids`` while the plan still came back ``PASS``, so a long
+    script could become a film that silently dropped its tail.
+    """
+
     _frozen_script(database)
     response = _beats_response()
     response["beats"] = response["beats"][:1]
     planner, _ = _planner({"beats": response})
+    with database.connect() as connection:
+        with pytest.raises(ExplainerContractError) as error:
+            planner.plan_storyboard(
+                repo=ExplainerRepository(connection),
+                project_id=PROJECT_ID,
+                video_id="video-1",
+                usable_render_types=["STILL_MOTION"],
+            )
+    assert "没有覆盖全部叙述段落" in error.value.message
+    assert error.value.details["uncovered_segment_ids"] == ["seg_002", "seg_003"]
+
+
+def test_storyboard_refuses_a_plan_that_runs_backwards(database: Database) -> None:
+    """Beats may overlap, but the picture clock is allocated in beat order."""
+
+    _frozen_script(database)
+    response = _beats_response()
+    # B001 now carries the *last* sentence and B002 the first two, so the plan
+    # would place the closing narration before the opening narration.
+    response["beats"][0]["segment_ids"] = ["seg_003"]
+    response["beats"][1]["segment_ids"] = ["seg_001", "seg_002"]
+    planner, _ = _planner({"beats": response})
+    with database.connect() as connection:
+        with pytest.raises(ExplainerContractError) as error:
+            planner.plan_storyboard(
+                repo=ExplainerRepository(connection),
+                project_id=PROJECT_ID,
+                video_id="video-1",
+                usable_render_types=["STILL_MOTION"],
+            )
+    assert "画面段顺序与旁白顺序不一致" in error.value.message
+
+
+class _BatchCoveringClient:
+    """Stand-in model that covers exactly the segments one batch prompt lists.
+
+    Batching can only be proven with a model that answers *the batch it was
+    given*; replaying one fixed plan would hide a dropped batch.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def chat_json(
+        self, system: str, user: str, images: Any = None, *, json_schema: Any = None, inference_options: Any = None
+    ) -> dict[str, Any]:
+        del system, images, inference_options
+        assert _schema_key(json_schema) == "beats"
+        self.calls.append(user)
+        catalogue = json.loads(user.split("叙述段落清单：\n", 1)[1].split("\n\n实体名录：", 1)[0])
+        return {
+            "beats": [
+                {
+                    "code": f"B{index:03d}",
+                    "render_type": "STILL_MOTION",
+                    "segment_ids": [str(item["canonical_segment_id"])],
+                    "visual_intent": f"画面 {index}",
+                    "visual_factuality": "FICTIONAL",
+                    "entity_codes": [],
+                    "claim_codes": [],
+                    "must_be_motion": False,
+                    "prompt_intent": f"意图 {index}",
+                }
+                for index, item in enumerate(catalogue, start=1)
+            ]
+        }
+
+
+def _frozen_chaptered_script(database: Database, *, segment_count: int, chapter_count: int = 8) -> list[str]:
+    """Freeze a long, chaptered script — the audit's 320-segment shape (V08)."""
+
+    seeded = _seed(database)
+    _claim_ledger(database, seeded)
+    per_chapter = segment_count // chapter_count
+    ids = [f"seg_{index:04d}" for index in range(1, segment_count + 1)]
+    with database.transaction() as connection:
+        repo = ExplainerRepository(connection)
+        service = ExplainerNarrationService(repo)
+        created = service.create_script_revision(
+            project_id=PROJECT_ID,
+            video_id="video-1",
+            locale="zh-CN",
+            title="长稿",
+            outline=["长稿"],
+            segments=[
+                {
+                    "canonical_segment_id": segment_id,
+                    "display_text": f"第 {index} 段解说内容。",
+                    "spoken_text": f"第 {index} 段解说内容。",
+                    "statement_type": "FACT",
+                    "claim_ids": ["C001"],
+                    "chapter_code": f"CH{(index - 1) // per_chapter + 1:02d}",
+                }
+                for index, segment_id in enumerate(ids, start=1)
+            ],
+        )
+        revision = created["script_revision"]
+        service.freeze_script(script_revision_id=str(revision["id"]), actor="test")
+        repo.update("explainer_videos", "video-1", {"current_script_revision_id": str(revision["id"])})
+    return ids
+
+
+def test_storyboard_plans_every_segment_past_the_old_catalogue_cap(database: Database) -> None:
+    """V08: a 320-segment script is planned in full, not truncated at 160.
+
+    The old ``_catalogue`` kept the first ``MAX_CATALOGUE_ITEMS`` rows and the
+    storyboard returned PASS with the remaining 160 reported as uncovered.
+    """
+
+    ids = _frozen_chaptered_script(database, segment_count=320)
+    client = _BatchCoveringClient()
+    planner = LocalTextPlanner(client_factory=lambda: client)
     with database.connect() as connection:
         plan = planner.plan_storyboard(
             repo=ExplainerRepository(connection),
@@ -644,7 +764,54 @@ def test_storyboard_reports_uncovered_segments(database: Database) -> None:
             video_id="video-1",
             usable_render_types=["STILL_MOTION"],
         )
-    assert plan["uncovered_segment_ids"] == ["seg_002", "seg_003"]
+    assert plan["status"] == "PASS"
+    assert plan["uncovered_segment_ids"] == []
+    assert plan["segment_count"] == 320
+    assert plan["covered_segment_count"] == 320
+    # Every segment went to the model, and a 320-segment script needs more than
+    # one call: the batches are a partition, not a truncation.
+    assert plan["batch_count"] > 1
+    seen: list[str] = []
+    for beat in plan["beats"]:
+        seen.extend(beat["segment_canonical_ids"])
+    assert sorted(seen) == sorted(ids)
+    # Per-batch ``B001`` numbering must be namespaced before the merge.
+    codes = [str(beat["code"]) for beat in plan["beats"]]
+    assert len(codes) == len(set(codes))
+    assert len(client.calls) == plan["batch_count"]
+    for report in plan["batches"]:
+        assert report["segment_count"] > 0
+    # The batches follow narration order and cover the script exactly once.
+    ordered = [report["first_segment_id"] for report in plan["batches"]]
+    assert ordered == sorted(ordered, key=lambda item: ids.index(item))
+    assert sum(report["segment_count"] for report in plan["batches"]) == 320
+
+
+def test_storyboard_batches_never_leave_a_batch_unplanned(database: Database) -> None:
+    """A batch that returns nothing must fail loudly, not shrink the plan."""
+
+    _frozen_chaptered_script(database, segment_count=130)
+    client = _BatchCoveringClient()
+    planner = LocalTextPlanner(client_factory=lambda: client)
+    seen = {"count": 0}
+    covering = _BatchCoveringClient.chat_json
+
+    def empty_on_second(system: str, user: str, images: Any = None, **kwargs: Any) -> dict[str, Any]:
+        seen["count"] += 1
+        if seen["count"] == 2:
+            return {"beats": []}
+        return covering(client, system, user, images, **kwargs)
+
+    client.chat_json = empty_on_second  # type: ignore[method-assign]
+    with database.connect() as connection:
+        with pytest.raises(ExplainerContractError) as error:
+            planner.plan_storyboard(
+                repo=ExplainerRepository(connection),
+                project_id=PROJECT_ID,
+                video_id="video-1",
+                usable_render_types=["STILL_MOTION"],
+            )
+    assert "没有返回任何画面段" in error.value.message
 
 
 def test_storyboard_needs_a_frozen_script(database: Database) -> None:

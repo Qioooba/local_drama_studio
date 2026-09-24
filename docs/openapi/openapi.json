@@ -33076,6 +33076,22 @@
               "type": "string",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "requestBody": {
@@ -33716,6 +33732,73 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ExplainerExportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/beats:adopt-generated": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Adopt Explainer Generated Beats",
+        "description": "Adopt the generated candidate of every beat that has no active selection.\n\n``confirm=false`` returns the scope preview (which beats would be adopted, which\nhave no adoptable candidate and which checks were never measured) and writes\nnothing.  ``confirm=true`` records one ``HUMAN`` adoption per beat through the\nsingle adoption entry, which is the operator's batch decision: it may pass an\nunmeasured content check but never a hard technical failure (design §2.5/§6.3).",
+        "operationId": "adoptExplainerGeneratedBeats",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerBatchAdoptionRequest"
               }
             }
           }
@@ -46341,6 +46424,54 @@
           "axes"
         ],
         "title": "ExperimentPlanRequest"
+      },
+      "ExplainerBatchAdoptionRequest": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor"
+          },
+          "edition_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edition Id"
+          },
+          "beat_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Beat Ids"
+          },
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "actor"
+        ],
+        "title": "ExplainerBatchAdoptionRequest",
+        "description": "Adopt the generated candidate of every beat that has no active selection.\n\nThis is the operator's batch decision.  Picture adoption is a machine step, but\na machine may only adopt material whose required checks all passed; when a\ncontent check cannot run, the design hands that decision to the human rather\nthan passing unverified material (design §2.5/§6.2).  The body carries the\nreviewer's identity because the adoption is recorded as ``HUMAN`` authority."
       },
       "ExplainerChapterRequest": {
         "properties": {

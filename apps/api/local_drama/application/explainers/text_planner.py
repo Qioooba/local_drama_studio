@@ -73,9 +73,17 @@ from local_drama.infrastructure.database.explainer_repository import ExplainerRe
 
 #: Bounds that keep one prompt inside a local model's context.
 MAX_EVIDENCE_CHARACTERS = 24_000
+#: Upper bound for a *vocabulary* catalogue (entities, claims).  Segments are no
+#: longer truncated with a value like this one: the storyboard consumes every
+#: segment through :func:`_segment_batches` (design §5.3).
 MAX_CATALOGUE_ITEMS = 160
 MAX_SEGMENTS = 320
 MAX_BEATS = 320
+#: Segments carried by one storyboard planning call.  The design fixes the *unit*
+#: of batching as a partition of every segment — the starting configuration is
+#: 40–80 per batch and the real bound is the model's context — so this number may
+#: never be used as a silent truncation of the remaining script.
+STORYBOARD_BATCH_SEGMENTS = 60
 #: Characters per second used only for the *prompt* budget hint.  The real
 #: duration is decided by measured TTS audio (design §7), never by this number.
 #:
@@ -230,12 +238,69 @@ class PlannerPrompts:
 
 
 def _catalogue(items: Sequence[Mapping[str, Any]], fields: Sequence[str], *, limit: int = MAX_CATALOGUE_ITEMS) -> list[dict[str, Any]]:
-    """Bounded projection of real rows handed to the model as its only vocabulary."""
+    """Bounded projection of real rows handed to the model as its only vocabulary.
+
+    This is only for *vocabulary* lists (entities, claims), where a shorter list
+    narrows what the model may reference.  It must not be used for the narration
+    segments a plan is required to cover — see :func:`_segment_batches`.
+    """
 
     projected: list[dict[str, Any]] = []
     for item in items[:limit]:
         projected.append({field: item.get(field) for field in fields})
     return projected
+
+
+def make_research_service(repo: Any) -> Any:
+    """Port-style factory for the research service (architecture-debt guard).
+
+    Constructing the concrete service inside a stage handler is reported as new
+    cross-service debt; the construction belongs in a ``make_*`` scope.
+    """
+
+    return ExplainerResearchService(repo)
+
+
+def _segment_batches(
+    segments: Sequence[Mapping[str, Any]], *, batch_size: int = STORYBOARD_BATCH_SEGMENTS
+) -> list[list[Mapping[str, Any]]]:
+    """Partition *every* segment into in-order batches, keeping chapters whole.
+
+    The union of the returned batches is exactly ``segments`` in narration order,
+    with no segment dropped and none appearing twice.  A chapter that fits in one
+    batch is never split across two, so a batch always has coherent context; only
+    a chapter larger than ``batch_size`` is sliced.
+    """
+
+    if batch_size < 1:
+        raise ExplainerContractError(
+            "SCHEMA_INVALID", "分镜批次大小必须是正数", {"batch_size": batch_size}
+        )
+    runs: list[list[Mapping[str, Any]]] = []
+    for segment in segments:
+        chapter = str(segment.get("chapter_code") or "")
+        previous = str(runs[-1][0].get("chapter_code") or "") if runs else None
+        if runs and previous == chapter:
+            runs[-1].append(segment)
+        else:
+            runs.append([segment])
+    batches: list[list[Mapping[str, Any]]] = []
+    current: list[Mapping[str, Any]] = []
+    for run in runs:
+        if len(run) >= batch_size:
+            if current:
+                batches.append(current)
+                current = []
+            for start in range(0, len(run), batch_size):
+                batches.append(list(run[start : start + batch_size]))
+            continue
+        if current and len(current) + len(run) > batch_size:
+            batches.append(current)
+            current = []
+        current.extend(run)
+    if current:
+        batches.append(current)
+    return batches
 
 
 def _script_characters(raw_segments: Sequence[Any]) -> int:
@@ -945,46 +1010,24 @@ class LocalTextPlanner:
                 "没有任何可用的画面生成方式，无法生成分镜",
                 {"video_id": video_id},
             )
-        segment_catalogue = _catalogue(
-            segments,
-            ("canonical_segment_id", "display_text", "statement_type", "claim_ids_json", "speaker"),
+        segment_fields = (
+            "canonical_segment_id",
+            "display_text",
+            "statement_type",
+            "claim_ids_json",
+            "speaker",
         )
         entity_catalogue = _catalogue(entities, ("code", "name", "entity_type"), limit=60)
         is_fiction = str(video["content_kind"]) == ContentKind.ORIGINAL_FICTION.value
-        user = (
-            f"作品标题：{video['title']}\n目标时长：约 {int(video['target_seconds'])} 秒\n"
-            f"内容属性：{'原创虚构' if is_fiction else '事实解说'}\n"
-            f"本次可用画面生成方式（render_type 只能取这些值）：{', '.join(allowed)}\n\n"
-            "请把下面的叙述段落编排成画面段 beats：\n"
-            "- code 用 B001 起的编号。\n"
-            "- segment_ids 引用下面真实存在的段落编号；一句话可以跨两个画面段，"
-            "一个画面段也可以承载相邻两句，不要机械地每 5 秒换一张无关图。\n"
-            "- visual_intent 写这个画面要让观众看到什么（用一句中文）。\n"
-            "- visual_factuality：有来源照片或原始记录用 DOCUMENTED；依据记载的画面重建用 RECONSTRUCTION；"
-            "抽象示意用 SYMBOLIC；虚构编排用 FICTIONAL。\n"
-            "- entity_codes 只能取下面实体名录里的编号；claim_codes 只能取事实编号。\n"
-            "- must_be_motion 只在核心动作或关键转折上设为 true；"
-            f"{'如果可用类型里没有运动类方式，必须全部为 false。' if not any(item in allowed for item in ('I2V', 'PARALLAX')) else '其余画面段保持 false。'}\n"
-            "- prompt_intent 写一段可直接用于生成画面提示的意图描述，只描述画面，不要写入任何可读文字内容"
-            "（文字由确定性排版层绘制）。\n\n"
-            f"叙述段落清单：\n{json.dumps(segment_catalogue, ensure_ascii=False)}\n\n"
-            f"实体名录：\n{json.dumps(entity_catalogue, ensure_ascii=False)}\n\n"
-            f"事实编号：{json.dumps([str(item['code']) for item in claims], ensure_ascii=False)}"
-        )
-        result = self._chat(
-            system=self.prompts.storyboard_system,
-            user=user,
-            schema=BEAT_SCHEMA,
-            max_tokens=14_000,
-            num_ctx=49_152,
-        )
-        raw_beats = result.get("beats") or []
-        if not raw_beats:
-            raise ExplainerContractError("SCHEMA_INVALID", "文本模型没有返回任何画面段")
-        if len(raw_beats) > MAX_BEATS:
-            raise ExplainerContractError(
-                "SCHEMA_INVALID", "画面段数量超过上限", {"count": len(raw_beats), "limit": MAX_BEATS}
-            )
+        # Every segment is planned, in batches, in narration order.  The old code
+        # handed the model one catalogue capped at ``MAX_CATALOGUE_ITEMS`` and then
+        # reported the dropped tail as "uncovered" while still returning PASS, so a
+        # 320-segment script could become a film covering only its first 160.
+        batches = _segment_batches(segments)
+        # Several batches mean several model calls contribute to one plan, so the
+        # model's per-batch ``B001`` numbering is namespaced before the merge.  A
+        # single batch keeps the codes exactly as the model wrote them.
+        namespaced = len(batches) > 1
         segment_ids = {str(item["canonical_segment_id"]) for item in segments}
         entity_codes = {str(item["code"]) for item in entities}
         claim_codes = {str(item["code"]) for item in claims}
@@ -992,73 +1035,201 @@ class LocalTextPlanner:
         motion_coerced: list[dict[str, Any]] = []
         beats: list[dict[str, Any]] = []
         seen_codes: set[str] = set()
-        for index, raw in enumerate(raw_beats, start=1):
-            code = str(raw.get("code") or f"B{index:03d}").strip()
-            if code in seen_codes:
-                raise ExplainerContractError("SCHEMA_INVALID", "文本模型返回了重复的画面段编号", {"code": code})
-            seen_codes.add(code)
-            render_type = str(raw.get("render_type") or "").strip()
-            if render_type not in allowed:
-                raise ExplainerContractError(
-                    ExplainerErrorCode.CAPABILITY_UNAVAILABLE.value,
-                    "文本模型选择了本次不可用的画面生成方式",
-                    {"code": code, "render_type": render_type, "usable_render_types": allowed},
-                )
-            linked = [str(item).strip() for item in (raw.get("segment_ids") or []) if str(item).strip()]
-            unknown_segments = sorted(set(linked) - segment_ids)
-            if unknown_segments:
+        batch_reports: list[dict[str, Any]] = []
+        for batch_no, batch in enumerate(batches, start=1):
+            segment_catalogue = _catalogue(batch, segment_fields, limit=len(batch))
+            scope_hint = (
+                f"本批是全部 {len(batches)} 批中的第 {batch_no} 批，共 {len(batch)} 段。"
+                "只为下面列出的段落编排画面段，不要引用也不要用假设补写其它批次的段落。\n"
+                if namespaced
+                else ""
+            )
+            user = (
+                f"作品标题：{video['title']}\n目标时长：约 {int(video['target_seconds'])} 秒\n"
+                f"内容属性：{'原创虚构' if is_fiction else '事实解说'}\n"
+                f"本次可用画面生成方式（render_type 只能取这些值）：{', '.join(allowed)}\n\n"
+                "请把下面的叙述段落编排成画面段 beats：\n"
+                "- code 用 B001 起的编号。\n"
+                "- segment_ids 引用下面真实存在的段落编号；一句话可以跨两个画面段，"
+                "一个画面段也可以承载相邻两句，不要机械地每 5 秒换一张无关图。\n"
+                "- visual_intent 写这个画面要让观众看到什么（用一句中文）。\n"
+                "- visual_factuality：有来源照片或原始记录用 DOCUMENTED；依据记载的画面重建用 RECONSTRUCTION；"
+                "抽象示意用 SYMBOLIC；虚构编排用 FICTIONAL。\n"
+                "- entity_codes 只能取下面实体名录里的编号；claim_codes 只能取事实编号。\n"
+                "- must_be_motion 只在核心动作或关键转折上设为 true；"
+                f"{'如果可用类型里没有运动类方式，必须全部为 false。' if not any(item in allowed for item in ('I2V', 'PARALLAX')) else '其余画面段保持 false。'}\n"
+                "- 本批列出的每一个段落都必须至少被一个画面段引用，不能遗漏任何段落编号。\n"
+                "- prompt_intent 写一段可直接用于生成画面提示的意图描述，只描述画面，不要写入任何可读文字内容"
+                "（文字由确定性排版层绘制）。\n\n"
+                f"{scope_hint}"
+                f"叙述段落清单：\n{json.dumps(segment_catalogue, ensure_ascii=False)}\n\n"
+                f"实体名录：\n{json.dumps(entity_catalogue, ensure_ascii=False)}\n\n"
+                f"事实编号：{json.dumps([str(item['code']) for item in claims], ensure_ascii=False)}"
+            )
+            result = self._chat(
+                system=self.prompts.storyboard_system,
+                user=user,
+                schema=BEAT_SCHEMA,
+                max_tokens=14_000,
+                num_ctx=49_152,
+            )
+            raw_beats = result.get("beats") or []
+            if not raw_beats:
                 raise ExplainerContractError(
                     "SCHEMA_INVALID",
-                    "画面段引用了不存在的叙述段落",
-                    {"code": code, "unknown_segment_ids": unknown_segments},
+                    "文本模型没有返回任何画面段",
+                    {"batch": batch_no, "batch_count": len(batches)},
                 )
-            referenced_entities = [str(item).strip() for item in (raw.get("entity_codes") or []) if str(item).strip()]
-            unknown_entities = sorted(set(referenced_entities) - entity_codes)
-            if unknown_entities:
+            if len(raw_beats) > MAX_BEATS:
                 raise ExplainerContractError(
-                    "SCHEMA_INVALID", "画面段引用了不存在的实体", {"code": code, "unknown_entity_codes": unknown_entities}
+                    "SCHEMA_INVALID", "画面段数量超过上限", {"count": len(raw_beats), "limit": MAX_BEATS}
                 )
-            referenced_claims = [str(item).strip() for item in (raw.get("claim_codes") or []) if str(item).strip()]
-            unknown_claims = sorted(set(referenced_claims) - claim_codes)
-            if unknown_claims:
-                raise ExplainerContractError(
-                    "SCHEMA_INVALID", "画面段引用了不存在的事实编号", {"code": code, "unknown_claim_codes": unknown_claims}
+            namespace = f"B{batch_no:02d}-" if namespaced else ""
+            for index, raw in enumerate(raw_beats, start=1):
+                raw_code = str(raw.get("code") or f"B{index:03d}").strip()
+                code = f"{namespace}{raw_code}"
+                if code in seen_codes:
+                    raise ExplainerContractError(
+                        "SCHEMA_INVALID",
+                        "文本模型返回了重复的画面段编号",
+                        {"code": code, "batch": batch_no},
+                    )
+                seen_codes.add(code)
+                render_type = str(raw.get("render_type") or "").strip()
+                if render_type not in allowed:
+                    raise ExplainerContractError(
+                        ExplainerErrorCode.CAPABILITY_UNAVAILABLE.value,
+                        "文本模型选择了本次不可用的画面生成方式",
+                        {"code": code, "render_type": render_type, "usable_render_types": allowed},
+                    )
+                linked = [str(item).strip() for item in (raw.get("segment_ids") or []) if str(item).strip()]
+                unknown_segments = sorted(set(linked) - segment_ids)
+                if unknown_segments:
+                    raise ExplainerContractError(
+                        "SCHEMA_INVALID",
+                        "画面段引用了不存在的叙述段落",
+                        {"code": code, "unknown_segment_ids": unknown_segments},
+                    )
+                referenced_entities = [
+                    str(item).strip() for item in (raw.get("entity_codes") or []) if str(item).strip()
+                ]
+                unknown_entities = sorted(set(referenced_entities) - entity_codes)
+                if unknown_entities:
+                    raise ExplainerContractError(
+                        "SCHEMA_INVALID",
+                        "画面段引用了不存在的实体",
+                        {"code": code, "unknown_entity_codes": unknown_entities},
+                    )
+                referenced_claims = [
+                    str(item).strip() for item in (raw.get("claim_codes") or []) if str(item).strip()
+                ]
+                unknown_claims = sorted(set(referenced_claims) - claim_codes)
+                if unknown_claims:
+                    raise ExplainerContractError(
+                        "SCHEMA_INVALID",
+                        "画面段引用了不存在的事实编号",
+                        {"code": code, "unknown_claim_codes": unknown_claims},
+                    )
+                must_be_motion = bool(raw.get("must_be_motion"))
+                coerced = False
+                if must_be_motion and render_type not in motion_capable:
+                    # The plan asked for motion but declared a still picture type,
+                    # and this build's picture path is the deterministic
+                    # still/graphic renderer.  Refusing the whole plan made the run
+                    # stop on a contradiction the model introduced; the honest
+                    # answer is to keep the declared type, drop the motion
+                    # requirement and *record* the degradation, which is what the
+                    # manifest and the delivery report then disclose.
+                    coerced = True
+                    must_be_motion = False
+                if coerced:
+                    motion_coerced.append({"code": code, "render_type": render_type})
+                beats.append(
+                    {
+                        "code": code,
+                        "render_type": render_type,
+                        "segment_canonical_ids": linked,
+                        "entity_codes": referenced_entities,
+                        "claim_codes": referenced_claims,
+                        "visual_intent": str(raw.get("visual_intent") or "").strip(),
+                        "visual_factuality": str(
+                            raw.get("visual_factuality") or VisualFactuality.RECONSTRUCTION.value
+                        ),
+                        "must_be_motion": must_be_motion,
+                        "motion_requirement_coerced": coerced,
+                        "prompt_intent": str(raw.get("prompt_intent") or "").strip(),
+                    }
                 )
-            must_be_motion = bool(raw.get("must_be_motion"))
-            coerced = False
-            if must_be_motion and render_type not in motion_capable:
-                # The plan asked for motion but declared a still picture type, and
-                # this build's picture path is the deterministic still/graphic
-                # renderer.  Refusing the whole plan made the run stop on a
-                # contradiction the model introduced; the honest answer is to keep
-                # the declared type, drop the motion requirement and *record* the
-                # degradation, which is what the manifest and the delivery report
-                # then disclose.
-                coerced = True
-                must_be_motion = False
-            if coerced:
-                motion_coerced.append({"code": code, "render_type": render_type})
-            beats.append(
+            batch_reports.append(
                 {
-                    "code": code,
-                    "render_type": render_type,
-                    "segment_canonical_ids": linked,
-                    "entity_codes": referenced_entities,
-                    "claim_codes": referenced_claims,
-                    "visual_intent": str(raw.get("visual_intent") or "").strip(),
-                    "visual_factuality": str(raw.get("visual_factuality") or VisualFactuality.RECONSTRUCTION.value),
-                    "must_be_motion": must_be_motion,
-                    "motion_requirement_coerced": coerced,
-                    "prompt_intent": str(raw.get("prompt_intent") or "").strip(),
+                    "batch": batch_no,
+                    "batch_count": len(batches),
+                    "segment_count": len(batch),
+                    "beat_count": len(raw_beats),
+                    "first_segment_id": str(batch[0]["canonical_segment_id"]),
+                    "last_segment_id": str(batch[-1]["canonical_segment_id"]),
                 }
+            )
+        if len(beats) > MAX_BEATS:
+            raise ExplainerContractError(
+                "SCHEMA_INVALID",
+                "画面段数量超过上限",
+                {"count": len(beats), "limit": MAX_BEATS, "batch_count": len(batches)},
             )
         covered = {item for beat in beats for item in beat["segment_canonical_ids"]}
         uncovered = sorted(segment_ids - covered)
+        if uncovered:
+            # Design §5.3: the plan either covers the whole frozen script or it is
+            # refused.  Returning PASS with a reported-but-ignored shortfall is how
+            # a 320-segment script became a film that silently dropped its tail.
+            raise ExplainerContractError(
+                "SCHEMA_INVALID",
+                "画面段计划没有覆盖全部叙述段落，已拒绝该计划",
+                {
+                    "video_id": video_id,
+                    "script_revision_id": script_revision_id,
+                    "uncovered_segment_ids": uncovered,
+                    "uncovered_count": len(uncovered),
+                    "segment_count": len(segment_ids),
+                    "batch_count": len(batches),
+                },
+            )
+        ordinal_by_canonical = {
+            str(item["canonical_segment_id"]): int(item.get("ordinal") or 0) for item in segments
+        }
+        previous_ordinal = -1
+        for beat in beats:
+            positions = [
+                ordinal_by_canonical[item]
+                for item in beat["segment_canonical_ids"]
+                if item in ordinal_by_canonical
+            ]
+            if not positions:
+                continue
+            if min(positions) < previous_ordinal:
+                # Beats may overlap (a shared sentence, or one picture carrying two
+                # adjacent sentences) but they may not run backwards: the picture
+                # clock is allocated in beat order, so a reversed plan would put
+                # later narration before earlier narration.
+                raise ExplainerContractError(
+                    "SCHEMA_INVALID",
+                    "画面段顺序与旁白顺序不一致，已拒绝该计划",
+                    {
+                        "beat_code": str(beat["code"]),
+                        "segment_ordinal": min(positions),
+                        "previous_segment_ordinal": previous_ordinal,
+                    },
+                )
+            previous_ordinal = max(previous_ordinal, min(positions))
         return {
             "status": "PASS",
             "beats": beats,
             "beat_count": len(beats),
             "uncovered_segment_ids": uncovered,
+            "covered_segment_count": len(covered),
+            "segment_count": len(segment_ids),
+            "batch_count": len(batches),
+            "batches": batch_reports,
             "usable_render_types": allowed,
             "motion_coerced_beats": motion_coerced,
             "mapping_is_many_to_many": True,
@@ -1117,7 +1288,7 @@ def make_research_acquire_handler(
                     # rather than refuse to run.  Offline mode keeps the external
                     # request budget at zero, so this never opens a network call.
                     video = repo.get("explainer_videos", video_id)
-                    created = ExplainerResearchService(repo).create_packet(
+                    created = make_research_service(repo).create_packet(
                         project_id=project_id,
                         video_id=video_id,
                         mode=str(video.get("research_mode") or "OFFLINE_IMPORT"),
@@ -1322,7 +1493,16 @@ def make_storyboard_handler(
             )
         with repo_factory() as repo:
             service = build_storyboard_service(repo)
-            created = service.create_plan(project_id=project_id, video_id=video_id, beats=plan["beats"])
+            created = service.create_plan(
+                project_id=project_id,
+                video_id=video_id,
+                beats=plan["beats"],
+                # Attribute the beats to this very plan step so a later plan for the
+                # same video neither collides with these codes nor is read as part of
+                # the same plan (audit A11).  A standalone call without a step
+                # binding keeps the legacy NULL attribution.
+                plan_step_binding_id=str(payload.get("step_binding_id") or "").strip() or None,
+            )
             mapping = created.get("mapping") or {}
             # A beat whose motion requirement had to be dropped keeps the declared
             # still type and says why, so the degradation is visible in the beat and

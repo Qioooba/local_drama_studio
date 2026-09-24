@@ -358,6 +358,7 @@ class LocalLLMClient:
         top_p = float(options.get("top_p", 0.9))
         max_tokens = int(options.get("max_tokens", 2048))
         num_ctx = int(options.get("num_ctx", 0))
+        request_timeout = float(options.get("timeout_seconds") or 1200.0)
         if self.provider == "OLLAMA_LOOPBACK":
             ollama_options: dict[str, Any] = {
                 "temperature": temperature,
@@ -385,7 +386,7 @@ class LocalLLMClient:
             }
             if images:
                 msg_payload["messages"][1]["images"] = images
-            response = self._request("/api/chat", msg_payload, timeout_seconds=600)
+            response = self._request("/api/chat", msg_payload, timeout_seconds=request_timeout)
             finish_reason = response.get("done_reason")
             message = response.get("message")
             content = message.get("content") if isinstance(message, dict) else None
@@ -430,7 +431,7 @@ class LocalLLMClient:
                 # models must spend the output budget on the JSON payload.
                 payload["chat_template_kwargs"] = {"enable_thinking": bool(options.get("enable_thinking", False))}
 
-            response = self._request("/v1/chat/completions", payload, timeout_seconds=600)
+            response = self._request("/v1/chat/completions", payload, timeout_seconds=request_timeout)
             choices = response.get("choices")
             if not isinstance(choices, list) or not choices:
                 raise DomainRuleError("LOCAL_LLM_EMPTY_RESPONSE", "OpenAI 兼容 LLM 没有返回 choices 内容")

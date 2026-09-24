@@ -36,6 +36,7 @@ What this module deliberately does NOT do:
 
 from __future__ import annotations
 
+import json
 from typing import Any, Mapping, Sequence
 
 from local_drama.domain.explainers.contracts import (
@@ -65,6 +66,18 @@ SEGMENT_TEXT_CHANGE = "SEGMENT_TEXT"
 PRONUNCIATION_CHANGE = "PRONUNCIATION_LEXICON"
 
 _DEFAULT_CHAPTER_TITLE = "未命名章节"
+
+
+def build_narration_service(repo: ExplainerRepository) -> "ExplainerNarrationService":
+    """Port-style factory so callers never construct the service inline.
+
+    Both the production pipeline and the standalone TTS job family adopt takes
+    through this service (audit A03); the repository's architecture guard requires
+    the concrete construction to live in a ``build_*`` scope rather than in a
+    business method.
+    """
+
+    return ExplainerNarrationService(repo)
 
 #: Downstream kinds a script-text change can invalidate, mapped from the
 #: policies' staleness vocabulary onto the ``artifact_dependencies`` vocabulary.
@@ -697,6 +710,65 @@ class ExplainerNarrationService:
         }
 
     # ------------------------------------------------------------------ internals
+    # ------------------------------------------------------------------ takes
+    def adopt_take(
+        self,
+        *,
+        segment_id: str,
+        actor: str,
+        take_id: str | None = None,
+        record: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Adopt one take of a segment, demoting its siblings in the same step.
+
+        "Selected" is the edition-independent adoption record alignment reads, so it
+        has to be written by whoever verified the take — and only after *real*
+        measurement.  Having two implementations of this (the production pipeline and
+        the standalone TTS job family) is how a re-read could produce a take that
+        nothing ever selected: alignment then refused the segment with
+        ``NARRATION_TAKE_NOT_SELECTED`` (audit A03, design §5.2).
+        """
+
+        if take_id:
+            row = self.repo.find("narration_takes", take_id)
+        else:
+            row = self.repo.query_one(
+                "SELECT * FROM narration_takes WHERE segment_id=? ORDER BY take_no DESC LIMIT 1",
+                (segment_id,),
+            )
+        if row is None:
+            return None
+        # ``query_one`` returns a raw ``sqlite3.Row``: index it, never call ``.get``.
+        existing_generation = row["generation_json"]
+        if isinstance(existing_generation, str):
+            try:
+                existing_generation = json.loads(existing_generation)
+            except (TypeError, ValueError):
+                existing_generation = {}
+        self.repo.execute(
+            "UPDATE narration_takes SET selected=0 WHERE segment_id=? AND id<>?",
+            (segment_id, str(row["id"])),
+        )
+        # A machine stage adopts the take it just verified: this is not a human
+        # approval, and the record names the stage that did it.
+        adopted = self.repo.update(
+            "narration_takes",
+            str(row["id"]),
+            {
+                "selected": True,
+                "status": "VERIFIED",
+                "generation_json": {
+                    **dict(existing_generation or {}),
+                    "adoption_authority": "MACHINE_STAGE",
+                    "adopted_by": str(actor),
+                    **dict(record or {}),
+                },
+            },
+            actor=actor,
+        )
+        _commit(self.repo)
+        return adopted
+
     def _next_revision_no(self, *, video_id: str, locale: str) -> int:
         row = self.repo.query_one(
             "SELECT COALESCE(MAX(revision_no), 0) AS current FROM explainer_script_revisions WHERE video_id = ? AND locale = ?",

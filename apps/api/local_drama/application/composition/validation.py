@@ -42,6 +42,7 @@ from local_drama.application.composition.manifest import (
 from local_drama.domain.explainers.contracts import Ratio
 
 __all__ = [
+    "CODE_AUDIO_OUTSIDE_FILM",
     "CODE_CONCAT_REENCODE_REQUIRED",
     "CODE_HASH_MISMATCH",
     "CODE_INTEGRITY_NOT_VERIFIED",
@@ -75,6 +76,10 @@ CODE_NARRATION_SHORTER_THAN_VIDEO = "NARRATION_SHORTER_THAN_VIDEO"
 CODE_MISSING_NARRATION = "NARRATION_SEGMENT_MISSING"
 CODE_UNDECLARED_SILENCE = "UNDECLARED_SILENCE"
 CODE_SUBTITLE_OUTSIDE_FILM = "SUBTITLE_OUTSIDE_FILM"
+#: An audio placement that reaches past the end of the film.  The mixer trims to
+#: ``total_samples``, so an out-of-film clip is silently truncated unless the
+#: manifest is refused first (design §7.2, matrix R08 "越界…阻断").
+CODE_AUDIO_OUTSIDE_FILM = "AUDIO_OUTSIDE_FILM"
 CODE_CONCAT_REENCODE_REQUIRED = "CONCAT_REENCODE_REQUIRED"
 CODE_TRACK_OVERLAP = "TRACK_FRAME_OVERLAP"
 
@@ -532,6 +537,43 @@ def validate_manifest(
                         entry=dict(entry),
                     )
                 )
+
+    # ------------------------------------------------- audio inside the film
+    # Every audio placement must lie inside the film.  The mixer pads and trims to
+    # ``total_samples``, so a placement past the end is silently cut — which is
+    # exactly how a declared effect after the last sentence disappeared.  Reporting
+    # it here keeps the truncation from being mistaken for the plan.
+    total_samples = int(manifest.total_samples)
+    for clip in manifest.clips:
+        track = str(clip.track).upper()
+        if track not in {"NARRATION", "BGM", "SFX"}:
+            continue
+        if total_frames > 0 and int(clip.end_frame_exclusive) > total_frames:
+            findings.append(
+                blocker(
+                    CODE_AUDIO_OUTSIDE_FILM,
+                    "音频条目超出了成片帧范围；越界的音频会被裁掉，必须修正计划",
+                    clip_id=clip.clip_id,
+                    track=track,
+                    end_frame_exclusive=int(clip.end_frame_exclusive),
+                    total_frames=total_frames,
+                )
+            )
+        if (
+            total_samples > 0
+            and clip.sample_end_exclusive is not None
+            and int(clip.sample_end_exclusive) > total_samples
+        ):
+            findings.append(
+                blocker(
+                    CODE_AUDIO_OUTSIDE_FILM,
+                    "音频条目的采样区间超出了成片总采样数；越界的音频会被裁掉",
+                    clip_id=clip.clip_id,
+                    track=track,
+                    sample_end_exclusive=int(clip.sample_end_exclusive),
+                    total_samples=total_samples,
+                )
+            )
 
     # ------------------------------------------------------------------ silence
     for track in ("BGM", "SFX"):

@@ -29,6 +29,8 @@ from typing import Any, TypeVar, cast
 from fastapi import APIRouter, Header, Query, Request, Response
 
 from local_drama.api.schemas.explainers import (
+    ExplainerBatchAdoptionRequest,
+    ExplainerBreakdownStoryRequest,
     ExplainerClaimPatchRequest,
     ExplainerCreateRequest,
     ExplainerDecisionRequest,
@@ -895,6 +897,24 @@ async def create_explainer_script_revision(
         raise api_error_from_explainers(error) from error
 
 
+@router.post(
+    "/explainers/{project_id}/breakdown-story", status_code=201, operation_id="breakdownExplainerStory", response_model=None)
+async def breakdown_explainer_story(
+    project_id: str, payload: ExplainerBreakdownStoryRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        import asyncio
+        from local_drama.application.explainers.story_breakdown import ExplainerStoryBreakdownService
+        database = _database(request)
+        settings = request.app.state.settings
+        breakdown_service = ExplainerStoryBreakdownService(database, settings)
+        return await asyncio.to_thread(breakdown_service.breakdown_story, project_id, payload)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
 def _create_script(
     repo: ExplainerRepository,
     service: Any,
@@ -1147,7 +1167,10 @@ def _control(request: Request, run_id: str, action: str, payload: ExplainerRunCo
 @router.post(
     "/explainers/{project_id}/repairs", status_code=202, operation_id="planExplainerRepairs", response_model=None)
 async def plan_explainer_repairs(
-    project_id: str, payload: ExplainerRepairRequest, request: Request
+    project_id: str,
+    payload: ExplainerRepairRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
     try:
         plan = production_service(request).plan_repairs(
@@ -1158,7 +1181,29 @@ async def plan_explainer_repairs(
         )
         if not payload.confirm:
             return {"plan": plan, "requires_confirmation": True}
-        return {"plan": plan, "requires_confirmation": False, "submitted": True}
+        # ``confirm=true`` used to answer ``submitted: true`` while writing nothing:
+        # the reviewer pressed "fix this issue" and no job existed.  The repair is
+        # now submitted through the same stage commands the manual buttons use, and
+        # a repair that cannot be scheduled says so instead of reporting success
+        # (design §8.2).  Only the confirming call needs a key — the preview does
+        # not submit anything.
+        if not idempotency_key:
+            raise ExplainerContractError(
+                "IDEMPOTENCY_KEY_REQUIRED", "确认执行局部返工必须提供 Idempotency-Key"
+            )
+        from local_drama.application.explainers.stage_commands import build_explainers_command_service
+
+        service = build_explainers_command_service(_database(request), request.app.state.settings)
+        submitted = service.submit_repair(
+            project_id=project_id,
+            video_id=str(plan["video_id"]),
+            issue_ids=payload.issue_ids,
+            responsible_steps=plan["responsible_steps"],
+            beat_ids=plan["beats"],
+            revision=int(plan.get("revision") or payload.expected_revision),
+            idempotency_key=idempotency_key,
+        )
+        return {"plan": plan, "requires_confirmation": False, **submitted}
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
     except ExplainerContractError as error:
@@ -2400,6 +2445,101 @@ def _start_export(
 
 
 @router.post(
+    "/explainers/{project_id}/beats:adopt-generated",
+    status_code=202,
+    operation_id="adoptExplainerGeneratedBeats",
+    response_model=None,
+)
+async def adopt_explainer_generated_beats(
+    project_id: str,
+    payload: ExplainerBatchAdoptionRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    """Adopt the generated candidate of every beat that has no active selection.
+
+    ``confirm=false`` returns the scope preview (which beats would be adopted, which
+    have no adoptable candidate and which checks were never measured) and writes
+    nothing.  ``confirm=true`` records one ``HUMAN`` adoption per beat through the
+    single adoption entry, which is the operator's batch decision: it may pass an
+    unmeasured content check but never a hard technical failure (design §2.5/§6.3).
+    """
+
+    try:
+        return _command(
+            request,
+            lambda repo: _adopt_generated_beats(repo, project_id, payload, idempotency_key),
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+def _adopt_generated_beats(
+    repo: ExplainerRepository,
+    project_id: str,
+    payload: ExplainerBatchAdoptionRequest,
+    idempotency_key: str | None,
+) -> dict[str, Any]:
+    """Request validation and dispatch for the batch adoption command.
+
+    Kept as a plain function so the decision (preview vs. write, revision check,
+    idempotency requirement) is testable without an HTTP server; the request body is
+    the only thing the route adds.
+    """
+
+    from local_drama.application.explainers.production_pipeline import (
+        adopt_generated_candidates,
+    )
+
+    video = repo.require_video_for_project(project_id)
+    current_revision = int(video.get("revision") or 1)
+    if current_revision != int(payload.expected_revision):
+        raise ExplainerContractError(
+            "STALE_REVISION",
+            "作品已被其他操作更新，请基于最新 revision 提交采用",
+            {"expected_revision": payload.expected_revision, "actual_revision": current_revision},
+        )
+    context = {
+        "project_id": project_id,
+        "video_id": str(video["id"]),
+        "edition_id": payload.edition_id,
+        "edition_scope": "VIDEO" if payload.edition_id is None else "EDITION",
+    }
+    if not payload.confirm:
+        preview = adopt_generated_candidates(
+            repo,
+            context,
+            authority="HUMAN",
+            actor=payload.actor,
+            beat_ids=payload.beat_ids,
+            dry_run=True,
+        )
+        return {
+            "requires_confirmation": True,
+            "plan": preview,
+            "planned_count": preview["planned_count"],
+            "needs_review": preview["needs_review"],
+            "beats_without_candidate": preview["beats_without_candidate"],
+            "submitted": False,
+            "note": "确认后按人工权威采用这些候选；未测量的内容检查会被记录，技术硬错误仍不可采用。",
+        }
+    if not idempotency_key:
+        raise ExplainerContractError(
+            "IDEMPOTENCY_KEY_REQUIRED", "确认批量采用必须提供 Idempotency-Key"
+        )
+    result = adopt_generated_candidates(
+        repo,
+        context,
+        authority="HUMAN",
+        actor=payload.actor,
+        beat_ids=payload.beat_ids,
+    )
+    return {"requires_confirmation": False, "submitted": True, **result}
+
+
+@router.post(
     "/explainers/{project_id}/beats/{beat_id}/selections", status_code=201, operation_id="selectExplainerBeatCandidate", response_model=None)
 async def select_explainer_beat_candidate(
     project_id: str, beat_id: str, payload: ExplainerSelectionRequest, request: Request
@@ -2422,82 +2562,64 @@ async def select_explainer_beat_candidate(
 def _select_candidate(
     repo: ExplainerRepository, project_id: str, beat_id: str, payload: ExplainerSelectionRequest
 ) -> dict[str, Any]:
+    """Adopt a candidate through the single application command.
+
+    This handler used to insert the selection row itself, which meant the HTTP path
+    skipped every service guarantee the domain depends on: the required-check gate,
+    the must-be-motion refusal, the frozen source window (it read a
+    ``source_in_us`` column that does not exist, so the window was always NULL) and
+    the "same candidate is not a change" rule.  Request validation stays here; the
+    adoption itself is now ``ExplainerStoryboardService.adopt_selection`` (design
+    §6.3: one adoption entry).
+    """
+
     repo.require_explainer_project(project_id)
     video = repo.require_video_for_project(project_id)
     beat = repo.get("explainer_visual_beats", beat_id)
     if str(beat["video_id"]) != str(video["id"]):
         raise ExplainerContractError("INVALID_REQUEST", "画面段不属于该解说作品", {"beat_id": beat_id})
-    candidate = repo.get("explainer_media_candidates", payload.candidate_id)
-    if str(candidate["beat_id"]) != beat_id:
-        raise ExplainerContractError("INVALID_REQUEST", "候选不属于该画面段", {"candidate_id": payload.candidate_id})
-    if not candidate.get("media_version_id") or not candidate.get("media_sha256"):
-        raise ExplainerContractError(
-            "OUTPUT_VALIDATION_FAILED",
-            "候选还没有经过探测的媒体版本，不能固化为可渲染选择",
-            {"candidate_id": payload.candidate_id},
-        )
-    locked = repo.has_human_lock(beat_id)
-    if locked and not payload.lock:
-        raise ExplainerContractError(
-            "QC_BLOCKED",
-            "该画面段已由人工锁定，批次或机器操作不能覆盖；请以人工身份显式替换",
-            {"beat_id": beat_id},
-        )
     if payload.lock and not (payload.actor or "").strip():
         raise ExplainerContractError("SCHEMA_INVALID", "人工替换必须记录操作者")
-    repo.require_same_project_media(
-        project_id=project_id, media_version_id=str(candidate["media_version_id"])
+    authority = "HUMAN" if payload.lock else "MACHINE_POLICY"
+    from local_drama.application.explainers.storyboard import build_storyboard_service
+
+    result = build_storyboard_service(repo).adopt_selection(
+        project_id=project_id,
+        video_id=str(video["id"]),
+        beat_id=beat_id,
+        candidate_id=payload.candidate_id,
+        edition_id=payload.edition_id,
+        authority=authority,
+        actor=payload.actor,
     )
-    for previous in repo.list_where(
-        "explainer_beat_selections", {"beat_id": beat_id, "status": "ACTIVE"}
-    ):
-        repo.update("explainer_beat_selections", str(previous["id"]), {"status": "SUPERSEDED"})
-    selection = repo.insert(
-        "explainer_beat_selections",
-        {
-            "video_id": str(video["id"]),
-            "beat_id": beat_id,
-            "edition_id": payload.edition_id,
-            "candidate_id": payload.candidate_id,
-            "media_asset_id": str(candidate["media_asset_id"]),
-            "media_version_id": str(candidate["media_version_id"]),
-            "media_sha256": str(candidate["media_sha256"]),
-            "source_in_us": candidate.get("source_in_us"),
-            "source_out_us": candidate.get("source_out_us"),
-            "adoption_authority": "HUMAN" if payload.lock else "MACHINE_POLICY",
-            "locked_by_human": bool(payload.lock),
-            "actor": payload.actor,
-            "decided_at": _now(),
-            "policy_decision_id": None,
-            "render_type_actual": candidate.get("render_type_actual"),
-            "fallback_reason": candidate.get("fallback_reason"),
-            "status": "ACTIVE",
-        },
-    )
-    actual = candidate.get("render_type_actual")
-    planned = beat.get("render_type")
+    planned = str(beat.get("render_type") or "")
+    actual = result.get("render_type_actual")
     if actual and actual != planned:
         repo.update(
             "explainer_visual_beats",
             beat_id,
-            {"render_type_actual": actual, "fallback_reason": candidate.get("fallback_reason") or ""},
+            {"render_type_actual": actual, "fallback_reason": result.get("fallback_reason") or ""},
         )
-    repo.update("explainer_media_candidates", payload.candidate_id, {"adopted": True})
-    repo.mark_dependents_stale(
-        upstream_kind="BEAT_SELECTION",
-        upstream_id=str(selection["id"]),
-        downstream_kinds=("COMPOSITION_REVISION", "RENDER", "DELIVERY", "QC_REPORT"),
-        reason="BEAT_SELECTION_CHANGED",
-        invalidated_by=payload.actor or "local-user",
-    )
+    # Dependency edges start at the selection that was *replaced* (or, for a first
+    # adoption, at the new one) — the impact view reads the same key, so both sides
+    # finally agree on what a change invalidates (design §6.3).
+    dependency_root = str(result.get("superseded_selection_id") or result["selection_id"])
+    if not result.get("reused_existing_selection"):
+        repo.mark_dependents_stale(
+            upstream_kind="BEAT_SELECTION",
+            upstream_id=dependency_root,
+            downstream_kinds=("COMPOSITION_REVISION", "RENDER", "DELIVERY", "QC_REPORT"),
+            reason="BEAT_SELECTION_CHANGED",
+            invalidated_by=payload.actor or "local-user",
+        )
     return {
-        "selection": selection,
+        **result,
         "human_approval_written": False,
         "planned_render_type": planned,
         "actual_render_type": actual or planned,
         "degraded": bool(actual and actual != planned),
-        "fallback_reason": candidate.get("fallback_reason"),
-        "supersedes_previous": True,
+        "fallback_reason": result.get("fallback_reason"),
+        "supersedes_previous": not result.get("reused_existing_selection"),
     }
 
 

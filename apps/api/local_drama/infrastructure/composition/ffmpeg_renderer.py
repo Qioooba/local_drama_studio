@@ -531,8 +531,19 @@ class FfmpegFilterGraph:
         )
 
     @staticmethod
-    def adelay(*, milliseconds: int, all_channels: bool = True) -> str:
-        value = max(0, int(milliseconds))
+    def adelay(*, milliseconds: int = 0, all_channels: bool = True, samples: int | None = None) -> str:
+        """Delay a stream, in milliseconds or — when given ``samples`` — exactly.
+
+        A manifest places audio by *sample* position, and one millisecond is 48
+        samples at 48 kHz, so a millisecond-only delay cannot honour the declared
+        layout (design §7.2/§7.4).  ffmpeg accepts a sample count with the ``S``
+        suffix, which is what a placement uses.
+        """
+
+        if samples is not None:
+            value = f"{max(0, int(samples))}S"
+        else:
+            value = str(max(0, int(milliseconds)))
         return f"adelay={value}:all=1" if all_channels else f"adelay={value}"
 
     @staticmethod
@@ -1296,6 +1307,160 @@ def build_concat_command(
     )
 
 
+#: Tracks the mixer is allowed to consume.  A picture track never reaches the
+#: audio graph and an audio track never reaches the picture graph (design §7.2).
+MIXABLE_AUDIO_TRACKS: frozenset[str] = frozenset({"NARRATION", "BGM", "SFX"})
+
+
+def manifest_audio_placements(manifest: RenderManifest) -> list[ManifestClip]:
+    """The audio clips the manifest declares, in declared order.
+
+    The manifest is the only time authority: it carries each clip's source window
+    and its absolute ``sample_start``/``sample_end_exclusive``, so the mixer must
+    read it rather than concatenate whatever files the caller happens to pass in
+    order.
+    """
+
+    return [
+        clip
+        for clip in manifest.clips
+        if str(clip.track).upper() in MIXABLE_AUDIO_TRACKS
+    ]
+
+
+def _us_to_samples(value_us: int, sample_rate: int) -> int:
+    """Microseconds to samples, rounded once (half up) against the output rate."""
+
+    return int((int(value_us) * int(sample_rate) + 500_000) // 1_000_000)
+
+
+def _audio_placement_chain(clip: ManifestClip, sample_rate: int) -> list[str]:
+    """Trim one declared clip to its source window and place it absolutely."""
+
+    filters: list[str] = []
+    start_us = int(clip.source_in_us or 0)
+    start_sample = _us_to_samples(start_us, sample_rate)
+    if clip.source_out_us is None:
+        # No declared window: use the whole source from the declared in-point.
+        if start_sample:
+            filters.append(FfmpegFilterGraph.atrim(start_sample=start_sample))
+    else:
+        end_sample = _us_to_samples(int(clip.source_out_us), sample_rate)
+        # ``atrim`` rejects ``sample_count`` together with ``start_sample``; a count
+        # must be expressed as the exclusive end sample.
+        filters.append(
+            FfmpegFilterGraph.atrim(
+                start_sample=start_sample, end_sample=max(start_sample + 1, end_sample)
+            )
+        )
+    filters.append(FfmpegFilterGraph.asetpts())
+    filters.append(FfmpegFilterGraph.aformat(sample_rates=sample_rate))
+    placement = int(clip.sample_start or 0)
+    if placement > 0:
+        # Sample-exact, because a millisecond is 48 samples at 48 kHz and the
+        # manifest's layout is declared in samples.
+        filters.append(FfmpegFilterGraph.adelay(samples=placement))
+    return filters
+
+
+def _legacy_audio_inputs(
+    *,
+    narration_paths: Sequence[Path],
+    bgm_path: Path | None,
+    sfx_paths: Sequence[Path],
+    sample_rate: int,
+    duck_db: float,
+    args: list[str],
+    graph: FfmpegFilterGraph,
+) -> tuple[list[str], list[str]]:
+    """The pre-manifest path: caller-ordered whole files, concatenated in order.
+
+    Kept for the callers that hand over resolved narration files without a
+    manifest audio declaration.  It cannot express sentence pauses or absolute
+    placement, so a manifest that declares audio never uses it.
+    """
+
+    del duck_db
+    narration_labels: list[str] = []
+    for index, path in enumerate(narration_paths):
+        args += ["-i", str(path)]
+        label = graph.label(f"n{index}")
+        graph.chain(
+            [f"{index}:a:0"],
+            [FfmpegFilterGraph.aformat(sample_rates=sample_rate), FfmpegFilterGraph.asetpts()],
+            [label],
+        )
+        narration_labels.append(label)
+    bed_labels: list[str] = []
+    for index, path in enumerate(sfx_paths):
+        args += ["-i", str(path)]
+        label = graph.label(f"s{index}")
+        graph.chain(
+            [f"{len(narration_labels) + index}:a:0"],
+            [
+                FfmpegFilterGraph.aformat(sample_rates=sample_rate),
+                FfmpegFilterGraph.volume(gain_db=0.0),
+                FfmpegFilterGraph.asetpts(),
+            ],
+            [label],
+        )
+        bed_labels.append(label)
+    if bgm_path is not None:
+        args += ["-i", str(bgm_path)]
+        bgm_label = graph.label("bgm")
+        graph.chain(
+            [f"{len(narration_labels) + len(sfx_paths)}:a:0"],
+            [
+                FfmpegFilterGraph.aformat(sample_rates=sample_rate),
+                FfmpegFilterGraph.volume(gain_db=0.0),
+                FfmpegFilterGraph.asetpts(),
+            ],
+            [bgm_label],
+        )
+        bed_labels.append(bgm_label)
+    return narration_labels, bed_labels
+
+
+def _manifest_audio_inputs(
+    *,
+    placements: Sequence[ManifestClip],
+    audio_sources: Mapping[str, Path],
+    sample_rate: int,
+    args: list[str],
+    graph: FfmpegFilterGraph,
+) -> dict[str, list[str]]:
+    """Add one input per distinct source and return labels grouped by track."""
+
+    keys: list[str] = []
+    for clip in placements:
+        key = str(clip.media_version_id or clip.clip_id)
+        if key not in keys:
+            keys.append(key)
+    input_index: dict[str, int] = {}
+    for key in keys:
+        source = audio_sources.get(key)
+        if source is None:
+            raise _domain_error(
+                "AUDIO_SOURCE_MISSING",
+                "manifest 声明了音频条目，但调用方没有提供该媒体版本的路径",
+                {"media_version_id": key, "provided": sorted(audio_sources)},
+            )
+        args += ["-i", str(source)]
+        input_index[key] = len(input_index)
+    grouped: dict[str, list[str]] = {track: [] for track in ("NARRATION", "BGM", "SFX")}
+    for clip in placements:
+        track = str(clip.track).upper()
+        key = str(clip.media_version_id or clip.clip_id)
+        label = graph.label(f"{track.lower()}_{len(grouped[track])}")
+        graph.chain(
+            [f"{input_index[key]}:a:0"],
+            _audio_placement_chain(clip, sample_rate),
+            [label],
+        )
+        grouped[track].append(label)
+    return grouped
+
+
 def build_mix_command(
     *,
     manifest: RenderManifest,
@@ -1309,6 +1474,7 @@ def build_mix_command(
     true_peak_dbtp: float = DEFAULT_TRUE_PEAK_DBTP,
     loudness_lra: float = DEFAULT_LOUDNESS_LRA,
     narration_start_sample: int = 0,
+    audio_sources: Mapping[str, Path] | None = None,
 ) -> FfmpegCommand:
     """Build the deliberate audio mix, including sidechain ducking.
 
@@ -1344,15 +1510,56 @@ def build_mix_command(
     graph = FfmpegFilterGraph()
 
     narration_labels: list[str] = []
-    for index, path in enumerate(narration_paths):
-        args += ["-i", str(path)]
-        label = graph.label(f"n{index}")
-        graph.chain(
-            [f"{index}:a:0"],
-            [FfmpegFilterGraph.aformat(sample_rates=sample_rate), FfmpegFilterGraph.asetpts()],
-            [label],
+    bed_labels: list[str] = []
+    declared_audio = manifest_audio_placements(manifest)
+    if declared_audio:
+        # Design §7.2: when the manifest declares audio, the manifest is the only
+        # time authority.  Every narration sentence, music bed and effect is trimmed
+        # to its own source window and placed at its declared absolute sample
+        # position, so sentence pauses and effects are exactly where the plan put
+        # them.  Caller-ordered files cannot express that: concatenating them
+        # silently dropped both the pauses and every declared placement, and it let
+        # a narration WAV be read as if it were the film's whole audio.
+        if audio_sources is None:
+            raise _domain_error(
+                "AUDIO_SOURCES_REQUIRED",
+                "manifest 声明了音频条目时必须提供媒体版本到路径的映射",
+                {"declared_audio_clips": len(declared_audio)},
+            )
+        grouped = _manifest_audio_inputs(
+            placements=declared_audio,
+            audio_sources=audio_sources,
+            sample_rate=sample_rate,
+            args=args,
+            graph=graph,
         )
-        narration_labels.append(label)
+        narration_labels = grouped["NARRATION"]
+        bed_labels = grouped["BGM"] + grouped["SFX"]
+        if narration_paths or bgm_path is not None or sfx_paths:
+            # The manifest is the only time authority once it declares audio: a
+            # caller that also hands over the old ordered path lists is describing a
+            # second, contradictory layout, and silently preferring one of them is
+            # how a declared pause disappears (design §7.2).
+            raise _domain_error(
+                "AUDIO_DECLARATION_MISMATCH",
+                "manifest 已声明音频条目时不得再传旧式路径列表；两者不一致必须阻塞",
+                {
+                    "declared_audio_clips": len(declared_audio),
+                    "narration_paths": len(narration_paths),
+                    "bgm_path": bgm_path is not None,
+                    "sfx_paths": len(sfx_paths),
+                },
+            )
+    else:
+        narration_labels, bed_labels = _legacy_audio_inputs(
+            narration_paths=narration_paths,
+            bgm_path=bgm_path,
+            sfx_paths=sfx_paths,
+            sample_rate=sample_rate,
+            duck_db=duck_db,
+            args=args,
+            graph=graph,
+        )
     voice_label: str | None = None
     if len(narration_labels) > 1:
         voice_label = graph.label("voice")
@@ -1365,34 +1572,6 @@ def build_mix_command(
         # A single narration input is used directly; an empty chain would not be
         # a valid filtergraph.
         voice_label = narration_labels[0]
-
-    bed_labels: list[str] = []
-    for index, path in enumerate(sfx_paths):
-        args += ["-i", str(path)]
-        label = graph.label(f"s{index}")
-        graph.chain(
-            [f"{len(narration_labels) + index}:a:0"],
-            [
-                FfmpegFilterGraph.aformat(sample_rates=sample_rate),
-                FfmpegFilterGraph.volume(gain_db=0.0),
-                FfmpegFilterGraph.asetpts(),
-            ],
-            [label],
-        )
-        bed_labels.append(label)
-    if bgm_path is not None:
-        args += ["-i", str(bgm_path)]
-        bgm_label = graph.label("bgm")
-        graph.chain(
-            [f"{len(narration_labels) + len(sfx_paths)}:a:0"],
-            [
-                FfmpegFilterGraph.aformat(sample_rates=sample_rate),
-                FfmpegFilterGraph.volume(gain_db=0.0),
-                FfmpegFilterGraph.asetpts(),
-            ],
-            [bgm_label],
-        )
-        bed_labels.append(bgm_label)
 
     bed_label: str | None = None
     if bed_labels:
@@ -1412,10 +1591,23 @@ def build_mix_command(
         # The narration drives the ducker through a dedicated second copy so the
         # voice that reaches the final mix is never processed by its own ducking.
         voice_mix = graph.label("voice_mix")
+        voice_sc_raw = graph.label("voice_sc_raw")
         voice_sc = graph.label("voice_sc")
         bed_scaled = graph.label("bed_scaled")
         bed_ducked = graph.label("bed_ducked")
-        graph.chain([voice_label], [FfmpegFilterGraph.asplit(outputs=2)], [voice_mix, voice_sc])
+        graph.chain([voice_label], [FfmpegFilterGraph.asplit(outputs=2)], [voice_mix, voice_sc_raw])
+        # The control track is padded to the whole film: ``sidechaincompress`` stops
+        # at the shorter of its two inputs, so a voice-length sidechain truncated the
+        # bed — a declared effect or music tail after the last sentence was silently
+        # lost (design §7.2: the mix follows the manifest, including its尾声).
+        graph.chain(
+            [voice_sc_raw],
+            [
+                FfmpegFilterGraph.apad(whole_duration=total_seconds),
+                FfmpegFilterGraph.atrim(duration=total_seconds),
+            ],
+            [voice_sc],
+        )
         graph.chain(
             [bed_label],
             [FfmpegFilterGraph.volume(factor=duck_ratio)],
@@ -1433,11 +1625,13 @@ def build_mix_command(
         mix_inputs.append(voice_label)
     else:
         # No declared audio at all: emit an explicit, legal silent bed rather
-        # than relying on -shortest to paper over the missing stream.
+        # than relying on -shortest to paper over the missing stream.  The input
+        # index is counted from the inputs actually added, so it stays correct
+        # whether the mixer consumed the manifest or the legacy path list.
         args += ["-f", "lavfi", "-i", f"anullsrc=channel_layout={AUDIO_CHANNEL_LAYOUT}:sample_rate={sample_rate}"]
         silence_label = graph.label("silence")
         graph.chain(
-            [f"{len(narration_paths) + len(sfx_paths) + (1 if bgm_path is not None else 0)}:a"],
+            [f"{sum(1 for token in args if token == '-i') - 1}:a"],
             [FfmpegFilterGraph.aformat(sample_rates=sample_rate)],
             [silence_label],
         )
@@ -2365,6 +2559,7 @@ def atomic_render(
     narration_paths: Sequence[Path] = (),
     bgm_path: Path | None = None,
     sfx_paths: Sequence[Path] = (),
+    audio_sources: Mapping[str, Path] | None = None,
     expected_sha256: str | None = None,
     keep_temp_on_failure: bool = True,
     has_audio_lookup: Mapping[str, bool] | None = None,
@@ -2532,7 +2727,7 @@ def atomic_render(
             rendered = burn_out
             state.steps.append({"stage": "subtitle-burn", "index": index, "status": "SUCCEEDED"})
 
-    if narration_paths or bgm_path is not None or sfx_paths:
+    if narration_paths or bgm_path is not None or sfx_paths or manifest_audio_placements(manifest):
         mixed = temp_dir / "mix.wav"
         mix_command = build_mix_command(
             manifest=manifest,
@@ -2540,6 +2735,7 @@ def atomic_render(
             bgm_path=bgm_path,
             sfx_paths=sfx_paths,
             output_path=mixed,
+            audio_sources=audio_sources,
         )
         mix_outcome = dict(run_command(mix_command))
         if str(mix_outcome.get("status") or "") != "SUCCEEDED":

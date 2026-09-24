@@ -17,7 +17,7 @@ import {
   startExplainerExport,
   startExplainerRender,
 } from "../../generated/api";
-import { stableIdempotencyKey } from "../../services/commandId";
+import { completeOperation, operationIdempotencyKey, stableIdempotencyKey } from "../../services/commandId";
 import { queryKeys } from "../../query/queryKeys";
 import { AuthorityBadge, InlineError, InlineOk, Panel, SettingRow, StateNotice, type PageState } from "./components";
 import {
@@ -30,7 +30,7 @@ import {
   useSortedIssues,
   type RenderMedia,
 } from "./media";
-import { SEVERITY_LABELS, coverageRows, formatMs, issueSeverityTone, localeLabel, subtitleModeLabel } from "./viewModels";
+import { SEVERITY_LABELS, coverageRows, formatMs, issueSeverityTone, localeLabel, resolveOutputsForExplainer, subtitleModeLabel } from "./viewModels";
 import { useExplainerEditions, useExplainerOverview, useExplainerQc, useExplainerRun } from "./useExplainerQueries";
 import "./explainers.css";
 
@@ -140,23 +140,43 @@ export function ExplainerReviewPage() {
     mutationFn: async () => {
       if (!selectedIssue) throw new Error("选择一个要修复的问题");
       const revision = Number(overview.data?.video?.revision ?? 1);
-      const planned = await planExplainerRepairs(projectId, {
+      const issueScope = `explainer-repairs:${projectId}:${String(selectedIssue.id)}`;
+      const request = {
         issue_ids: [String(selectedIssue.id)],
         expected_revision: revision,
-        confirm: false,
-      });
-      return planExplainerRepairs(projectId, {
-        issue_ids: [String(selectedIssue.id)],
-        expected_revision: revision,
-        confirm: true,
-      }).then(() => planned);
+      };
+      const planned = await planExplainerRepairs(projectId, { ...request, confirm: false });
+      // The confirming call creates real repair jobs, so it must carry an
+      // operation key: a network retry then reuses the same key instead of
+      // scheduling the same repair twice, and the server rejects a confirming
+      // call without one.
+      const confirmed = await planExplainerRepairs(
+        projectId,
+        { ...request, confirm: true },
+        operationIdempotencyKey(issueScope, request),
+      );
+      completeOperation(issueScope);
+      return { planned, confirmed };
     },
     onSuccess: async (result) => {
       setError(null);
-      const plan = (result as Record<string, unknown>).plan as Record<string, unknown> | undefined;
-      setFeedback(
-        `已提交局部返工：影响 ${Number(plan?.task_count ?? 0)} 个任务；人工锁定镜头不在批次操作范围内。`,
-      );
+      const plan = (result.planned as Record<string, unknown>).plan as Record<string, unknown> | undefined;
+      const confirmed = result.confirmed as Record<string, unknown>;
+      const jobIds = Array.isArray(confirmed.job_ids) ? (confirmed.job_ids as unknown[]) : [];
+      const unschedulable = Array.isArray(confirmed.unschedulable) ? (confirmed.unschedulable as unknown[]) : [];
+      if (confirmed.submitted === true && jobIds.length > 0) {
+        setFeedback(
+          `已提交局部返工：新增 ${jobIds.length} 个真实任务，影响 ${Number(plan?.task_count ?? 0)} 个任务；` +
+            "人工锁定镜头不在批次操作范围内。",
+        );
+      } else {
+        // No fake success: a repair that could not be scheduled says so and names
+        // the responsible steps that have no standalone command.
+        setFeedback(
+          `未创建任务：${String(confirmed.status ?? "REPAIR_NOT_SCHEDULABLE")}；` +
+            `${unschedulable.length} 个责任步骤无法单独执行，请重跑对应阶段。`,
+        );
+      }
       await queryClient.invalidateQueries({ queryKey: queryKeys.explainers.all });
     },
     onError: (mutationError) => setError(mutationError instanceof Error ? mutationError.message : String(mutationError)),
@@ -496,7 +516,12 @@ export function ExplainerReviewPage() {
                 type="button"
                 onClick={async () => {
                   try {
-                    const report = await preflightExplainerPlan(projectId, {});
+                    const outputs = resolveOutputsForExplainer(
+                      (editions.data?.editions ?? overview.data?.editions) as Array<Record<string, unknown>> | undefined,
+                      overview.data?.video?.source_locale as string | undefined,
+                      overview.data?.video?.aspect_ratio as string | undefined,
+                    );
+                    const report = await preflightExplainerPlan(projectId, { outputs });
                     setError(null);
                     setFeedback(
                       report.executable

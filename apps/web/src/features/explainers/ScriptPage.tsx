@@ -6,10 +6,11 @@
  * script is an explicit action and it is blocked while a core claim conflicts.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "react-router-dom";
 import {
+  breakdownExplainerStory,
   createExplainerScriptRevision,
   freezeExplainerScript,
   getExplainerClaimEvidence,
@@ -22,7 +23,8 @@ import { stableIdempotencyKey } from "../../services/commandId";
 import { queryKeys } from "../../query/queryKeys";
 import { InlineError, InlineOk, Panel, SettingRow, StateNotice, type PageState } from "./components";
 import { CLAIM_STATUS_LABELS, STATEMENT_TYPE_LABELS } from "./viewModels";
-import { useExplainerScript } from "./useExplainerQueries";
+import { useExplainerOverview, useExplainerScript } from "./useExplainerQueries";
+import { CapabilityPicker, useCapabilityOptions } from "../model-config/CapabilityPicker";
 import "./explainers.css";
 
 export function ExplainerScriptPage() {
@@ -32,9 +34,29 @@ export function ExplainerScriptPage() {
   const selectedSegmentId = searchParams.get("segment");
   const [file, setFile] = useState<File | null>(null);
   const [pasted, setPasted] = useState("");
+  const [storyText, setStoryText] = useState("");
+  const [selectedProfileId, setSelectedProfileId] = useState("");
+  const [breakdownStyle, setBreakdownStyle] = useState("深度影视解说与真实故事还原");
+  const [targetSeconds, setTargetSeconds] = useState<number>(300);
+  const [inputMode, setInputMode] = useState<"ai" | "manual">("ai");
   const [referenceUrls, setReferenceUrls] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const overview = useExplainerOverview(projectId);
+  const breakdownOptions = useCapabilityOptions("LLM_STORY_PARSE", { projectId });
+
+  // Sync initial story text from project overview if present and local state is empty
+  useEffect(() => {
+    const remoteStory = String(overview.data?.video?.story_text ?? "");
+    if (remoteStory && !storyText) {
+      setStoryText(remoteStory);
+    }
+    const remoteTarget = Number(overview.data?.video?.target_seconds ?? 0);
+    if (remoteTarget > 0 && targetSeconds === 300) {
+      setTargetSeconds(remoteTarget);
+    }
+  }, [overview.data?.video, storyText, targetSeconds]);
   // One draft per segment, keyed by project + script revision + canonical segment.
   // The editor used to hold a single ``editing`` object, so clicking "修改这一段"
   // on another paragraph replaced it and the unsaved text was gone — and the save
@@ -179,6 +201,31 @@ export function ExplainerScriptPage() {
     onError: (mutationError) => setError(mutationError instanceof Error ? mutationError.message : String(mutationError)),
   });
 
+  const breakdownStory = useMutation({
+    mutationFn: async () => {
+      const text = (inputMode === "ai" ? storyText : pasted).trim();
+      if (!text) throw new Error("请输入真实故事或待拆解文本");
+      return breakdownExplainerStory(projectId, {
+        story_text: text,
+        profile_version_id: selectedProfileId || null,
+        target_seconds: targetSeconds || null,
+        style: breakdownStyle || null,
+        title: overview.data?.video?.title || null,
+      });
+    },
+    onSuccess: async (result) => {
+      setError(null);
+      setFeedback(
+        `AI 故事拆解成功！模型（${result.model_used}）已生成 ${result.segment_count} 个解说句段（含口播稿、字幕与发音映射）。请在右侧核对后点击“冻结讲稿”！`
+      );
+      await queryClient.invalidateQueries({ queryKey: queryKeys.explainers.all });
+    },
+    onError: (mutationError) => {
+      setFeedback(null);
+      setError(mutationError instanceof Error ? mutationError.message : String(mutationError));
+    },
+  });
+
   const createScript = useMutation({
     mutationFn: async () => {
       if (!pasted.trim()) throw new Error("请粘贴讲解稿内容");
@@ -298,7 +345,17 @@ export function ExplainerScriptPage() {
             </div>
           ) : <p className="muted">尚未建立章节纲要。</p>}
           <div className="explainer-actions" style={{ marginTop: 12 }}>
-            <button type="button" disabled={!revisionId || freeze.isPending} onClick={() => freeze.mutate()}>冻结讲稿</button>
+            <button
+              type="button"
+              className={revisionId && String((script.data?.revision as Record<string, unknown>)?.status) === "DRAFT" ? "primary-action" : ""}
+              disabled={!revisionId || freeze.isPending}
+              onClick={() => freeze.mutate()}
+            >
+              {freeze.isPending ? "正在冻结…" : "冻结讲稿"}
+            </button>
+            {revisionId && String((script.data?.revision as Record<string, unknown>)?.status) === "DRAFT" ? (
+              <span className="badge warn">草稿待冻结</span>
+            ) : null}
           </div>
         </Panel>
 
@@ -332,19 +389,137 @@ export function ExplainerScriptPage() {
           </p>
         </Panel>
 
-        <Panel title="粘贴讲解稿" subtitle="建立第一个讲稿版本（原文不可变）。">
-          <label className="explainer-field">
-            讲解稿正文（空行分段）
-            <textarea value={pasted} onChange={(event) => setPasted(event.target.value)} placeholder="每段之间用一个空行分隔" />
-          </label>
-          <div className="explainer-actions" style={{ marginTop: 10 }}>
-            <button type="button" className="primary-action" disabled={createScript.isPending} onClick={() => createScript.mutate()}>
-              {createScript.isPending ? "正在创建…" : "保存为讲稿版本"}
-            </button>
-          </div>
-          <p className="explainer-note">
-            <code>display_text</code> 保留规范写法（如 1962），<code>spoken_text</code> 是朗读形式（如 一九六二年），两者通过发音映射保持等价。
-          </p>
+        <Panel
+          title="故事拆解与讲稿生成"
+          subtitle="输入真实故事，选用本地大模型（默认 Qwen3.8-27B）拆解为口播稿与字幕"
+          actions={
+            <div style={{ display: "flex", gap: "6px" }}>
+              <button
+                type="button"
+                className={`explainer-tab ${inputMode === "ai" ? "active" : ""}`}
+                style={{ padding: "4px 8px", fontSize: "12px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", cursor: "pointer" }}
+                onClick={() => setInputMode("ai")}
+              >
+                🤖 本地 AI 智能拆解
+              </button>
+              <button
+                type="button"
+                className={`explainer-tab ${inputMode === "manual" ? "active" : ""}`}
+                style={{ padding: "4px 8px", fontSize: "12px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", cursor: "pointer" }}
+                onClick={() => setInputMode("manual")}
+              >
+                ✍️ 纯文本手动分段
+              </button>
+            </div>
+          }
+        >
+          {inputMode === "ai" ? (
+            <div className="explainer-form-grid" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <CapabilityPicker
+                capability="LLM_STORY_PARSE"
+                label="拆解模型（默认本地 Qwen3.8-27B）"
+                description="优先调用本地 llama-server 部署的 Qwen3.8-27B 模型，拆解叙事、转写口播读音与规范字幕。"
+                value={selectedProfileId}
+                onChange={setSelectedProfileId}
+                query={breakdownOptions}
+                disabled={breakdownStory.isPending}
+                migrationBusinessSurface="explainer"
+              />
+
+              <label className="explainer-field full">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>真实故事原文（小说、纪实事件或剧情底稿）</span>
+                  <small className="muted">{storyText.length} 字符</small>
+                </div>
+                <textarea
+                  style={{ minHeight: "130px", lineHeight: "1.6" }}
+                  value={storyText}
+                  onChange={(event) => setStoryText(event.target.value)}
+                  placeholder="在此输入真实故事内容（例如恶魔岛越狱纪实、历史案件、悬疑故事等）..."
+                />
+              </label>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                <label className="explainer-field">
+                  <span>目标成片时长</span>
+                  <select
+                    value={targetSeconds}
+                    onChange={(event) => setTargetSeconds(Number(event.target.value))}
+                  >
+                    <option value={90}>90 秒（1.5 分钟精简解说）</option>
+                    <option value={180}>180 秒（3 分钟标准短视频）</option>
+                    <option value={300}>300 秒（5 分钟深度解说）</option>
+                    <option value={600}>600 秒（10 分钟长篇纪实）</option>
+                  </select>
+                </label>
+                <label className="explainer-field">
+                  <span>解说风格</span>
+                  <select
+                    value={breakdownStyle}
+                    onChange={(event) => setBreakdownStyle(event.target.value)}
+                  >
+                    <option value="深度影视解说与真实故事还原">深度影视解说与故事还原</option>
+                    <option value="硬核悬疑纪实解说">硬核悬疑纪实风格</option>
+                    <option value="快节奏科普解说">快节奏科普解说</option>
+                    <option value="戏剧冲突情绪强化">戏剧冲突与高燃反转</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="explainer-actions" style={{ marginTop: 4 }}>
+                <button
+                  type="button"
+                  className="primary-action"
+                  style={{ width: "100%", padding: "10px 16px", fontSize: "14px" }}
+                  disabled={breakdownStory.isPending || !storyText.trim()}
+                  onClick={() => breakdownStory.mutate()}
+                >
+                  {breakdownStory.isPending
+                    ? "🤖 本地 AI 正在深度拆解中（口播稿与字幕生成中，请稍候）…"
+                    : "🤖 本地 AI 智能拆解为讲稿（口播稿 + 字幕）"}
+                </button>
+              </div>
+
+              <InlineOk message={feedback} />
+              <InlineError message={error} />
+
+              <div className="explainer-note">
+                <strong>💡 智能拆解规范：</strong>
+                <ul style={{ margin: "6px 0 0 16px", padding: 0, fontSize: "12px", lineHeight: "1.6" }}>
+                  <li><strong>字幕（<code>display_text</code>）</strong>：屏幕字幕显示，保留规范数字（如 1962年6月11日）。</li>
+                  <li><strong>口播稿（<code>spoken_text</code>）</strong>：专为本地 TTS 语音朗读，数字转写为汉语拼音/汉字读音（如 一九六二年六月十一日）。</li>
+                  <li><strong>发音映射</strong>：严格校验字词替换等价性，保证音画与字幕毫秒级同步。</li>
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="explainer-field">
+                讲解稿正文（空行分段）
+                <textarea
+                  value={pasted}
+                  onChange={(event) => setPasted(event.target.value)}
+                  placeholder="每段之间用一个空行分隔"
+                  style={{ minHeight: "120px" }}
+                />
+              </label>
+              <div className="explainer-actions" style={{ marginTop: 10 }}>
+                <button
+                  type="button"
+                  className="primary-action"
+                  disabled={createScript.isPending || !pasted.trim()}
+                  onClick={() => createScript.mutate()}
+                >
+                  {createScript.isPending ? "正在保存…" : "保存为讲稿版本"}
+                </button>
+              </div>
+              <InlineOk message={feedback} />
+              <InlineError message={error} />
+              <p className="explainer-note">
+                手动分段将直接以输入文本作为显示文本与口播朗读文本。
+              </p>
+            </div>
+          )}
         </Panel>
 
         <Panel title="资料与时间线" subtitle="选中段落的依据">
@@ -364,6 +539,27 @@ export function ExplainerScriptPage() {
 
       <Panel title="讲解稿" subtitle={revisionId ? `版本 ${revisionId.slice(0, 8)}… · 中文为主语言` : "尚未创建"}>
         <StateNotice state={state} />
+        {script.data?.revision && String((script.data.revision as Record<string, unknown>).status) === "DRAFT" ? (
+          <div className="explainer-note warn" style={{ marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>
+              <strong>当前讲稿为草稿（DRAFT）</strong>：由本地 AI 模型拆解生成。请核对口播稿与字幕，确认无误后点击“冻结讲稿”以锁定为正式制作版本。
+            </span>
+            <button
+              type="button"
+              className="primary-action"
+              style={{ marginLeft: "12px", whiteSpace: "nowrap" }}
+              disabled={freeze.isPending}
+              onClick={() => freeze.mutate()}
+            >
+              {freeze.isPending ? "正在冻结…" : "冻结此版本讲稿"}
+            </button>
+          </div>
+        ) : null}
+        {script.data?.revision && String((script.data.revision as Record<string, unknown>).status) === "FROZEN" ? (
+          <div className="explainer-ok" style={{ marginBottom: "14px" }}>
+            <strong>✅ 讲稿已冻结（FROZEN）</strong>：内容已锁定，音画制作管道已就绪。
+          </div>
+        ) : null}
         {segments.length > 0 ? (
           <div>
             {segments.map((segment) => {
@@ -388,11 +584,11 @@ export function ExplainerScriptPage() {
                   {editing?.id === segment.id ? (
                     <>
                       <label className="explainer-field">
-                        显示文本
+                        📺 显示文本（屏幕字幕）
                         <textarea value={editing.display} onChange={(event) => updateDraft({ display: event.target.value })} />
                       </label>
                       <label className="explainer-field">
-                        朗读文本
+                        🎙️ 朗读文本（解说口播）
                         <textarea value={editing.spoken} onChange={(event) => updateDraft({ spoken: event.target.value })} />
                       </label>
                       <div className="explainer-actions" style={{ marginTop: 8 }}>
@@ -420,8 +616,24 @@ export function ExplainerScriptPage() {
                     </>
                   ) : (
                     <>
-                      <p>{segment.display_text}</p>
-                      {segment.spoken_text !== segment.display_text ? <p className="spoken">朗读：{segment.spoken_text}</p> : null}
+                      <div style={{ marginBottom: "6px" }}>
+                        <span style={{ fontSize: "11px", fontWeight: "bold", color: "var(--info)", display: "block" }}>📺 屏幕字幕（Subtitle）：</span>
+                        <p style={{ margin: "2px 0 6px" }}>{segment.display_text}</p>
+                      </div>
+                      <div style={{ marginBottom: "6px" }}>
+                        <span style={{ fontSize: "11px", fontWeight: "bold", color: "var(--creative)", display: "block" }}>🎙️ 解说口播（Oral Broadcast）：</span>
+                        <p className="spoken" style={{ margin: "2px 0" }}>{segment.spoken_text}</p>
+                      </div>
+                      {segment.pronunciation_map_json && segment.pronunciation_map_json.length > 0 ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "5px", margin: "6px 0" }}>
+                          <small className="muted">发音转写映射:</small>
+                          {segment.pronunciation_map_json.map((m: { display: string; spoken: string }, i: number) => (
+                            <span className="badge" key={i} style={{ fontSize: "11px" }}>
+                              {m.display} ➔ {m.spoken}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                       <div className="explainer-actions" style={{ marginTop: 8 }}>
                         <button
                           type="button"

@@ -191,6 +191,25 @@ class ExplainerRepairRequest(BaseModel):
     confirm: bool = False
 
 
+class ExplainerBatchAdoptionRequest(BaseModel):
+    """Adopt the generated candidate of every beat that has no active selection.
+
+    This is the operator's batch decision.  Picture adoption is a machine step, but
+    a machine may only adopt material whose required checks all passed; when a
+    content check cannot run, the design hands that decision to the human rather
+    than passing unverified material (design §2.5/§6.2).  The body carries the
+    reviewer's identity because the adoption is recorded as ``HUMAN`` authority.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    actor: str = Field(min_length=1, max_length=120)
+    edition_id: str | None = Field(default=None, max_length=36)
+    #: Optional subset; an empty list means every beat of the video.
+    beat_ids: list[str] = Field(default_factory=list, max_length=500)
+    confirm: bool = False
+
+
 class ExplainerSelectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
@@ -313,3 +332,12 @@ class PublicationAttemptRequest(BaseModel):
     account_ref: str | None = Field(default=None, max_length=120)
     authorized: bool = False
     handoff_note: str = Field(default="", max_length=4000)
+
+
+class ExplainerBreakdownStoryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    story_text: str = Field(min_length=10, max_length=2_000_000)
+    profile_version_id: str | None = Field(default=None, max_length=64)
+    target_seconds: int | None = Field(default=None, ge=30, le=7200)
+    style: str | None = Field(default=None, max_length=100)
+    title: str | None = Field(default=None, max_length=200)

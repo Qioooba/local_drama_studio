@@ -137,6 +137,13 @@ class Settings(BaseModel):
     explainer_generation_steps: int = Field(default=20, ge=1, le=80)
     explainer_generation_timeout_seconds: float = Field(default=600.0, gt=0, le=7200)
     explainer_generation_negative_prompt: str = ""
+    #: VoxCPM2 narration sampling.  ``explainer_tts_inference_timesteps`` keeps the
+    #: project's speed-oriented 4 while making the declared 4-vs-10 comparison one
+    #: settings change; ``explainer_tts_max_len`` is the generated-patch ceiling
+    #: (one patch is about 0.16 s, so 256 is roughly 41 s of headroom for the
+    #: 15-25 s narration segments the plan targets).
+    explainer_tts_inference_timesteps: int = Field(default=4, ge=1, le=64)
+    explainer_tts_max_len: int = Field(default=256, ge=16, le=4096)
     frontend_dist_root: Path | None = None
     model_manifest_override: Path | None = None
     trusted_lan_unauthenticated: bool = False
@@ -409,6 +416,8 @@ class Settings(BaseModel):
             "explainer_generation_timeout_seconds",
             "explainer_picture_source",
             "explainer_generation_negative_prompt",
+            "explainer_tts_inference_timesteps",
+            "explainer_tts_max_len",
         ):
             env_name = f"LOCAL_DRAMA_{field_name.upper()}"
             if env_name in os.environ:

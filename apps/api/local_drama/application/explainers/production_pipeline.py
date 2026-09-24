@@ -44,6 +44,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from local_drama.application.explainers.aligner_timestamps import normalize_aligner_timestamps
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.explainers.contracts import (
     ASPECT_PIXELS,
@@ -58,6 +59,7 @@ from local_drama.infrastructure.database.explainer_repository import ExplainerRe
 __all__ = [
     "EXPLAINER_PIPELINE_TASK_CODES",
     "build_explainer_pipeline_handlers",
+    "canonical_edition_key",
     "ensure_editions_for_outputs",
 ]
 
@@ -104,6 +106,226 @@ def _json(value: Any) -> str:
 # --------------------------------------------------------------------------- #
 # editions
 # --------------------------------------------------------------------------- #
+def canonical_edition_key(
+    *, voice_locale: str, subtitle_mode: str, aspect_ratio: str
+) -> str:
+    """Derive an edition key from the shape the output really describes.
+
+    A fixed key such as ``zh-clean-169`` labelled a vertical or English edition as
+    if it were the Chinese clean 16:9 one, so the key stopped saying what the
+    edition was (design §2.3).  The key is a function of the language, the subtitle
+    treatment and the aspect ratio, which means the same shape always maps to the
+    same key and a different shape can never reuse it.
+    """
+
+    language = normalize_locale(str(voice_locale or "")).split("-")[0].lower() or "und"
+    mode = str(subtitle_mode or "NONE").upper()
+    if mode == "NONE":
+        subtitle_token = "clean"
+    elif mode.startswith("BILINGUAL"):
+        subtitle_token = "bilingual"
+    else:
+        subtitle_token = "captioned"
+    return f"{language}-{subtitle_token}-{str(aspect_ratio).replace(':', '')}"
+
+
+def adopt_generated_candidates(
+    repo: ExplainerRepository,
+    context: Mapping[str, Any],
+    *,
+    authority: str = "MACHINE_POLICY",
+    actor: str = "explainer-worker",
+    beat_ids: Sequence[str] = (),
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Adopt each beat's generated candidate through the single adoption entry.
+
+    ``VISUAL_GENERATION`` used to insert the active selection itself, so a candidate
+    was adopted before any check about it existed — the vision and QC stages were
+    decorative (audit A06).  Adoption now happens *here*, after the checks, and only
+    for a candidate whose applicable required checks all PASSED.  A beat whose
+    content check has not run stays unadopted and is reported for review, which is
+    the design's rule: an unmeasured check is UNKNOWN, never a pass (design §4.2,
+    §6.3).
+
+    ``authority="HUMAN"`` is the operator's batch decision: it may adopt past an
+    unmeasured *content* check (the reviewer is the authority for content) but never
+    past a hard technical failure, which is what ``adopt_selection`` enforces.
+    ``dry_run`` returns the same plan without writing, so the operator sees the scope
+    before confirming (design §2.5, "同类问题可以一批处理").
+    """
+
+    from local_drama.application.explainers.storyboard import (
+        HARD_TECHNICAL_BLOCKERS,
+        build_storyboard_service,
+    )
+
+    project_id = str(context.get("project_id") or "")
+    video_id = str(context.get("video_id") or "")
+    scoped_edition = (
+        "" if str(context.get("edition_scope") or "") == "VIDEO" else str(context.get("edition_id") or "")
+    )
+    wanted_beats = {str(item) for item in beat_ids if str(item)}
+    editions = [
+        item
+        for item in repo.editions(video_id)
+        if not scoped_edition or str(item["id"]) == scoped_edition
+    ]
+    service = build_storyboard_service(repo)
+    adopted: list[dict[str, Any]] = []
+    planned: list[dict[str, Any]] = []
+    needs_review: list[dict[str, Any]] = []
+    beats_without_candidate: list[dict[str, Any]] = []
+    for beat in repo.beats(video_id):
+        beat_id = str(beat["id"])
+        if wanted_beats and beat_id not in wanted_beats:
+            continue
+        candidates = repo.list_where(
+            "explainer_media_candidates", {"beat_id": beat_id}, order_by="variant_no", descending=False
+        )
+        if not candidates:
+            beats_without_candidate.append(
+                {"beat_id": beat_id, "beat_code": str(beat["code"]), "reason": "NO_CANDIDATE"}
+            )
+            continue
+        evaluation = service.evaluate_candidates(beat_id=beat_id, candidates=candidates)
+        machine_candidate = str(evaluation.get("recommended_candidate_id") or "")
+        if authority == "MACHINE_POLICY":
+            # A machine may only take a candidate every applicable required check
+            # PASSED; there is no fallback, because the fallback *is* the defect.
+            candidate_id = machine_candidate
+        else:
+            # Under human authority a candidate is admissible when it has no hard
+            # technical failure, even if a content check was never measured: the
+            # reviewer is the authority for content (design §6.3).
+            fallback = next(
+                (
+                    item
+                    for item in evaluation["ranked"]
+                    if not item["blocked"] and not item["unknown_checks"]
+                ),
+                None,
+            )
+            if fallback is None:
+                fallback = next(
+                    (
+                        item
+                        for item in evaluation["ranked"]
+                        if not set(item["adoption_blockers"]) & HARD_TECHNICAL_BLOCKERS
+                    ),
+                    None,
+                )
+            candidate_id = machine_candidate or (str(fallback["candidate_id"]) if fallback else "")
+        if not candidate_id:
+            needs_review.append(
+                {
+                    "beat_id": beat_id,
+                    "beat_code": str(beat["code"]),
+                    "reason": (
+                        "NO_MACHINE_ADOPTABLE_CANDIDATE"
+                        if authority == "MACHINE_POLICY"
+                        else "NO_ADOPTABLE_CANDIDATE"
+                    ),
+                    "candidates": [
+                        {
+                            "candidate_id": item["candidate_id"],
+                            "verdict": item["adoption_tier_name"],
+                            "unknown_checks": item["unknown_checks"],
+                            "blockers": item["adoption_blockers"],
+                        }
+                        for item in evaluation["ranked"]
+                    ],
+                }
+            )
+            continue
+        entry = next(
+            (item for item in evaluation["ranked"] if item["candidate_id"] == candidate_id), {}
+        )
+        for edition in editions:
+            edition_id = str(edition["id"])
+            if dry_run:
+                planned.append(
+                    {
+                        "beat_id": beat_id,
+                        "beat_code": str(beat["code"]),
+                        "edition_id": edition_id,
+                        "candidate_id": candidate_id,
+                        "verdict": str(entry.get("adoption_tier_name") or ""),
+                        "unknown_checks": list(entry.get("unknown_checks") or []),
+                        "would_use_machine_policy": candidate_id == machine_candidate,
+                    }
+                )
+                continue
+            try:
+                result = service.adopt_selection(
+                    project_id=project_id,
+                    video_id=video_id,
+                    beat_id=beat_id,
+                    candidate_id=candidate_id,
+                    edition_id=edition_id,
+                    authority=authority,
+                    actor=actor,
+                )
+            except ExplainerContractError as error:
+                needs_review.append(
+                    {
+                        "beat_id": beat_id,
+                        "beat_code": str(beat["code"]),
+                        "edition_id": edition_id,
+                        "candidate_id": candidate_id,
+                        "reason": str(error.code),
+                        "message": str(error.message),
+                    }
+                )
+                continue
+            adopted.append(
+                {
+                    "beat_id": beat_id,
+                    "beat_code": str(beat["code"]),
+                    "edition_id": edition_id,
+                    "candidate_id": candidate_id,
+                    "selection_id": str(result.get("selection_id") or ""),
+                    "reused_existing_selection": bool(result.get("reused_existing_selection")),
+                    "verdict": str(result.get("verdict") or ""),
+                    "adoption_authority": str(result.get("adoption_authority") or authority),
+                }
+            )
+    return {
+        "project_id": project_id,
+        "video_id": video_id,
+        "editions": [str(item["id"]) for item in editions],
+        "authority": authority,
+        "actor": actor,
+        "dry_run": bool(dry_run),
+        "adopted": adopted,
+        "adopted_count": len(adopted),
+        "planned": planned,
+        "planned_count": len(planned),
+        "needs_review": needs_review,
+        "needs_review_count": len(needs_review),
+        "beats_without_candidate": beats_without_candidate,
+        "beats_without_candidate_count": len(beats_without_candidate),
+        "adoption_authority": authority,
+        "unknown_is_not_a_pass": True,
+        # A beat with no active selection can never be rendered, so the caller must
+        # treat this as unfinished work rather than a pass.
+        "every_beat_has_a_selection": (
+            not needs_review
+            and not beats_without_candidate
+            and (bool(planned) if dry_run else True)
+        ),
+    }
+
+
+def make_candidate_adopter() -> Callable[[ExplainerRepository, Mapping[str, Any]], dict[str, Any]]:
+    """Port-shaped wrapper so the QC handler does not import this module."""
+
+    def adopter(repo: ExplainerRepository, context: Mapping[str, Any]) -> dict[str, Any]:
+        return adopt_generated_candidates(repo, context)
+
+    return adopter
+
+
 def ensure_editions_for_outputs(
     repo: ExplainerRepository,
     *,
@@ -128,9 +350,6 @@ def ensure_editions_for_outputs(
     video_id = str(video["id"])
     created: list[dict[str, Any]] = []
     for output in outputs:
-        edition_key = str(output.get("edition_key") or "").strip()
-        if not edition_key:
-            raise ExplainerContractError("SCHEMA_INVALID", "输出缺少 edition_key，无法创建输出版本")
         aspect = str(output.get("aspect_ratio") or "16:9")
         if aspect not in _ASPECT_PIXELS:
             raise ExplainerContractError("SCHEMA_INVALID", "不支持的画幅", {"aspect_ratio": aspect})
@@ -140,6 +359,20 @@ def ensure_editions_for_outputs(
         subtitle_mode = str(output.get("subtitle_mode") or "NONE")
         subtitle_locales = [normalize_locale(str(item)) for item in (output.get("subtitle_locales") or [])]
         voice_locale = normalize_locale(str(output.get("voice_locale") or video["source_locale"]))
+        # The key is derived from the shape, not trusted from the caller: a caller
+        # that labels a 9:16 English edition ``zh-clean-169`` is describing something
+        # other than what it asked for, and that must fail loudly.
+        edition_key = canonical_edition_key(
+            voice_locale=voice_locale, subtitle_mode=subtitle_mode, aspect_ratio=aspect
+        )
+        declared_key = str(output.get("edition_key") or "").strip()
+        if declared_key and declared_key != edition_key:
+            raise ExplainerContractError(
+                "SCHEMA_INVALID",
+                "输出声明的 edition_key 与实际语言/字幕/画幅不一致",
+                {"declared": declared_key, "derived": edition_key, "aspect_ratio": aspect,
+                 "subtitle_mode": subtitle_mode, "voice_locale": voice_locale},
+            )
         existing = repo.edition_by_key(video_id, edition_key)
         if existing is not None:
             created.append(existing)
@@ -239,6 +472,33 @@ def _passed(summary: str, produced: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------------- #
+# port-style service factories
+# --------------------------------------------------------------------------- #
+# A stage handler *calls* one of these instead of constructing a service inline.
+# The repository's architecture guard reports concrete cross-service construction
+# inside a business method as new debt, so construction belongs in a
+# ``make_*``/``build_*`` scope.  The imports stay function-local on purpose: the
+# explainer modules import each other, and a module-level import here would create
+# a cycle.
+def make_narration_service(repo: Any) -> Any:
+    from local_drama.application.explainers.narration import ExplainerNarrationService
+
+    return ExplainerNarrationService(repo)
+
+
+def make_subtitle_service(repo: Any) -> Any:
+    from local_drama.application.explainers.subtitles import ExplainerSubtitleService
+
+    return ExplainerSubtitleService(repo)
+
+
+def make_delivery_service(repo: Any) -> Any:
+    from local_drama.application.explainers.deliveries import ExplainerDeliveryService
+
+    return ExplainerDeliveryService(repo)
+
+
 def _video_and_editions(
     repo: ExplainerRepository, *, project_id: str, video_id: str
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -300,41 +560,13 @@ def _current_takes(repo: ExplainerRepository, video_id: str) -> dict[str, dict[s
 
 
 def _adopt_take(repo: ExplainerRepository, *, segment_id: str, actor: str) -> dict[str, Any] | None:
-    """Mark the newest take of one segment as the adopted machine take."""
+    """Mark the newest take of one segment as the adopted machine take.
 
-    row = repo.query_one(
-        "SELECT * FROM narration_takes WHERE segment_id=? ORDER BY take_no DESC LIMIT 1",
-        (segment_id,),
-    )
-    if row is None:
-        return None
-    # ``query_one`` returns a raw ``sqlite3.Row``: index it, never call ``.get``.
-    existing_generation = row["generation_json"]
-    if isinstance(existing_generation, str):
-        try:
-            existing_generation = json.loads(existing_generation)
-        except (TypeError, ValueError):
-            existing_generation = {}
-    repo.execute(
-        "UPDATE narration_takes SET selected=0 WHERE segment_id=? AND id<>?",
-        (segment_id, str(row["id"])),
-    )
-    return repo.update(
-        "narration_takes",
-        str(row["id"]),
-        {
-            "selected": True,
-            "status": "VERIFIED",
-            # A machine stage adopts the take it just verified; this is not a human
-            # approval, and the record says which stage did it.
-            "generation_json": {
-                **dict(existing_generation or {}),
-                "adoption_authority": "MACHINE_STAGE",
-                "adopted_by": actor,
-            },
-        },
-        actor=actor,
-    )
+    Delegates to the narration service so the pipeline and the standalone TTS job
+    family adopt takes the same way (audit A03).
+    """
+
+    return make_narration_service(repo).adopt_take(segment_id=segment_id, actor=actor)
 
 
 # --------------------------------------------------------------------------- #
@@ -453,15 +685,23 @@ def make_narration_tts_handler(
             speed=1.0,
         )
         produced: dict[str, str] = {}
+        receipts: dict[str, dict[str, Any]] = {}
         for item in execution.payload.get("items") or []:
             if str(item.get("status")) == "PASS":
                 produced[str(item["id"])] = str(item["output"])
+                # The per-item receipt is what actually reports whether the model
+                # applied the requested speech rate natively and which sampling
+                # parameters were used; it is carried to the take record instead
+                # of being replaced by a hardcoded assumption.
+                receipts[str(item["id"])] = dict(item)
         entry["batch_receipt"] = {
             "item_count": execution.payload.get("item_count"),
             "failed_count": execution.payload.get("failed_count"),
             "model_load_seconds": execution.payload.get("model_load_seconds"),
             "elapsed_seconds": execution.payload.get("elapsed_seconds"),
+            "parameters": dict(execution.payload.get("parameters") or {}),
         }
+        entry["item_receipts"] = receipts
         entry["missing"] = [segment_id for segment_id in segment_ids if segment_id not in produced]
         return produced
 
@@ -492,9 +732,7 @@ def make_narration_tts_handler(
                 return _blocked("该作品还没有解说稿，无法合成旁白", "SCHEMA_INVALID", {"video_id": video_id})
             script_revision_id = str(script_revision["id"])
             if str(script_revision.get("status")) != "FROZEN":
-                from local_drama.application.explainers.narration import ExplainerNarrationService
-
-                frozen = ExplainerNarrationService(repo).freeze_script(
+                frozen = make_narration_service(repo).freeze_script(
                     script_revision_id=script_revision_id, actor="explainer-worker"
                 )
                 script_revision = frozen.get("script_revision") or repo.get(
@@ -531,6 +769,7 @@ def make_narration_tts_handler(
             for group in groups.values():
                 group["prompt_audio"], group["prompt_text"] = _prompt_for(group["voice"], work_root)
                 group["batch_receipt"] = None
+                group["item_receipts"] = {}
                 group["missing"] = []
         # One resident-model process per voice/locale instead of one per segment.
         for key, group in groups.items():
@@ -598,6 +837,7 @@ def make_narration_tts_handler(
                         media_ops=media_ops,
                         atomic_writer=atomic_writer,
                         pre_synthesized=Path(pre),
+                        pre_synthesized_receipt=group.get("item_receipts", {}).get(segment_id),
                     )
                 except (DomainRuleError, ExplainerContractError) as error:
                     failures.append(
@@ -667,10 +907,21 @@ def make_narration_align_handler(
         matching, unaligned tokens, display mapping, revision numbering).  Feeding
         it a port that replays an already-computed batch keeps all of that logic
         while avoiding one model load per take.
+
+        The batch task reports aligner timestamps in the runtime's own vocabulary
+        (``text``/``start_time``/``end_time`` seconds).  ``word_timings`` must use
+        the pipeline's canonical vocabulary instead — ``token`` with
+        ``start_sample``/``end_sample`` — because that is what
+        ``_match_chunks_to_tokens`` and ``_build_display_mapping`` read.  Forwarding
+        the raw dictionaries made every token unalignable while the stage still
+        reported an aligned revision, so the conversion goes through the same
+        normaliser the single-take adapter uses.
         """
 
         def __init__(self, timings: Mapping[str, Any], *, detector_version: str, model: str | None) -> None:
-            self._timings = dict(timings)
+            self._timings = {
+                str(key): normalize_aligner_timestamps(value) for key, value in timings.items()
+            }
             self._detector_version = detector_version
             self._model = model
             self.misses: list[str] = []
@@ -700,6 +951,26 @@ def make_narration_align_handler(
                 "network_used": False,
                 "model": self._model,
             }
+
+    class _BatchAsr:
+        """ASR review port shared by the real adapter and the batch aligner.
+
+        ``run_narration_align_job`` reads ``asr_result["text"]``.  Both the
+        pipeline align stage and the standalone ``NARRATION_ALIGN`` job now inject
+        a real ASR port, so "independent transcription" is a configured fact
+        rather than a stage that silently recorded ``ASR_REVIEW_NOT_CONFIGURED``
+        for every take and still passed.
+        """
+
+        def __init__(self, asr: Any) -> None:
+            self._asr = asr
+
+        def transcribe(self, *, media_path: Path, locale: str, timeout_seconds: int) -> Mapping[str, Any]:
+            result = self._asr.transcribe(
+                media_path=media_path, locale=locale, timeout_seconds=int(timeout_seconds)
+            ) or {}
+            text = str(result.get("text") or result.get("transcription") or "").strip()
+            return {**dict(result), "text": text, "transcription": text}
 
     def handler(job: dict[str, Any], context: Mapping[str, Any]) -> dict[str, Any]:
         del job
@@ -759,6 +1030,12 @@ def make_narration_align_handler(
                 except (RuntimeError, OSError) as error:
                     failures.append({"batch": "alignment", "code": type(error).__name__, "message": str(error)[:300]})
                     use_batch = False
+        # Independent ASR review.  The previous handler passed ``asr=None``, so
+        # every take in the production graph recorded
+        # ``ASR_REVIEW_NOT_CONFIGURED`` and the stage passed without ever
+        # comparing the audible narration against the script: "no misread was
+        # found" was indistinguishable from "nothing was listened to".
+        asr_port = _BatchAsr(asr) if asr is not None else None
         batch_port = _BatchAligner(timings, detector_version=detector_version, model=model_ref) if timings else None
         for take in pending:
             if batch_port is not None and str(take["media_sha256"]) not in timings:
@@ -781,7 +1058,7 @@ def make_narration_align_handler(
                     aligner=batch_port if batch_port is not None else aligner,
                     media_ops=media_ops,
                     atomic_writer=atomic_writer,
-                    asr=None,
+                    asr=asr_port,
                 )
             except (DomainRuleError, ExplainerContractError) as error:
                 failures.append(
@@ -812,6 +1089,10 @@ def make_narration_align_handler(
                 "failures": failures,
                 "alignment_revision_count": len(aligned_ids),
                 "selected_take_count": len(takes),
+                # Stated explicitly so a report can never imply "independent ASR
+                # found no misread" when no ASR port was wired at all.
+                "asr_review_included": asr_port is not None,
+                "asr_review_state": "WIRED" if asr_port is not None else "ASR_REVIEW_NOT_CONFIGURED",
             },
         )
 
@@ -1730,48 +2011,26 @@ def make_visual_generation_handler(
                             "lineage_json": attempt["lineage"],
                             "execution_snapshot_json": attempt["execution_snapshot"],
                             "adopted": False,
+                            # Only the facts this stage really measured: the media was
+                            # produced and registered with a hash, so the file exists.
+                            # Content, identity and readability need a picture check
+                            # and stay absent — an absent check is UNKNOWN, never a
+                            # pass, which is what keeps this candidate out of machine
+                            # adoption until the checks run (design §6.2).
+                            "qc_summary_json": {
+                                "file_valid": True,
+                                "duration_ms": int(round(duration_seconds * 1000)),
+                                "render_type_actual": str(attempt["actual_type"]),
+                                "measured_by": "VISUAL_GENERATION",
+                                "content_checked": False,
+                            },
                         },
                         actor="explainer-worker",
                     )
-                    for edition in editions:
-                        if str(edition["id"]) not in timelines:
-                            continue
-                        existing_selection = repo.query_one(
-                            "SELECT id FROM explainer_beat_selections WHERE beat_id=? AND edition_id=? AND status='ACTIVE'",
-                            (beat_id, str(edition["id"])),
-                        )
-                        if existing_selection is not None:
-                            repo.update(
-                                "explainer_beat_selections",
-                                str(existing_selection["id"]),
-                                {"status": "SUPERSEDED"},
-                                actor="explainer-worker",
-                            )
-                        repo.insert(
-                            "explainer_beat_selections",
-                            {
-                                "video_id": video_id,
-                                "beat_id": beat_id,
-                                "edition_id": str(edition["id"]),
-                                "candidate_id": str(candidate["id"]),
-                                "media_asset_id": registered.get("media_asset_id"),
-                                "media_version_id": registered.get("media_version_id"),
-                                "media_sha256": registered.get("sha256"),
-                                "source_in_us": 0,
-                                "source_out_us": int(round(duration_seconds * 1_000_000)),
-                                "adoption_authority": "MACHINE_POLICY",
-                                "render_type_actual": str(attempt["actual_type"]),
-                                "fallback_reason": attempt.get("fallback_reason"),
-                                "status": "ACTIVE",
-                            },
-                            actor="explainer-worker",
-                        )
-                    repo.update(
-                        "explainer_media_candidates",
-                        str(candidate["id"]),
-                        {"adopted": True},
-                        actor="explainer-worker",
-                    )
+                    # Adoption is NOT this stage's job: ``EXPLAINER_VISUAL_QC`` adopts
+                    # after the checks have run.  Inserting the selection here made the
+                    # candidate active before anything had examined it, and the beat
+                    # was then rendered from an unverified picture (audit A06).
                     # The beat row must state what really happened, not what the
                     # planner assumed before any picture existed.
                     repo.update(
@@ -1849,20 +2108,201 @@ def make_visual_generation_handler(
 def _split_cue_text(text: str, *, max_chars: int) -> list[str]:
     """Deterministic sentence split, then a hard wrap for an over-long clause."""
 
+    return [chunk for chunk, _start, _end in _split_cue_chunks(text, max_chars=max_chars)]
+
+
+def _split_cue_chunks(text: str, *, max_chars: int) -> list[tuple[str, int, int]]:
+    """``(text, start_offset, end_offset)`` chunks, so a chunk maps back to a span.
+
+    The offsets are what let a cue's boundary come from the alignment instead of
+    from an assumed reading speed.  The previous builder consumed only the chunk
+    *strings*, so a subtitle revision recorded alignment revision ids while its
+    cue times were still an even character-proportional split of the segment.
+    """
+
     import re
 
-    pieces = [piece for piece in re.split(r"(?<=[。！？；!?;])", text) if piece.strip()]
+    pieces: list[tuple[str, int, int]] = []
+    for match in re.finditer(r"[^。！？；!?;]*[。！？；!?;]?", text):
+        piece = match.group(0)
+        if piece:
+            pieces.append((piece, match.start(), match.end()))
     if not pieces:
-        pieces = [text]
-    chunks: list[str] = []
-    for piece in pieces:
+        pieces = [(text, 0, len(text))]
+    chunks: list[tuple[str, int, int]] = []
+    for piece, piece_start, _piece_end in pieces:
+        stripped_start = piece_start + (len(piece) - len(piece.lstrip()))
         stripped = piece.strip()
+        if not stripped:
+            continue
+        offset = stripped_start
         while len(stripped) > max_chars:
-            chunks.append(stripped[:max_chars])
+            chunks.append((stripped[:max_chars], offset, offset + max_chars))
             stripped = stripped[max_chars:]
+            offset += max_chars
         if stripped:
-            chunks.append(stripped)
-    return chunks or [text[:max_chars]]
+            chunks.append((stripped, offset, offset + len(stripped)))
+    if not chunks:
+        return [(text[:max_chars], 0, min(len(text), max_chars))]
+    return chunks
+
+
+def _display_map_span(alignment: Mapping[str, Any]) -> list[tuple[int, int, int, int]]:
+    """``(display_start, display_end, start_sample, end_sample)`` from a revision.
+
+    Mapped entries only: an unmapped display span carries no time, and inventing
+    one is exactly what the declared evidence rules forbid.
+    """
+
+    raw = alignment.get("display_map_json")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raw = []
+    if not isinstance(raw, Sequence):
+        return []
+    spans: list[tuple[int, int, int, int]] = []
+    for entry in raw:
+        if not isinstance(entry, Mapping):
+            continue
+        start_offset = entry.get("display_start")
+        end_offset = entry.get("display_end")
+        start_sample = entry.get("start_sample")
+        end_sample = entry.get("end_sample")
+        if start_offset is None or end_offset is None or start_sample is None or end_sample is None:
+            continue
+        try:
+            spans.append(
+                (
+                    int(start_offset),
+                    int(end_offset),
+                    int(start_sample),
+                    int(end_sample),
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    spans.sort(key=lambda item: (item[0], item[1]))
+    return spans
+
+
+def _aligned_cue_times(
+    chunks: Sequence[tuple[str, int, int]],
+    *,
+    alignment: Mapping[str, Any] | None,
+    sample_rate_hz: int,
+    clip_start_ms: int,
+    clip_end_ms: int,
+) -> list[tuple[int, int]]:
+    """Per-cue ``(start_ms, end_ms)`` from the alignment clock, with a stated fallback.
+
+    A cue that overlaps a mapped display span takes that span's time, converted
+    from the take's samples to milliseconds and clipped to the narration clip it
+    belongs to.  Cues the alignment could not place — and a take with no
+    alignment at all — fall back to the deterministic character-proportional split
+    inside the *remaining* clip window, in order, so the track stays monotonic and
+    still ends exactly at the clip boundary.
+
+    The fallback is kept because a cue with no time at all would be worse than an
+    estimated one, but it is never applied silently: ``_subtitle_alignment_facts``
+    reports how many cues came from the aligner and how many were estimated.
+    """
+
+    if clip_end_ms <= clip_start_ms:
+        clip_end_ms = clip_start_ms + 1
+    spans: list[tuple[int, int, int, int]] = []
+    if alignment is not None and sample_rate_hz > 0:
+        spans = _display_map_span(alignment)
+    resolved: list[tuple[int, int] | None] = []
+    for _chunk, start_offset, end_offset in chunks:
+        best: tuple[int, int] | None = None
+        for display_start, display_end, start_sample, end_sample in spans:
+            if display_end <= start_offset or display_start >= end_offset:
+                continue
+            candidate = (
+                clip_start_ms + int(round(start_sample * 1000 / sample_rate_hz)),
+                clip_start_ms + int(round(end_sample * 1000 / sample_rate_hz)),
+            )
+            if best is None:
+                best = candidate
+            else:
+                best = (min(best[0], candidate[0]), max(best[1], candidate[1]))
+        if best is None:
+            resolved.append(None)
+            continue
+        start_ms = max(clip_start_ms, min(best[0], clip_end_ms))
+        end_ms = max(start_ms + 1, min(best[1], clip_end_ms))
+        resolved.append((start_ms, end_ms))
+
+    # Monotonicity: a cue may not start before the previous one ended.
+    previous = clip_start_ms
+    for index, item in enumerate(resolved):
+        if item is None:
+            continue
+        start_ms = max(previous, item[0])
+        end_ms = max(start_ms + 1, item[1])
+        resolved[index] = (start_ms, end_ms)
+        previous = end_ms
+
+    # Character-proportional fallback inside each unresolved gap.
+    times: list[tuple[int, int]] = []
+    index = 0
+    while index < len(chunks):
+        if resolved[index] is not None:
+            times.append(resolved[index])  # type: ignore[arg-type]
+            index += 1
+            continue
+        gap_end = index
+        while gap_end < len(chunks) and resolved[gap_end] is None:
+            gap_end += 1
+        gap_start_ms = clip_start_ms if index == 0 else times[-1][1]
+        gap_end_ms = resolved[gap_end][0] if gap_end < len(resolved) and resolved[gap_end] else clip_end_ms
+        if gap_end_ms <= gap_start_ms:
+            gap_end_ms = gap_start_ms + 1
+        weights = [max(1, len(chunks[position][0])) for position in range(index, gap_end)]
+        total = sum(weights)
+        cursor = gap_start_ms
+        for position in range(index, gap_end):
+            weight = weights[position - index] / total
+            span = max(1, int(round((gap_end_ms - gap_start_ms) * weight)))
+            cue_end = gap_end_ms if position == gap_end - 1 else min(gap_end_ms, cursor + span)
+            cue_end = max(cursor + 1, cue_end)
+            times.append((cursor, cue_end))
+            cursor = cue_end
+        index = gap_end
+
+    # Final guard: the clock must cover the clip exactly once, in order.
+    ordered: list[tuple[int, int]] = []
+    cursor = clip_start_ms
+    for position, (start_ms, end_ms) in enumerate(times):
+        start_value = clip_start_ms if position == 0 else max(cursor, start_ms)
+        end_value = clip_end_ms if position == len(times) - 1 else max(start_value + 1, min(end_ms, clip_end_ms))
+        ordered.append((start_value, end_value))
+        cursor = end_value
+    return ordered
+
+
+def _subtitle_alignment_facts(alignment: Mapping[str, Any] | None) -> dict[str, Any]:
+    """What the alignment revision actually provides for cue timing."""
+
+    if alignment is None:
+        return {"alignment_revision_id": None, "word_timing_count": 0, "mapped_span_count": 0}
+    raw = alignment.get("word_timings_json")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raw = []
+    return {
+        "alignment_revision_id": str(alignment.get("id") or ""),
+        "alignment_status": str(alignment.get("alignment_status") or ""),
+        "word_timing_count": len(raw) if isinstance(raw, Sequence) else 0,
+        "mapped_span_count": len(_display_map_span(alignment)),
+        # The aligner's own grid: a cue boundary is quantised to it, so this can
+        # never be presented as sample-accurate subtitle timing.
+        "aligner_timestamp_grid_ms": 80,
+    }
 
 
 def make_subtitle_build_handler(
@@ -1871,7 +2311,6 @@ def make_subtitle_build_handler(
     """``SUBTITLE_BUILD``: cue revisions from the alignment clock, per edition."""
 
     from local_drama.application.explainers.subtitles import (
-        ExplainerSubtitleService,
         character_budget_per_line,
     )
 
@@ -1893,7 +2332,7 @@ def make_subtitle_build_handler(
                     continue
                 timeline = _load_timeline(repo, video=video, edition=edition)
                 fps = timeline["fps"]
-                service = ExplainerSubtitleService(repo)
+                service = make_subtitle_service(repo)
                 for locale in locales:
                     script_revision = repo.list_where(
                         "explainer_script_revisions",
@@ -1938,6 +2377,7 @@ def make_subtitle_build_handler(
                     )
                     cues: list[dict[str, Any]] = []
                     alignment_ids: list[str] = []
+                    alignment_facts: list[dict[str, Any]] = []
                     for clip in timeline["narration_clips"]:
                         segment = segments.get(str(clip["segment_id"]))
                         if segment is None:
@@ -1945,30 +2385,34 @@ def make_subtitle_build_handler(
                         alignment = repo.latest_alignment_for_take(str(clip["take_id"]))
                         if alignment is not None:
                             alignment_ids.append(str(alignment["id"]))
+                        alignment_facts.append(_subtitle_alignment_facts(alignment))
                         # ``Ratio`` exposes seconds; convert with the same integer
                         # arithmetic the timeline uses so a cue boundary is the
                         # frame the manifest actually places.
                         start_ms = int(round(fps.seconds_for_frames(int(clip["start_frame"])) * 1000))
                         end_ms = int(round(fps.seconds_for_frames(int(clip["end_frame_exclusive"])) * 1000))
-                        chunks = _split_cue_text(str(segment.get("display_text") or ""), max_chars=max_chars)
-                        total_chars = sum(max(1, len(chunk)) for chunk in chunks)
-                        cursor = start_ms
-                        for index, chunk in enumerate(chunks):
-                            weight = max(1, len(chunk)) / total_chars
-                            span = max(1200, int(round((end_ms - start_ms) * weight)))
-                            cue_end = min(end_ms, cursor + span) if index < len(chunks) - 1 else end_ms
-                            if cue_end <= cursor:
-                                cue_end = min(end_ms, cursor + 400)
+                        chunks = _split_cue_chunks(
+                            str(segment.get("display_text") or ""), max_chars=max_chars
+                        )
+                        cue_times = _aligned_cue_times(
+                            chunks,
+                            alignment=alignment,
+                            sample_rate_hz=int(edition["audio_sample_rate_hz"] or 0),
+                            clip_start_ms=start_ms,
+                            clip_end_ms=end_ms,
+                        )
+                        for (chunk, _chunk_start, _chunk_end), (cue_start, cue_end) in zip(
+                            chunks, cue_times, strict=True
+                        ):
                             cues.append(
                                 {
-                                    "start_ms": cursor,
-                                    "end_ms": max(cursor + 1, cue_end),
+                                    "start_ms": cue_start,
+                                    "end_ms": max(cue_start + 1, cue_end),
                                     "text": chunk,
                                     "paired_text": "",
                                     "segment_canonical_id": str(segment["canonical_segment_id"]),
                                 }
                             )
-                            cursor = max(cursor + 1, cue_end)
                     if not cues:
                         skipped.append(
                             {"edition_id": str(edition["id"]), "locale": locale, "reason": "NO_CUES_BUILT"}
@@ -1994,6 +2438,9 @@ def make_subtitle_build_handler(
                         {"frozen_subtitle_revision_id": str(revision["id"])},
                         actor="explainer-worker",
                     )
+                    mapped_cues = sum(
+                        1 for fact in alignment_facts if int(fact.get("mapped_span_count") or 0) > 0
+                    )
                     built.append(
                         {
                             "edition_id": str(edition["id"]),
@@ -2001,6 +2448,17 @@ def make_subtitle_build_handler(
                             "subtitle_revision_id": str(revision["id"]),
                             "cue_count": len(created["cues"]),
                             "alignment_revision_count": len(alignment_ids),
+                            # How much of the cue timing came from a real
+                            # alignment: a revision whose cues are all estimated
+                            # is still a legal revision, but it must be legible
+                            # as estimated rather than presented as aligned.
+                            "cues_from_alignment_segments": mapped_cues,
+                            "narration_segment_count": len(alignment_facts),
+                            "cue_timing_source": (
+                                "ALIGNMENT_CLOCK" if mapped_cues == len(alignment_facts) and mapped_cues
+                                else "CHARACTER_PROPORTIONAL"
+                            ),
+                            "alignment_facts": alignment_facts,
                         }
                     )
         if not built:
@@ -2093,6 +2551,8 @@ def make_composition_render_handler(
     """
 
     from local_drama.application.composition.manifest import ManifestClip, build_manifest, plan_chunks
+    from local_drama.application.composition.validation import validate_manifest
+    from local_drama.application.explainers.subtitles import default_safe_area
     from local_drama.infrastructure.composition.ffmpeg_renderer import FfmpegRunner, atomic_render
 
     ffmpeg_path = getattr(settings, "ffmpeg_path", None)
@@ -2272,15 +2732,17 @@ def make_composition_render_handler(
             work_dir = Path(work_root) / "explainer_renders" / str(edition["id"]) / revision_id
             work_dir.mkdir(parents=True, exist_ok=True)
             if plan["subtitle_revision"] is not None:
-                from local_drama.application.explainers.subtitles import ExplainerSubtitleService
-
                 with repo_factory() as repo:
-                    service = ExplainerSubtitleService(repo)
+                    service = make_subtitle_service(repo)
                     ass_text = service.serialize(
                         cues=list(plan["subtitle_revision"].get("cues_json") or []),
                         format="ASS",
                         width=int(edition["width"]),
                         height=int(edition["height"]),
+                        # The burn-in must use the same safe area the layout detector
+                        # checks, otherwise the recorded geometry and the film's
+                        # captions disagree about where the margin is.
+                        safe_area=default_safe_area(str(edition.get("aspect_ratio") or "16:9")),
                     )
                 subtitle_artifact = work_dir / "captions.ass"
                 subtitle_artifact.write_text(ass_text, encoding="utf-8")
@@ -2332,8 +2794,58 @@ def make_composition_render_handler(
                     "outro_hold_frames": int(timeline.get("outro_frames") or 0),
                 },
             )
-            narration_paths = [_media_path(str(item["media_version_id"]), str(item["media_sha256"])) for item in plan["narration_clips"]]
-            narration_paths = [Path(item) for item in narration_paths]
+            # The frozen manifest is validated *before* a single frame is rendered.
+            # ``validate_manifest`` existed but nothing called it, so a manifest with
+            # an out-of-film audio placement, an undeclared silence or a source range
+            # past its media went straight to FFmpeg and was silently truncated
+            # (design §4.2/§7.2: the render step calls manifest, validation, then the
+            # atomic render).
+            # The validator needs every clip's *frozen media row*, not only the
+            # narration: without the picture clips' rows it would report every
+            # candidate clip as MEDIA_MISSING and refuse a healthy render.
+            media_lookup: dict[str, dict[str, Any]] = {}
+            with repo_factory() as repo:
+                for clip in plan["clips"]:
+                    media_version_id = str(clip.get("media_version_id") or "")
+                    if not media_version_id or media_version_id in media_lookup:
+                        continue
+                    try:
+                        row = repo.require_same_project_media(
+                            project_id=project_id, media_version_id=media_version_id
+                        )
+                    except ExplainerContractError:
+                        # Deliberately left out of the lookup: the validator turns an
+                        # unresolvable media reference into a MEDIA_MISSING blocker,
+                        # which states the real reason to refuse the render.
+                        continue
+                    media_lookup[media_version_id] = {
+                        "sha256": row.get("sha256"),
+                        "duration_ms": row.get("duration_ms"),
+                        "audio_sample_rate_hz": int(edition["audio_sample_rate_hz"]),
+                        "integrity_status": row.get("integrity_status"),
+                    }
+            validation = validate_manifest(manifest, media_lookup=media_lookup)
+            blockers = [item.as_dict() for item in validation.blockers]
+            if blockers:
+                failures.append(
+                    {
+                        "edition_id": str(edition["id"]),
+                        "reason": "MANIFEST_VALIDATION_BLOCKED",
+                        "blockers": blockers[:5],
+                    }
+                )
+                continue
+            # The manifest is the time authority: hand the mixer each declared audio
+            # media version's real path so it can trim to the declared source window
+            # and place every sentence at its absolute sample position.  The earlier
+            # caller-ordered path list could not express sentence pauses and made the
+            # mixer's layout depend on list order (design §7.2).
+            audio_sources = {
+                str(item["media_version_id"]): Path(
+                    _media_path(str(item["media_version_id"]), str(item["media_sha256"]))
+                )
+                for item in plan["narration_clips"]
+            }
             outcome = atomic_render(
                 manifest=manifest,
                 temp_dir=work_dir / "tmp",
@@ -2344,7 +2856,7 @@ def make_composition_render_handler(
                 decode_check=runner.full_decode_check,
                 media_path_resolver=_media_path,
                 subtitle_paths=[] if subtitle_artifact is None else [subtitle_artifact],
-                narration_paths=narration_paths,
+                audio_sources=audio_sources,
                 has_audio_lookup=plan["has_audio"],
             )
             if str(outcome.get("status")) != "SUCCEEDED":
@@ -2500,7 +3012,7 @@ def make_composition_render_handler(
                     decode_check=runner.full_decode_check,
                     media_path_resolver=_media_path,
                     subtitle_paths=[],
-                    narration_paths=narration_paths,
+                    audio_sources=audio_sources,
                     has_audio_lookup=plan["has_audio"],
                 )
                 if str(clean_outcome.get("status")) == "SUCCEEDED":
@@ -2599,23 +3111,22 @@ def make_explainer_export_handler(
     reported as ready without the file that proves it.
     """
 
+    import zipfile
+
     from local_drama.application.explainers.deliveries import (
         BURNED_MASTER,
+        CHAPTERS,
         CITATIONS,
         CLEAN_MASTER,
-        CHAPTERS,
         COVER,
-        ExplainerDeliveryService,
         LICENSE_LIST,
-        PackageItem,
         QC_REPORT,
         SUBTITLE,
         SUMMARY,
         TITLE,
+        PackageItem,
     )
-    from local_drama.application.explainers.subtitles import ExplainerSubtitleService
-
-    import zipfile
+    from local_drama.application.explainers.subtitles import default_safe_area
 
     def handler(job: dict[str, Any], context: Mapping[str, Any]) -> dict[str, Any]:
         del job
@@ -2766,11 +3277,12 @@ def make_explainer_export_handler(
                         path=None,
                         content=srt,
                     )
-                    ass = ExplainerSubtitleService(repo).serialize(
+                    ass = make_subtitle_service(repo).serialize(
                         cues=cues,
                         format="ASS",
                         width=int(edition["width"]),
                         height=int(edition["height"]),
+                        safe_area=default_safe_area(str(edition.get("aspect_ratio") or "16:9")),
                     )
                     add_file(
                         role=f"{SUBTITLE}:{subtitle_locale}:ass",
@@ -2963,7 +3475,7 @@ def make_explainer_export_handler(
                 )
         for entry in pending:
             with repo_factory() as repo:
-                frozen = ExplainerDeliveryService(repo).freeze_package(
+                frozen = make_delivery_service(repo).freeze_package(
                     project_id=project_id,
                     video_id=video_id,
                     edition_id=str(entry["edition_id"]),
@@ -3004,6 +3516,20 @@ def make_explainer_export_handler(
                 "没有任何输出版本形成交付包",
                 "PUBLICATION_PACKAGE_FAILED",
                 {"failures": failures[:5]},
+            )
+        # A package is BLOCKED only by an *unverified asset licence scope* (a
+        # missing preset is a warning, not a blocker), so "frozen" is not the same
+        # as "deliverable".  Reporting PASS whenever one package row existed is what
+        # let a run project COMPLETED while every package it produced was unusable:
+        # the delivery record existed, but no verifiable artefact did.
+        not_ready = [item for item in packages if not item["publishable"]]
+        if not_ready:
+            return _blocked(
+                f"{len(not_ready)}/{len(packages)} 个交付包未就绪："
+                + "、".join(str(item["status"]) for item in not_ready)
+                + "；解决许可范围后重试导出",
+                "PUBLICATION_PACKAGE_NOT_READY",
+                {"packages": packages, "failures": failures},
             )
         return _passed(
             f"已冻结 {len(packages)} 个交付包：" + "、".join(str(item["status"]) for item in packages),

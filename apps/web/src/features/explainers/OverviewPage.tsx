@@ -11,7 +11,7 @@ import { controlExplainerRun, preflightExplainerPlan, startExplainerRun } from "
 import { stableIdempotencyKey } from "../../services/commandId";
 import { queryKeys } from "../../query/queryKeys";
 import { AuthorityBadge, InlineError, InlineOk, Panel, SettingRow, StateNotice, type PageState } from "./components";
-import { estimateStageLabel, formatMs, runStatusLabel, stepIsBlockingDependents, stepStatusLabel } from "./viewModels";
+import { estimateStageLabel, formatMs, resolveOutputsForExplainer, runStatusLabel, stepIsBlockingDependents, stepStatusLabel } from "./viewModels";
 import { useExplainerOverview, useExplainerRun } from "./useExplainerQueries";
 import "./explainers.css";
 
@@ -25,14 +25,19 @@ export function ExplainerOverviewPage() {
 
   const start = useMutation({
     mutationFn: async () => {
-      const report = await preflightExplainerPlan(projectId, {});
+      const outputs = resolveOutputsForExplainer(
+        overview.data?.editions as Array<Record<string, unknown>> | undefined,
+        overview.data?.video?.source_locale as string | undefined,
+        overview.data?.video?.aspect_ratio as string | undefined,
+      );
+      const report = await preflightExplainerPlan(projectId, { outputs });
       if (!report.executable) {
         const first = report.blockers[0];
         throw new Error(`预检未通过：${first ? `${first.message}（${first.next_step || first.code}）` : "存在阻塞项"}`);
       }
       return startExplainerRun(
         projectId,
-        { plan_hash: report.plan_hash, start_workflow: true },
+        { plan_hash: report.plan_hash, outputs, start_workflow: true },
         stableIdempotencyKey("explainer-run", { projectId, planHash: report.plan_hash }),
       );
     },

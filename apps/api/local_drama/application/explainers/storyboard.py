@@ -136,6 +136,81 @@ DEFAULT_STORYBOARD_STEP_CODE = "EXPLAINER_STORYBOARD"
 #: Candidate statuses that may not be adopted.
 NOT_ADOPTABLE_CANDIDATE_STATUSES: frozenset[str] = frozenset({"REJECTED", "FAILED", "SUPERSEDED"})
 
+#: Tri-state verdicts for one adoption check (design §6.2).  A check whose fields
+#: were never measured is ``UNKNOWN``, never an implicit pass: the audit's A06
+#: defect was that every test read ``is False``, so a candidate with no checks at
+#: all produced no blocker and was reported as ``PASSED_ALL_STAGES``.
+CHECK_PASS = "PASS"
+CHECK_FAIL = "FAIL"
+CHECK_UNKNOWN = "UNKNOWN"
+CHECK_NOT_RUN = "NOT_RUN"
+CHECK_STATES: tuple[str, ...] = (CHECK_PASS, CHECK_FAIL, CHECK_UNKNOWN, CHECK_NOT_RUN)
+
+#: Blockers that even an explicit human adoption may not skip: a file that does not
+#: decode, or a candidate whose recorded status is not adoptable, is a hard
+#: technical failure rather than a content judgement (design §6.2/§6.3).
+HARD_TECHNICAL_BLOCKERS: frozenset[str] = frozenset(
+    {"FILE_NOT_DECODED", "CANDIDATE_STATUS_NOT_ADOPTABLE"}
+)
+
+#: Checks whose verdict a *machine* adoption must have verified.  ``STYLE`` is
+#: absent on purpose: the design makes it a tie-break that only applies after every
+#: required check has passed.
+REQUIRED_ADOPTION_CHECKS: tuple[str, ...] = (
+    "FILE_DECODE",
+    "CONTENT_RELEVANCE",
+    "IDENTITY_CONSTRAINTS",
+    "READABILITY",
+)
+
+#: A beat only needs its identity/state checked when it actually binds references,
+#: and its text layer checked when it draws readable text.  An inapplicable check is
+#: ``NOT_RUN`` with a recorded reason rather than a silent pass.
+IDENTITY_BEAT_FIELDS: tuple[str, ...] = ("entity_refs", "entity_refs_json")
+TEXT_LAYER_RENDER_TYPES: frozenset[str] = frozenset({"INFOGRAPHIC"})
+
+
+def _declared_false_is_failure(candidate: Mapping[str, Any], fields: Sequence[str]) -> tuple[str, list[str]]:
+    """``PASS`` when a field is explicitly true, ``FAIL`` when explicitly false.
+
+    Absent or ``None`` means the check was never reported, which is ``UNKNOWN``.
+    Checks are only as good as their declaration: the ``*_ok``/``valid``/``readable``
+    fields are written by the QC layers, and a missing one is a gap to report rather
+    than a pass to assume.
+    """
+
+    declared = 0
+    for field in fields:
+        value = candidate.get(field)
+        if value is None:
+            continue
+        if value is False:
+            return CHECK_FAIL, [field]
+        declared += 1
+    return (CHECK_PASS if declared else CHECK_UNKNOWN), []
+
+
+def _declared_true_is_failure(candidate: Mapping[str, Any], field: str) -> tuple[str, list[str]]:
+    """``FAIL`` when the field is explicitly true (a violation flag)."""
+
+    value = candidate.get(field)
+    if value is None:
+        return CHECK_UNKNOWN, []
+    if value is True:
+        return CHECK_FAIL, [field]
+    return CHECK_PASS, []
+
+
+def _beat_binds_identity(beat: Mapping[str, Any]) -> bool:
+    for field in IDENTITY_BEAT_FIELDS:
+        value = beat.get(field)
+        if isinstance(value, str):
+            value = value.strip("[] ")
+        if value:
+            return True
+    return False
+
+
 TEXT_LAYER_KINDS: frozenset[str] = frozenset({"TEXT", "TEXT_LAYER", "TYPOGRAPHY", "LABEL"})
 VECTOR_LAYER_KINDS: frozenset[str] = frozenset(
     {"VECTOR", "BASEMAP", "SHAPE", "PATH", "CHART_VECTOR", "RELATION_LINE"}
@@ -346,6 +421,73 @@ def _candidate_identifier(candidate: Mapping[str, Any], *, index: int) -> str:
     return str(identifier)
 
 
+#: Candidate fields that carry a *check verdict* rather than an identity.  The QC
+#: layers persist them in the candidate's ``qc_summary``; a caller that already has
+#: them flat (a projection, a repair preview, a test) passes them directly.
+CANDIDATE_CHECK_FIELDS: tuple[str, ...] = (
+    "file_valid",
+    "decoded",
+    "content_relevant",
+    "content_match",
+    "identity_ok",
+    "constraints_ok",
+    "text_readable",
+    "readable",
+    "audible",
+    "must_be_motion_violated",
+    "constraint_violations",
+    "aesthetic_score",
+    "style_score",
+)
+
+#: Identity fields that stay on the candidate row itself.
+CANDIDATE_IDENTITY_FIELDS: tuple[str, ...] = (
+    "status",
+    "render_type",
+    "render_type_actual",
+    "candidate_kind",
+    "variant_no",
+    "purpose",
+)
+
+
+def _candidate_check_view(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    """Merge the check verdicts a candidate carries, wherever they were recorded.
+
+    ``explainer_media_candidates`` has no column per check: the QC layers write
+    them into ``qc_summary_json`` (the repository JSON-decodes the column but keeps
+    its name).  Reading only the flat row made every real candidate look
+    unmeasured, so this merges the nested summary and then lets an explicit
+    top-level field win.
+    """
+
+    view: dict[str, Any] = {}
+    for key in ("qc_summary_json", "qc_summary", "execution_snapshot_json", "execution_snapshot"):
+        source = candidate.get(key)
+        if isinstance(source, Mapping):
+            view.update(source)
+    for field in CANDIDATE_CHECK_FIELDS:
+        value = candidate.get(field)
+        if value is not None:
+            view[field] = value
+    for field in CANDIDATE_IDENTITY_FIELDS:
+        value = candidate.get(field)
+        if value is not None:
+            view[field] = value
+    return view
+
+
+def build_storyboard_service(repo: ExplainerRepository) -> "ExplainerStoryboardService":
+    """Port-style factory so callers never construct the service inline.
+
+    Route handlers and worker code reach the adoption command through this
+    function; constructing the concrete service inside a handler is reported as new
+    cross-service debt by the repository's architecture guard.
+    """
+
+    return ExplainerStoryboardService(repo)
+
+
 class ExplainerStoryboardService:
     """Storyboard-stage application service over one :class:`ExplainerRepository`."""
 
@@ -360,11 +502,17 @@ class ExplainerStoryboardService:
         video_id: str,
         beats: Sequence[Mapping[str, Any]],
         actor: str = "local-user",
+        plan_step_binding_id: str | None = None,
     ) -> dict[str, Any]:
         """Persist a beat plan and return it with its many-to-many mapping summary.
 
         Every unknown narration/entity/claim code is a hard ``SCHEMA_INVALID``:
         a plan may not silently drop a reference it could not resolve.
+
+        ``plan_step_binding_id`` attributes every beat to the plan that produced
+        it, so a second plan for the same video no longer collides with the first
+        plan's codes and readers can ask for one plan instead of the union of all
+        of them (audit A11).
         """
 
         self.repo.require_explainer_project(project_id)
@@ -541,6 +689,7 @@ class ExplainerStoryboardService:
                     "prompt_intent": str(spec.get("prompt_intent") or ""),
                     "status": "PLANNED",
                     "origin": "PLANNED",
+                    "plan_step_binding_id": plan_step_binding_id or None,
                 },
                 actor=actor,
             )
@@ -820,6 +969,41 @@ class ExplainerStoryboardService:
                 value, field="segment_durations_ms", segment=key, edition_id=edition_id
             )
 
+        # Design §5.2/§5.3: timing works on the *edition's* frozen script revision
+        # and its own language, and every one of those segments must have a measured
+        # take.  Resolving that expected set here is what makes a measured sentence
+        # that no beat linked *visible*: previously such a segment contributed
+        # nothing to the total, so a plan could claim a complete film while the
+        # narration clock was longer than the picture clock.
+        revision_id = str(edition.get("frozen_script_revision_id") or "")
+        if revision_id:
+            expected_source = "EDITION_FROZEN_SCRIPT_REVISION"
+        else:
+            current = self.repo.get("explainer_videos", video_id)
+            revision_id = str(current.get("current_script_revision_id") or "")
+            expected_source = "VIDEO_CURRENT_SCRIPT_REVISION" if revision_id else "UNRESOLVED"
+        expected_ordinals: dict[str, int] = {}
+        canonical_of_key: dict[str, str] = {}
+        pause_by_canonical: dict[str, int] = {}
+        edition_locale = str(edition.get("voice_locale") or "")
+        if revision_id:
+            for row in self.repo.segments(revision_id):
+                locale = str(row.get("locale") or edition_locale)
+                if edition_locale and locale != edition_locale:
+                    continue
+                canonical = str(row["canonical_segment_id"])
+                expected_ordinals[canonical] = int(row.get("ordinal") or 0)
+                pause_by_canonical[canonical] = max(0, int(row.get("pause_after_ms") or 0))
+                canonical_of_key[canonical] = canonical
+                # The caller may key measured audio by either identity; both are
+                # accepted, and both are resolved to the canonical segment so the
+                # total can never count one sentence twice.
+                canonical_of_key[str(row["id"])] = canonical
+        measured_canonical: dict[str, int] = {}
+        for key, value in measured.items():
+            canonical = canonical_of_key.get(key, key)
+            measured_canonical.setdefault(canonical, value)
+
         beats = self.repo.beats(video_id)
         if not beats:
             raise ExplainerContractError(
@@ -891,7 +1075,6 @@ class ExplainerStoryboardService:
 
         durations: list[int] = []
         beat_inputs: list[dict[str, Any]] = []
-        total_pause_ms = 0
         for beat in beats:
             beat_id = str(beat["id"])
             beat_links = links_by_beat.get(beat_id, [])
@@ -916,8 +1099,8 @@ class ExplainerStoryboardService:
             if not beat_links:
                 # A beat without narration has no measured audio to follow; its
                 # plan hint is the only available input and is reported as such.
+                # It is deliberately *not* added to ``total_measured_ms``.
                 measured_ms = int(beat.get("preferred_duration_ms") or 0)
-            total_pause_ms += pause_ms
             durations.append(measured_ms + pause_ms)
             beat_inputs.append(
                 {
@@ -945,6 +1128,49 @@ class ExplainerStoryboardService:
                     "missing_canonical_segment_ids": sorted(set(missing)),
                 },
             )
+
+        # The expected set is only checked when the edition's script revision could
+        # be resolved; an unresolvable edition keeps the old per-beat behaviour and
+        # says so, rather than inventing a coverage verdict it cannot support.
+        scoped_measured = (
+            {key: value for key, value in measured_canonical.items() if key in expected_ordinals}
+            if expected_ordinals
+            else dict(measured_canonical)
+        )
+        covered_canonical = {
+            canonical for targets in link_targets.values() for _beat_id, canonical in targets
+        }
+        unlinked_measured = sorted(key for key in scoped_measured if key not in covered_canonical)
+        if unlinked_measured:
+            # This sentence has measured narration but no picture covers it: the
+            # picture clock would be shorter than the narration clock, which is
+            # exactly the "short film reported as complete" failure.
+            raise ExplainerContractError(
+                "SCHEMA_INVALID",
+                "有实测配音的段落没有被任何画面段覆盖，已拒绝该时长计划",
+                {
+                    "edition_id": edition_id,
+                    "video_id": video_id,
+                    "unlinked_measured_segment_ids": unlinked_measured,
+                },
+            )
+        unmeasured = sorted(set(expected_ordinals) - set(measured_canonical))
+        if expected_ordinals and unmeasured:
+            raise ExplainerContractError(
+                "SCHEMA_INVALID",
+                "当前稿件仍有段落没有实测配音，不能按时长分配画面段",
+                {
+                    "edition_id": edition_id,
+                    "video_id": video_id,
+                    "unmeasured_canonical_segment_ids": unmeasured,
+                    "expected_segment_source": expected_source,
+                },
+            )
+        # Measured audio is counted once, over every measured segment of *this*
+        # edition — never over the subset some beat happened to link, and never by
+        # substituting a plan hint for missing audio.
+        total_measured_ms = sum(scoped_measured.values())
+        total_pause_ms = sum(pause_by_canonical.get(key, 0) for key in scoped_measured)
 
         frames, total_frames = _allocate_frames(durations, fps)
         placements: list[dict[str, Any]] = []
@@ -982,8 +1208,16 @@ class ExplainerStoryboardService:
             "edition_key": str(edition["edition_key"]),
             "fps": fps.as_dict(),
             "total_frames": total_frames,
-            "total_measured_ms": sum(beat["measured_duration_ms"] for beat in beat_inputs),
+            "total_measured_ms": total_measured_ms,
             "total_pause_ms": total_pause_ms,
+            "total_span_ms": sum(item["span_duration_ms"] for item in beat_inputs),
+            "expected_segment_source": expected_source,
+            "expected_segment_count": len(expected_ordinals),
+            "measured_segment_count": len(scoped_measured),
+            "measured_take_covers_every_segment": (
+                not expected_ordinals or not unmeasured
+            ),
+            "unlinked_measured_segment_ids": unlinked_measured,
             "placements": placements,
             "beats": beat_inputs,
             "shared_segments": shared_segments,
@@ -1319,67 +1553,170 @@ class ExplainerStoryboardService:
     def evaluate_candidates(
         self, *, beat_id: str, candidates: Sequence[Mapping[str, Any]]
     ) -> dict[str, Any]:
-        """Rank candidates in the fixed adoption order.
+        """Rank candidates in the fixed adoption order, with honest verdicts.
 
         Stage order is technical -> content -> constraint -> readability ->
         style.  A candidate with any blocking finding is ranked strictly after
         every eligible candidate, so an aesthetic score can never promote a
         factual or technical failure.
+
+        Each required check is reported as ``PASS``/``FAIL``/``UNKNOWN``/``NOT_RUN``.
+        A candidate is only *machine*-adoptable when every applicable required check
+        is ``PASS``; a check that was never measured is ``UNKNOWN`` and keeps the
+        candidate out of the recommended set, which is what stops an unverified
+        candidate from being promoted on aesthetics alone (design §6.2).
         """
 
         beat = self.repo.get("explainer_visual_beats", beat_id)
         must_be_motion = bool(beat["must_be_motion"])
+        identity_applicable = _beat_binds_identity(beat)
         ranked: list[dict[str, Any]] = []
         for index, candidate in enumerate(candidates or ()):
             identifier = _candidate_identifier(candidate, index=index)
+            # Verdicts may be nested in the candidate's qc_summary or supplied flat.
+            checks = _candidate_check_view(candidate)
             stages: list[dict[str, Any]] = []
             blockers: list[str] = []
+            unknown_checks: list[str] = []
+            not_run_checks: list[str] = []
+            reasons: list[str] = []
 
+            technical_state, _ = _declared_false_is_failure(checks, ("file_valid", "decoded"))
+            status = str(candidate.get("status") or "").upper()
+            status_not_adoptable = status in NOT_ADOPTABLE_CANDIDATE_STATUSES
             technical: list[str] = []
-            if candidate.get("file_valid") is False or candidate.get("decoded") is False:
-                technical.append("FILE_NOT_DECODED")
-            if str(candidate.get("status") or "").upper() in NOT_ADOPTABLE_CANDIDATE_STATUSES:
-                technical.append("CANDIDATE_STATUS_NOT_ADOPTABLE")
-            stages.append({"stage": ADOPTION_STAGES[0], "blockers": technical})
+            if technical_state == CHECK_FAIL or status_not_adoptable:
+                technical.append("FILE_NOT_DECODED" if technical_state == CHECK_FAIL else "CANDIDATE_STATUS_NOT_ADOPTABLE")
+            elif technical_state == CHECK_UNKNOWN:
+                unknown_checks.append(ADOPTION_STAGES[0])
+                reasons.append("FILE_OR_DECODE_NOT_REPORTED")
+            stages.append(
+                {
+                    "stage": ADOPTION_STAGES[0],
+                    "state": CHECK_FAIL if technical else technical_state,
+                    "blockers": technical,
+                    "applicable": True,
+                }
+            )
             blockers.extend(technical)
 
+            content_state, _ = _declared_false_is_failure(
+                checks, ("content_relevant", "content_match")
+            )
             content: list[str] = []
-            if candidate.get("content_relevant") is False or candidate.get("content_match") is False:
+            if content_state == CHECK_FAIL:
                 content.append("CONTENT_IRRELEVANT")
-            stages.append({"stage": ADOPTION_STAGES[1], "blockers": content})
+            elif content_state == CHECK_UNKNOWN:
+                unknown_checks.append(ADOPTION_STAGES[1])
+                reasons.append("CONTENT_RELEVANCE_NOT_REPORTED")
+            stages.append(
+                {
+                    "stage": ADOPTION_STAGES[1],
+                    "state": CHECK_FAIL if content else content_state,
+                    "blockers": content,
+                    "applicable": True,
+                }
+            )
             blockers.extend(content)
 
             constraints: list[str] = []
-            violations = candidate.get("constraint_violations") or ()
-            if candidate.get("identity_ok") is False or candidate.get("constraints_ok") is False:
-                constraints.append("IDENTITY_CONSTRAINT_VIOLATED")
-            elif violations:
-                constraints.append("IDENTITY_CONSTRAINT_VIOLATED")
+            constraint_states: list[str] = []
+            declared_state, _ = _declared_false_is_failure(checks, ("identity_ok", "constraints_ok"))
+            violations = checks.get("constraint_violations")
+            declared_violations = [item for item in (violations or ())]
+            # An empty (or absent) violation list is not itself a verdict: the check
+            # is decided by the declared ``identity_ok``/``constraints_ok`` fields.  A
+            # *non-empty* list is an explicit finding and fails the check outright.
+            # When neither the verdict fields nor the list were recorded, the
+            # declared state stays UNKNOWN and the candidate is not auto-adoptable.
+            violation_state = CHECK_FAIL if declared_violations else CHECK_PASS
             actual_type = str(
                 candidate.get("render_type_actual") or candidate.get("render_type") or ""
             )
-            if candidate.get("must_be_motion_violated") is True or (
-                must_be_motion and actual_type in STILL_RENDER_TYPES
-            ):
+            motion_state = CHECK_NOT_RUN
+            if must_be_motion:
+                motion_state, _ = _declared_true_is_failure(checks, "must_be_motion_violated")
+                if motion_state == CHECK_UNKNOWN and actual_type in STILL_RENDER_TYPES:
+                    # The beat requires motion and the material is a still: the
+                    # requirement is provably violated without any extra flag.
+                    motion_state = CHECK_FAIL
+            elif checks.get("must_be_motion_violated") is True:
+                # A candidate that reports a motion violation is refused even when
+                # the beat did not ask for motion: non-motion material is preferred.
+                motion_state = CHECK_FAIL
+            constraint_states.extend((declared_state, violation_state, motion_state))
+            if declared_state == CHECK_FAIL or violation_state == CHECK_FAIL:
+                constraints.append("IDENTITY_CONSTRAINT_VIOLATED")
+            if motion_state == CHECK_FAIL:
                 constraints.append("MUST_BE_MOTION_VIOLATED")
-            stages.append({"stage": ADOPTION_STAGES[2], "blockers": constraints})
+            if not identity_applicable:
+                identity_state = CHECK_NOT_RUN
+                not_run_checks.append(ADOPTION_STAGES[2])
+                reasons.append("BEAT_BINDS_NO_IDENTITY_REFERENCE")
+            elif CHECK_FAIL in constraint_states:
+                identity_state = CHECK_FAIL
+            elif CHECK_UNKNOWN in constraint_states:
+                identity_state = CHECK_UNKNOWN
+                unknown_checks.append(ADOPTION_STAGES[2])
+                reasons.append("IDENTITY_STATE_NOT_REPORTED")
+            else:
+                identity_state = CHECK_PASS
+            stages.append(
+                {
+                    "stage": ADOPTION_STAGES[2],
+                    "state": identity_state,
+                    "blockers": constraints,
+                    "applicable": identity_applicable,
+                }
+            )
             blockers.extend(constraints)
 
+            text_applicable = (
+                str(beat.get("render_type") or "") in TEXT_LAYER_RENDER_TYPES
+                or any(
+                    candidate.get(field) is not None
+                    for field in ("text_readable", "readable", "audible")
+                )
+            )
+            readability_state, _ = _declared_false_is_failure(
+                checks, ("text_readable", "readable", "audible")
+            )
             readability: list[str] = []
-            if candidate.get("text_readable") is False or candidate.get("readable") is False:
+            if not text_applicable:
+                readability_state = CHECK_NOT_RUN
+                not_run_checks.append(ADOPTION_STAGES[3])
+                reasons.append("BEAT_DRAWS_NO_READABLE_TEXT")
+            elif readability_state == CHECK_FAIL:
                 readability.append("TEXT_UNREADABLE")
-            if candidate.get("audible") is False:
-                readability.append("AUDIBLE_UNREADABLE")
-            stages.append({"stage": ADOPTION_STAGES[3], "blockers": readability})
+                readability_state = CHECK_FAIL
+            elif readability_state == CHECK_UNKNOWN:
+                unknown_checks.append(ADOPTION_STAGES[3])
+                reasons.append("READABILITY_NOT_REPORTED")
+            stages.append(
+                {
+                    "stage": ADOPTION_STAGES[3],
+                    "state": readability_state,
+                    "blockers": readability,
+                    "applicable": text_applicable,
+                }
+            )
             blockers.extend(readability)
 
             style_score = _optional_float(
-                candidate.get("aesthetic_score", candidate.get("style_score"))
+                checks.get("aesthetic_score", checks.get("style_score"))
             )
-            stages.append({"stage": ADOPTION_STAGES[4], "blockers": []})
+            stages.append({"stage": ADOPTION_STAGES[4], "state": CHECK_PASS, "blockers": [], "applicable": True})
 
-            eligible = not blockers
+            # Machine adoption needs every applicable required check to have PASSED;
+            # a human may still adopt with the gap recorded (ADR: only hard technical
+            # failures are never skippable, and those are FAIL blockers).
+            machine_allowed = not blockers and not unknown_checks
             failing_stage = next((stage["stage"] for stage in stages if stage["blockers"]), None)
+            verdict = (
+                failing_stage
+                or (unknown_checks[0] if unknown_checks else None)
+                or "PASSED_ALL_STAGES"
+            )
             ranked.append(
                 {
                     "candidate_id": identifier,
@@ -1387,40 +1724,70 @@ class ExplainerStoryboardService:
                     "variant_no": _optional_int(candidate.get("variant_no")),
                     "render_type_actual": actual_type or None,
                     "adoption_blockers": blockers,
-                    "blocked": not eligible,
-                    "eligible_for_adoption": eligible,
+                    "blocked": bool(blockers),
+                    "eligible_for_adoption": machine_allowed,
+                    "machine_adoption_allowed": machine_allowed,
+                    "human_review_required": bool(unknown_checks),
+                    "unknown_checks": unknown_checks,
+                    "not_run_checks": not_run_checks,
+                    "check_reasons": reasons,
+                    "required_checks_state": {
+                        stage["stage"]: stage["state"] for stage in stages[: len(REQUIRED_ADOPTION_CHECKS)]
+                    },
+                    "applicable_checks": [
+                        stage["stage"]
+                        for stage in stages[: len(REQUIRED_ADOPTION_CHECKS)]
+                        if stage["applicable"]
+                    ],
                     "adoption_tier": (
                         ADOPTION_STAGES.index(failing_stage) + 1
                         if failing_stage is not None
                         else len(ADOPTION_STAGES)
                     ),
-                    "adoption_tier_name": failing_stage or "PASSED_ALL_STAGES",
+                    "adoption_tier_name": verdict,
                     "stage_results": stages,
                     "style_score": style_score,
-                    "constraint_violations": [dict(item) if isinstance(item, Mapping) else item for item in violations],
+                    "constraint_violations": [dict(item) if isinstance(item, Mapping) else item for item in (violations or ())],
                 }
             )
         eligible_items = sorted(
             (item for item in ranked if item["eligible_for_adoption"]),
             key=lambda item: (-float(item["style_score"]), item["candidate_id"]),
         )
+        # A candidate with no FAIL but an unmeasured required check is *reviewable*,
+        # not adoptable: it is ranked after every fully verified candidate so an
+        # aesthetic score can never float it to the top, but before the candidates
+        # that actually failed a check.
+        review_items = sorted(
+            (
+                item
+                for item in ranked
+                if not item["eligible_for_adoption"] and not item["blocked"] and item["human_review_required"]
+            ),
+            key=lambda item: (-float(item["style_score"]), item["candidate_id"]),
+        )
         blocked_items = sorted(
-            (item for item in ranked if not item["eligible_for_adoption"]),
+            (item for item in ranked if item["blocked"]),
             key=lambda item: (item["adoption_tier"], -float(item["style_score"]), item["candidate_id"]),
         )
-        ordered = eligible_items + blocked_items
+        ordered = eligible_items + review_items + blocked_items
         for position, item in enumerate(ordered, start=1):
             item["rank"] = position
         return {
             "beat_id": beat_id,
             "beat_code": str(beat["code"]),
             "must_be_motion": must_be_motion,
+            "identity_check_applicable": identity_applicable,
             "ranked": ordered,
             "eligible_count": len(eligible_items),
+            "needs_review_count": len(review_items),
             "blocked_count": len(blocked_items),
             "recommended_candidate_id": eligible_items[0]["candidate_id"] if eligible_items else None,
             "adoption_rule": ADOPTION_RULE,
             "adoption_stages": list(ADOPTION_STAGES),
+            "required_checks": list(REQUIRED_ADOPTION_CHECKS),
+            "check_states": list(CHECK_STATES),
+            "unknown_is_not_a_pass": True,
             "aesthetic_never_overrides_fact": True,
             "blocker_vocabulary": [
                 "FILE_NOT_DECODED",
@@ -1538,7 +1905,80 @@ class ExplainerStoryboardService:
                 {"candidate_id": candidate_id, "source_in_us": source_in_us, "source_out_us": source_out_us},
             )
 
+        # Design §6.3: the adoption authority decides what must already hold.  A
+        # machine adoption may only take a candidate whose applicable required checks
+        # all PASSED — an unmeasured check is UNKNOWN and keeps the candidate out.  A
+        # human may adopt past a content/identity/readability finding (they are the
+        # reviewer of record) but never past a hard technical failure, because a
+        # corrupt or undecodable file cannot be reviewed away.
+        verdict = self.evaluate_candidates(beat_id=beat_id, candidates=[dict(candidate)])["ranked"][0]
+        hard_failures = sorted(set(verdict["adoption_blockers"]) & HARD_TECHNICAL_BLOCKERS)
+        if authority_value == "MACHINE_POLICY" and not verdict["machine_adoption_allowed"]:
+            raise ExplainerContractError(
+                "QC_BLOCKED",
+                "候选的必需检查没有全部通过，机器流程不能自动采用",
+                {
+                    "beat_id": beat_id,
+                    "candidate_id": candidate_id,
+                    "adoption_blockers": verdict["adoption_blockers"],
+                    "unknown_checks": verdict["unknown_checks"],
+                    "required_checks_state": verdict["required_checks_state"],
+                },
+            )
+        if authority_value == "HUMAN" and hard_failures:
+            raise ExplainerContractError(
+                "QC_BLOCKED",
+                "候选存在技术硬错误，人工采用也不能跳过",
+                {"beat_id": beat_id, "candidate_id": candidate_id, "hard_failures": hard_failures},
+            )
+
+        media_sha256 = str(candidate["media_sha256"] or media["sha256"])
         previous = self.repo.active_beat_selection(beat_id, str(edition_id) if edition_id else None)
+        if (
+            previous is not None
+            and str(previous["candidate_id"]) == str(candidate_id)
+            and str(previous["media_sha256"]) == media_sha256
+        ):
+            # Re-adopting the same material is not a change: keep the existing
+            # selection and, when this call carries a human lock, record the lock on
+            # the beat.  Nothing downstream is invalidated and nothing is re-rendered
+            # (design §6.3) — the old code superseded the row and rewrote it every
+            # time the same candidate was chosen again.
+            if authority_value == "HUMAN" and not locked:
+                self.repo.update(
+                    "explainer_visual_beats",
+                    beat_id,
+                    {"locked_by_human": True, "locked_by": str(actor), "locked_at": utc_now_iso()},
+                )
+            return {
+                "selection": previous,
+                "selection_id": str(previous["id"]),
+                "video_id": video_id,
+                "beat_id": beat_id,
+                "beat_code": str(beat["code"]),
+                "candidate_id": str(candidate_id),
+                "edition_id": str(edition_id) if edition_id else None,
+                "adoption_authority": authority_value,
+                "locked_by_human": authority_value == "HUMAN" or locked,
+                "reused_existing_selection": True,
+                "superseded_selection_id": None,
+                "superseded_selection_deleted": False,
+                "invalidated": [],
+                "verdict": verdict["adoption_tier_name"],
+                "unknown_checks": verdict["unknown_checks"],
+                "source_window": {
+                    "source_in_us": previous.get("source_in_us"),
+                    "source_out_us": previous.get("source_out_us"),
+                },
+                "render_type_planned": render_type_planned,
+                "render_type_actual": render_type_actual,
+                "degraded": degraded,
+                "fallback_reason": fallback_reason,
+                "fallback_reason_defaulted": fallback_reason_defaulted,
+                "counted_as_successful_planned_type": not degraded,
+                "planned_and_actual_are_separate_fields": True,
+            }
+
         superseded_selection_id: str | None = None
         if previous is not None:
             superseded_selection_id = str(previous["id"])
@@ -1553,7 +1993,7 @@ class ExplainerStoryboardService:
                 "candidate_id": str(candidate_id),
                 "media_asset_id": str(candidate["media_asset_id"] or media["media_asset_id"]),
                 "media_version_id": str(candidate["media_version_id"]),
-                "media_sha256": str(candidate["media_sha256"] or media["sha256"]),
+                "media_sha256": media_sha256,
                 "source_in_us": source_in_us,
                 "source_out_us": source_out_us,
                 "adoption_authority": authority_value,
@@ -1577,8 +2017,14 @@ class ExplainerStoryboardService:
             "edition_id": str(edition_id) if edition_id else None,
             "adoption_authority": authority_value,
             "locked_by_human": authority_value == "HUMAN",
+            "reused_existing_selection": False,
             "superseded_selection_id": superseded_selection_id,
             "superseded_selection_deleted": False,
+            "invalidated": sorted({"BEAT_SELECTION", "COMPOSITION_REVISION", "RENDER", "DELIVERY", "QC_REPORT"})
+            if superseded_selection_id
+            else [],
+            "verdict": verdict["adoption_tier_name"],
+            "unknown_checks": verdict["unknown_checks"],
             "source_window": {"source_in_us": source_in_us, "source_out_us": source_out_us},
             "render_type_planned": render_type_planned,
             "render_type_actual": render_type_actual,

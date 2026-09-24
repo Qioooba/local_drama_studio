@@ -117,7 +117,24 @@ class LocalAiSubprocessRuntime:
         # applies the declared atempo post-process.
         if speed is not None:
             arguments += ("--speed", f"{float(speed):.6f}")
+        arguments += self._narration_parameter_arguments()
         return self.run_task("voxcpm2", arguments)
+
+    def _narration_parameter_arguments(self) -> list[str]:
+        """The narration sampling settings, as explicit runtime arguments.
+
+        Both the single-segment and the batch task receive the same two values so
+        a narration take produced by either path was produced under one declared
+        parameter set.  Reading them from settings is what lets the 4-vs-10 step
+        and ``max_len`` comparisons be a configuration change.
+        """
+
+        return [
+            "--inference-timesteps",
+            str(int(getattr(self.settings, "explainer_tts_inference_timesteps", 4) or 4)),
+            "--max-len",
+            str(int(getattr(self.settings, "explainer_tts_max_len", 256) or 256)),
+        ]
 
     def synthesize_batch(
         self,
@@ -156,6 +173,7 @@ class LocalAiSubprocessRuntime:
             arguments += ("--prompt-text-b64", self._encode_text(prompt_text))
         if speed is not None:
             arguments += ("--speed", f"{float(speed):.6f}")
+        arguments += self._narration_parameter_arguments()
         return self.run_task("voxcpm2-batch", arguments, timeout=timeout)
 
     def align_batch(
@@ -180,7 +198,12 @@ class LocalAiSubprocessRuntime:
         )
 
     def transcribe(self, audio_path: Path) -> LocalAiExecution:
-        return self.run_task("asr", ("--audio-input", str(audio_path)))
+        # 512 is an output ceiling, not a fixed length: a long narration segment
+        # must not be cut mid-sentence, because a truncated transcript would then
+        # be compared against the script as if the missing words were unspoken.
+        return self.run_task(
+            "asr", ("--audio-input", str(audio_path), "--asr-max-new-tokens", "512")
+        )
 
     def align(self, audio_path: Path, transcript: str, *, language: str = "Chinese") -> LocalAiExecution:
         return self.run_task(

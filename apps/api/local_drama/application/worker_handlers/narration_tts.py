@@ -204,6 +204,7 @@ def run_narration_tts_job(
     atomic_writer: AtomicWriter,
     take_suffix: str = "wav",
     pre_synthesized: Path | None = None,
+    pre_synthesized_receipt: Mapping[str, Any] | None = None,
 ) -> tuple[str, str]:
     """Synthesise one narration segment and register the take.
 
@@ -212,6 +213,12 @@ def run_narration_tts_job(
     probed, hashed, registered as an immutable media version and re-checked against
     the segment hash, so a batched take is the same durable fact a per-segment
     synthesis would have produced.
+
+    ``pre_synthesized_receipt`` is that batch run's own per-item receipt.  It is
+    recorded instead of a hardcoded assumption: the previous code declared
+    ``speed_applied_natively: True`` for every batched take regardless of what the
+    runtime reported, so a requested speech rate that the model did not apply
+    natively looked already-handled and was never post-processed.
     """
     snapshot = job["input_snapshot"]
     semantic_inputs = snapshot.get("semantic_inputs") or {}
@@ -306,12 +313,15 @@ def run_narration_tts_job(
                 "批量旁白合成没有产出该段落的音频文件",
                 {"segment_id": str(segment["id"]), "path": source.name},
             )
+        receipt = dict(pre_synthesized_receipt or {})
         runtime_result = {
             "runtime": "voxcpm2-subprocess-batch",
             "batch": True,
             "source": source.name,
             "network_used": False,
-            "speed_applied_natively": True,
+            "speed_applied_natively": bool(receipt.get("speed_applied_natively", False)),
+            "requested_speed": receipt.get("requested_speed"),
+            "tts_parameters": dict(receipt.get("parameters") or {}),
         }
         atomic_writer(raw_output, lambda target: shutil.copyfile(source, target))
     else:
@@ -375,6 +385,13 @@ def run_narration_tts_job(
         "generated_at": utc_now_iso(),
         "network_contacted": False,
     }
+    # The automatic adoption policy: a take is adoptable once it has been *measured*.
+    # A failed probe raised above, so reaching here means the file decoded, its
+    # duration and sample count came from a real probe, and the text/voice snapshot
+    # are the ones this job was frozen with.
+    instrumentally_verified = (
+        probe_status == "PASS" and duration_ms is not None and duration_ms > 0 and bool(sample_count)
+    )
     with database.connect() as connection:
         repository = ExplainerRepository(connection)
         take = repository.insert(
@@ -397,6 +414,7 @@ def run_narration_tts_job(
                 "measured_sample_count": sample_count,
                 "sample_rate_hz": sample_rate_hz,
                 "status": "GENERATED",
+                # Adoption is decided below, once the measurement is known to be real.
                 "selected": False,
                 "source_job_attempt_id": str(job.get("attempt_id") or "") or None,
                 "generation_json": generation_json,
@@ -406,6 +424,27 @@ def run_narration_tts_job(
         video_id = str(video["id"])
         segment_id = str(segment["id"])
         canonical_segment_id = str(segment["canonical_segment_id"])
+        adoption: dict[str, Any] | None = None
+        if instrumentally_verified:
+            # The automatic policy adopts a take it has really measured: the file
+            # decoded, the duration and sample count came from a probe, and the text
+            # and voice snapshot are the ones the job was frozen with.  Without this
+            # the take was inert (``selected`` stayed False), the newer take lost to
+            # an older selected one, and alignment then refused the segment with
+            # ``NARRATION_TAKE_NOT_SELECTED`` — a re-read that could not take effect
+            # (audit A03, design §5.2).
+            from local_drama.application.explainers.narration import build_narration_service
+
+            adoption = build_narration_service(repository).adopt_take(                segment_id=segment_id,
+                take_id=str(take["id"]),
+                actor=str(job.get("actor") or "narration-tts-worker"),
+                record={
+                    "adoption_reason": "MEASURED_AND_DECODED",
+                    "measured_duration_ms": duration_ms,
+                    "measured_sample_count": sample_count,
+                    "probe_status": probe_status,
+                },
+            )
         _commit(connection)
     report = {
         "schema_version": "localdrama.explainer.narration-tts-report.v1",
@@ -420,6 +459,11 @@ def run_narration_tts_job(
         "measured_duration_ms": duration_ms,
         "sample_rate_hz": sample_rate_hz,
         "measured_sample_count": sample_count,
+        # Whether this take is now the segment's adopted take.  A re-read that
+        # produced an inert take used to look identical to one that took effect.
+        "adopted": adoption is not None,
+        "adoption_authority": "MACHINE_STAGE" if adoption is not None else None,
+        "adoption_reason": "MEASURED_AND_DECODED" if adoption is not None else None,
         "synthesized_text_kind": "SPOKEN_TEXT",
         "delivery_authorized": voice_snapshot_checked["delivery_authorized"],
         "test_only": voice_snapshot_checked["test_only"],

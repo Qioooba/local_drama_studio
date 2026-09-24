@@ -280,6 +280,146 @@ def _decode_payload(payload: str) -> tuple[str, str]:
     return stripped, ""
 
 
+def _safe_area_for_canvas(width: int, height: int, safe_area: Mapping[str, Any] | None) -> dict[str, float]:
+    """Resolve fractional caption margins for a canvas.
+
+    A caption must be laid out *inside* the declared safe area.  The burn-in used
+    its own 4% bottom margin while the product declares 8% for 16:9, so every
+    bottom-aligned caption was burned into the safe margin the QC layer checks —
+    the layout detector would have reported overflow on a film whose captions were
+    "correctly" laid out by the older rule.
+    """
+
+    if isinstance(safe_area, Mapping) and safe_area:
+        resolved = _normalise_safe_area_for_canvas(safe_area)
+        if resolved is not None:
+            return resolved
+    if height > width:
+        return dict(_DEFAULT_SAFE_AREA["9:16"])
+    if abs(height - width) <= max(1, int(0.02 * width)):
+        return dict(_DEFAULT_SAFE_AREA["1:1"])
+    return dict(_DEFAULT_SAFE_AREA["16:9"])
+
+
+def _normalise_safe_area_for_canvas(safe_area: Mapping[str, Any]) -> dict[str, float] | None:
+    keys = ("top", "bottom", "left", "right")
+    if not set(keys) <= set(safe_area):
+        return None
+    resolved: dict[str, float] = {}
+    for key in keys:
+        try:
+            value = float(safe_area[key])
+        except (TypeError, ValueError):
+            return None
+        if value < 0 or value >= 1:
+            return None
+        resolved[key] = value
+    if resolved["top"] + resolved["bottom"] >= 1 or resolved["left"] + resolved["right"] >= 1:
+        return None
+    return resolved
+
+
+def caption_metrics(
+    *,
+    width: int,
+    height: int,
+    style: Mapping[str, Any] | None = None,
+    safe_area: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """The caption layout metrics for one output canvas.
+
+    Extracted so the burn-in script and the *recorded* cue geometry cannot drift:
+    the QC layout layer verifies the box and font size against the safe area, and a
+    second implementation of the same arithmetic would let it verify something the
+    film does not contain.
+    """
+
+    payload = dict(style or {})
+    play_w = max(1, int(width))
+    play_h = max(1, int(height))
+    font_size_px = max(16, int(round(int(payload.get("size") or 48) * play_h / 1080)))
+    area = _safe_area_for_canvas(play_w, play_h, safe_area)
+    margin_h = max(10, int(round(play_w * max(area["left"], area["right"]))))
+    margin_top = max(10, int(round(play_h * area["top"])))
+    margin_bottom = max(10, int(round(play_h * area["bottom"])))
+    position = str(payload.get("position") or "BOTTOM")
+    alignment = {"TOP": 8, "CENTER": 5, "BOTTOM": 2}.get(position, 2)
+    margin_v = margin_top if alignment == 8 else (margin_bottom if alignment == 2 else max(margin_top, margin_bottom))
+    return {
+        "play_w": play_w,
+        "play_h": play_h,
+        "font_size_px": font_size_px,
+        "margin_h_px": margin_h,
+        "margin_v_px": margin_v,
+        "margin_top_px": margin_top,
+        "margin_bottom_px": margin_bottom,
+        "safe_area": dict(area),
+        "position": position,
+        "alignment": alignment,
+        "characters_per_line": max(8, int((play_w - 2 * margin_h) / max(1, font_size_px))),
+    }
+
+
+def cue_geometry(
+    *,
+    text: str,
+    paired_text: str = "",
+    width: int,
+    height: int,
+    style: Mapping[str, Any] | None = None,
+    safe_area: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Deterministic pixel geometry for one caption, in the delivery canvas.
+
+    ``explainer_subtitle_revisions.cues_json`` is what the QC layout layer reads, so
+    a cue that carries no box or font size is reported ``SUBTITLE_GEOMETRY_UNKNOWN``
+    for every cue in the film — which is enough for the machine policy to refuse a
+    perfectly laid out captioned film.  The geometry is computed here with the same
+    wrapping rule the burn-in applies, and persisted with the cue.
+    """
+
+    metrics = caption_metrics(width=width, height=height, style=style, safe_area=safe_area)
+    payload = _encode_payload(text, paired_text)
+    wrapped: list[str] = []
+    for part in payload.split("\n"):
+        if not part.strip():
+            continue
+        wrapped.extend(wrap_text(part, max_chars_per_line=metrics["characters_per_line"]))
+    if not wrapped:
+        wrapped = [""]
+    font_size_px = int(metrics["font_size_px"])
+    line_height = font_size_px * 1.35
+    longest = max((len(line.strip()) for line in wrapped), default=0)
+    box_width = min(
+        max(1, metrics["play_w"] - 2 * metrics["margin_h_px"]),
+        max(1, int(longest * font_size_px * 0.95)),
+    )
+    box_height = max(1, int(round(len(wrapped) * line_height)))
+    x = max(metrics["margin_h_px"], int(round((metrics["play_w"] - box_width) / 2)))
+    if metrics["alignment"] == 8:  # top
+        y = metrics["margin_top_px"]
+    elif metrics["alignment"] == 5:  # middle
+        y = max(
+            metrics["margin_top_px"],
+            int(round((metrics["play_h"] - box_height) / 2)),
+        )
+    else:  # bottom, inside the declared bottom safe margin
+        y = max(metrics["margin_top_px"], metrics["play_h"] - metrics["margin_bottom_px"] - box_height)
+    return {
+        "font_size_px": font_size_px,
+        "line_count": len(wrapped),
+        "lines": wrapped,
+        "box": {"x": x, "y": y, "width": box_width, "height": box_height},
+        "characters_per_line": metrics["characters_per_line"],
+        "margin_h_px": metrics["margin_h_px"],
+        "margin_v_px": metrics["margin_v_px"],
+        "safe_area": metrics["safe_area"],
+        "alignment": metrics["alignment"],
+        "position": metrics["position"],
+        "geometry_authority": "DETERMINISTIC_TEXT_LAYER",
+    }
+
+
 # --------------------------------------------------------------------------- #
 # service
 # --------------------------------------------------------------------------- #
@@ -356,6 +496,30 @@ class ExplainerSubtitleService:
             max_lines_per_language=max_lines_per_language,
         )
         style_payload = dict(style or {})
+        # Record the deterministic text-layer geometry with every cue.  A caller may
+        # supply its own ``box``/``font_size_px`` (an explicit layout wins); otherwise
+        # the same arithmetic the burn-in uses is applied here, so the QC layout layer
+        # checks the geometry the film really has instead of reporting UNKNOWN for
+        # every cue and blocking the machine policy.
+        canvas_width = int(edition.get("width") or 1920)
+        canvas_height = int(edition.get("height") or 1080)
+        caption_safe_area = _normalise_safe_area(aspect_ratio, edition.get("subtitle_safe_area_json"))
+        for cue in normalised_cues:
+            if isinstance(cue.get("box"), Mapping) or cue.get("font_size_px") is not None:
+                cue.setdefault("line_count", int(cue.get("line_count") or 1))
+                continue
+            geometry = cue_geometry(
+                text=str(cue.get("text") or ""),
+                paired_text=str(cue.get("paired_text") or ""),
+                width=canvas_width,
+                height=canvas_height,
+                style=style_payload,
+                safe_area=caption_safe_area,
+            )
+            cue["box"] = geometry["box"]
+            cue["font_size_px"] = geometry["font_size_px"]
+            cue["line_count"] = geometry["line_count"]
+            cue["characters_per_line"] = geometry["characters_per_line"]
         layout_report = self._layout_report(
             cues=normalised_cues,
             locale=target_locale,
@@ -382,6 +546,12 @@ class ExplainerSubtitleService:
                         "text": item["text"],
                         "paired_text": item.get("paired_text", ""),
                         "segment_canonical_id": item.get("segment_canonical_id"),
+                        # The layout facts the QC subtitle layer verifies.  Dropping
+                        # them here is what made every cue unverifiable while the film
+                        # itself was laid out correctly.
+                        "line_count": item.get("line_count"),
+                        "font_size_px": item.get("font_size_px"),
+                        "box": item.get("box"),
                     }
                     for item in normalised_cues
                 ],
@@ -600,6 +770,7 @@ class ExplainerSubtitleService:
         style: Mapping[str, Any] | None = None,
         width: int | None = None,
         height: int | None = None,
+        safe_area: Mapping[str, Any] | None = None,
     ) -> str:
         target_format = str(format).upper()
         if target_format not in SUPPORTED_FORMATS:
@@ -621,7 +792,13 @@ class ExplainerSubtitleService:
                 lines.append("")
             return "\n".join(lines)
         style_payload = dict(style or {})
-        return self._serialize_ass(cues=normalised, style=style_payload, width=width, height=height)
+        return self._serialize_ass(
+            cues=normalised,
+            style=style_payload,
+            width=width,
+            height=height,
+            safe_area=safe_area,
+        )
 
     def parse(self, *, content_text: str, format: str) -> list[dict[str, Any]]:
         target_format = str(format).upper()
@@ -764,6 +941,20 @@ class ExplainerSubtitleService:
                     "segment_canonical_id": str(segment_id) if segment_id else None,
                     "locale": locale,
                     "max_lines_per_language": max_lines_per_language,
+                    # A caller that already owns a layout (an aspect reflow, a repair,
+                    # an explicit text layer) keeps it; otherwise ``create_revision``
+                    # computes the deterministic geometry for this canvas.
+                    **(
+                        {
+                            "box": dict(cue["box"]),
+                            "font_size_px": _require_int(cue["font_size_px"], field="font_size_px")
+                            if cue.get("font_size_px") is not None
+                            else None,
+                            "line_count": int(cue.get("line_count") or 1),
+                        }
+                        if isinstance(cue.get("box"), Mapping) or cue.get("font_size_px") is not None
+                        else {}
+                    ),
                 }
             )
         if not normalised:
@@ -912,8 +1103,8 @@ class ExplainerSubtitleService:
         style: Mapping[str, Any],
         width: int | None = None,
         height: int | None = None,
+        safe_area: Mapping[str, Any] | None = None,
     ) -> str:
-        position_to_alignment = {"TOP": 8, "CENTER": 5, "BOTTOM": 2}
         hex_color = str(style.get("color") or "#FFFFFF").lstrip("#").upper()
         while len(hex_color) < 6:
             hex_color += "0"
@@ -926,12 +1117,15 @@ class ExplainerSubtitleService:
         # scaled to whatever canvas is really rendered.
         play_w = int(width) if width else 1920
         play_h = int(height) if height else 1080
-        fontsize = max(16, int(round(int(style.get("size") or 48) * play_h / 1080)))
-        margin_h = max(10, int(round(play_w * 0.05)))
-        margin_v = max(10, int(round(play_h * 0.04)))
+        # One source of truth for the caption layout: the recorded cue geometry and
+        # the burned script must not disagree about the font size or the safe margin.
+        metrics = caption_metrics(width=play_w, height=play_h, style=style, safe_area=safe_area)
+        fontsize = int(metrics["font_size_px"])
+        margin_h = int(metrics["margin_h_px"])
+        margin_v = int(metrics["margin_v_px"])
         outline = int(style.get("outline") or 2)
-        alignment = position_to_alignment.get(str(style.get("position") or "BOTTOM"), 2)
-        cue_chars_per_line = max(8, int((play_w - 2 * margin_h) / max(1, fontsize)))
+        alignment = int(metrics["alignment"])
+        cue_chars_per_line = int(metrics["characters_per_line"])
         lines = [
             "[Script Info]",
             "ScriptType: v4.00+",

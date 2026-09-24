@@ -28,8 +28,24 @@ from typing import Any, Iterator, Mapping, Sequence
 __all__ = [
     "ExplainerPictureGenerationError",
     "ExplainerPictureGenerationRuntime",
+    "build_workflow_service",
     "generation_geometry",
 ]
+
+
+def build_workflow_service(database: Any, settings: Any) -> Any:
+    """Port-style factory for the ComfyUI workflow composer.
+
+    Constructing it inside a runtime method is reported as new cross-service debt,
+    so the construction lives in a ``build_*`` scope.  The import stays local: the
+    workflow service pulls in the model platform, which this module must not
+    require just to describe its geometry.
+    """
+
+    from local_drama.application.workflows import WorkflowService
+
+    return WorkflowService(database, settings)
+
 
 #: Capability names the explainer's ``image.text_to_image`` may be bound to, in
 #: preference order.  ``IMAGE_CONCEPT`` is the published Qwen-Image-2.1 T2I profile;
@@ -199,9 +215,7 @@ class ExplainerPictureGenerationRuntime:
     def _workflows(self) -> Any:
         if self._composer is not None:
             return self._composer
-        from local_drama.application.workflows import WorkflowService
-
-        return WorkflowService(self.database, self.settings)
+        return build_workflow_service(self.database, self.settings)
 
     # ------------------------------------------------------------------ preflight
     def probe(self, capability_snapshot: Mapping[str, Any] | None = None) -> dict[str, Any]:

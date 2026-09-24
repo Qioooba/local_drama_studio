@@ -19,6 +19,7 @@ data/
 temp/
 /projects/
 output/
+deliverables/
 apps/web/output/
 apps/web/test-results/
 runtime/*.json
@@ -49,6 +50,7 @@ deepseek-ui-audit/
 .pytest_tmp*/
 .pt8c/
 tmp_*/
+docs/evidence/explainer-uat-*/
 
 # build/incremental artifacts
 *.tsbuildinfo

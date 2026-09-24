@@ -124,15 +124,26 @@ def _file_present(value: Any) -> bool:
         return False
 
 
+def build_capability_assignment_service(database: Any) -> Any:
+    """Port-style factory for the model-platform capability resolver.
+
+    Constructing the concrete service inside a resolution helper is reported as new
+    cross-service debt, so the construction lives in a ``build_*`` scope.  The
+    import stays function-local: this module must stay importable when the model
+    platform is not installed.
+    """
+
+    from local_drama.model_platform.application.capability_resolution import CapabilityAssignmentService
+
+    return CapabilityAssignmentService(database)
+
+
 def _v2_resolution(database: Any, binding: ExplainerCapabilityBinding, project_id: str) -> dict[str, Any]:
     """Resolve through the Model Platform V2 assignment chain."""
 
-    from local_drama.model_platform.application.capability_resolution import (
-        CapabilityAssignmentService,
-        CapabilityScopeContext,
-    )
+    from local_drama.model_platform.application.capability_resolution import CapabilityScopeContext
 
-    service = CapabilityAssignmentService(database)
+    service = build_capability_assignment_service(database)
     resolution = service.resolve(binding.canonical, CapabilityScopeContext(project_id=project_id))
     if resolution.blocked_reason or not resolution.execution_profile_version_id:
         return {

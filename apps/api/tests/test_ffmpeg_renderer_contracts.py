@@ -21,7 +21,9 @@ frames / PCM, not on the graph text.
 
 from __future__ import annotations
 
+import array
 import hashlib
+import math
 import shutil
 import subprocess
 import sys
@@ -165,20 +167,34 @@ def _decoded_frame_count(path: Path) -> int:
 
 
 def _pcm_rms(path: Path, *, start_seconds: float, duration_seconds: float) -> float:
-    """Decode a slice of the file and report its RMS through ``astats``."""
+    """Decode a slice and return its RMS in dBFS, or ``-inf`` for true silence.
 
-    completed = _run([
-        str(FFMPEG), "-v", "error", "-i", str(path),
-        "-ss", f"{start_seconds:.6f}", "-t", f"{duration_seconds:.6f}",
-        "-af", "astats=metadata=1:reset=0", "-f", "null", "-",
-    ])
-    assert completed.returncode == 0, completed.stderr
-    for line in completed.stderr.splitlines():
-        if "RMS level dB" in line:
-            value = line.split(":", 1)[1].strip()
-            if value not in {"-inf", "inf"}:
-                return float(value)
-    return float("-inf")
+    The samples are decoded to raw PCM and measured here rather than parsed from an
+    ``astats`` summary: that summary is emitted at info level, so a quiet decode
+    (``-v error``) cannot see it, and a measurement that always answers ``-inf``
+    would make every audio assertion pass for the wrong reason.
+    """
+
+    completed = subprocess.run(
+        [
+            str(FFMPEG), "-v", "error", "-i", str(path),
+            "-ss", f"{start_seconds:.6f}", "-t", f"{duration_seconds:.6f}",
+            "-f", "s16le", "-acodec", "pcm_s16le", "-ac", "1", "-ar", str(SAMPLE_RATE), "-",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr[-2000:]
+    raw = completed.stdout
+    usable = len(raw) - (len(raw) % 2)
+    if usable <= 0:
+        return float("-inf")
+    samples = array.array("h")
+    samples.frombytes(raw[:usable])
+    mean_square = sum(float(value) * float(value) for value in samples) / len(samples)
+    if mean_square <= 0.0:
+        return float("-inf")
+    return 20.0 * math.log10(math.sqrt(mean_square) / 32768.0)
 
 
 def _one_clip_manifest(tmp_path: Path, *, frames: int, source_seconds: float) -> tuple[object, Path]:
@@ -801,3 +817,224 @@ def test_real_ffmpeg_chunk_reports_the_declared_frame_count(tmp_path: Path) -> N
     assert len(rendered) == total_frames
     assert _mean_abs_difference(rendered[0], rendered[-1]) > 4.0
     assert _mean_abs_difference(rendered[0], rendered[1]) > 0.2
+
+
+# --------------------------------------------------------------------------- #
+# manifest-driven audio placement (design §7.2, matrix R07)
+# --------------------------------------------------------------------------- #
+def _silence_then_tone_wav(path: Path, *, silence_seconds: float, tone_seconds: float, frequency: int) -> None:
+    """A source whose first half is silent, so a non-zero trim is observable."""
+
+    completed = _run([
+        str(FFMPEG), "-y", "-v", "error",
+        "-f", "lavfi", "-i", f"anullsrc=channel_layout=stereo:sample_rate={SAMPLE_RATE}:d={silence_seconds:.6f}",
+        "-f", "lavfi", "-i", f"sine=frequency={frequency}:duration={tone_seconds:.6f}:sample_rate={SAMPLE_RATE}",
+        "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1[a]",
+        "-map", "[a]", "-ac", "2", "-c:a", "pcm_s16le",
+        str(path),
+    ])
+    assert completed.returncode == 0, completed.stderr
+
+
+def _audio_manifest(total_frames: int, clips: list[object]) -> object:
+    return build_manifest(
+        edition_id="ed-1",
+        composition_revision_id="cr-1",
+        aspect_ratio=AspectRatio("16:9"),
+        fps=FPS_25,
+        total_frames=total_frames,
+        audio_sample_rate_hz=SAMPLE_RATE,
+        clips=clips,
+        chunks=[ManifestChunkSpec(chunk_no=0, start_frame=0, end_frame_exclusive=total_frames)],
+        validate_structure=False,
+    )
+
+
+def test_manifest_audio_requires_a_source_for_every_declared_media_version(tmp_path: Path) -> None:
+    """A declared clip with no resolvable path is refused, never silently dropped."""
+
+    manifest = _audio_manifest(
+        50,
+        [
+            manifest_clip(
+                clip_id="n-0", track="NARRATION", item_kind="AUDIO_CLIP",
+                start_frame=0, end_frame_exclusive=50, fps=FPS_25, sample_rate_hz=SAMPLE_RATE,
+                media_version_id="mv-missing", media_sha256="a" * 64,
+                source_in_us=0, source_out_us=1_000_000,
+                sample_start=0, sample_end_exclusive=48_000,
+            )
+        ],
+    )
+    with pytest.raises(ExplainerContractError) as error:
+        build_mix_command(
+            manifest=manifest,
+            narration_paths=[],
+            bgm_path=None,
+            sfx_paths=[],
+            output_path=tmp_path / "mix.wav",
+            audio_sources={},
+        )
+    assert error.value.code == "AUDIO_SOURCE_MISSING"
+
+
+def test_manifest_audio_refuses_a_conflicting_legacy_path_list(tmp_path: Path) -> None:
+    """Two contradictory audio layouts must block, not silently pick one."""
+
+    voice = tmp_path / "voice.wav"
+    _tone_wav(voice, seconds=0.5, frequency=440)
+    manifest = _audio_manifest(
+        25,
+        [
+            manifest_clip(
+                clip_id="n-0", track="NARRATION", item_kind="AUDIO_CLIP",
+                start_frame=0, end_frame_exclusive=25, fps=FPS_25, sample_rate_hz=SAMPLE_RATE,
+                media_version_id="mv-a", media_sha256="a" * 64,
+                source_in_us=0, source_out_us=500_000,
+                sample_start=0, sample_end_exclusive=24_000,
+            )
+        ],
+    )
+    with pytest.raises(ExplainerContractError) as error:
+        build_mix_command(
+            manifest=manifest,
+            narration_paths=[voice],
+            bgm_path=None,
+            sfx_paths=[],
+            output_path=tmp_path / "mix.wav",
+            audio_sources={"mv-a": voice},
+        )
+    assert error.value.code == "AUDIO_DECLARATION_MISMATCH"
+
+
+@requires_ffmpeg
+def test_real_ffmpeg_manifest_audio_keeps_the_declared_gap_between_sentences(tmp_path: Path) -> None:
+    """R07: two sentences declared 0.5 s apart must not be concatenated flat."""
+
+    first = tmp_path / "n0.wav"
+    second = tmp_path / "n1.wav"
+    _tone_wav(first, seconds=0.5, frequency=440)
+    _tone_wav(second, seconds=1.0, frequency=880)
+    manifest = _audio_manifest(
+        50,
+        [
+            manifest_clip(
+                clip_id="n-0", track="NARRATION", item_kind="AUDIO_CLIP",
+                start_frame=0, end_frame_exclusive=25, fps=FPS_25, sample_rate_hz=SAMPLE_RATE,
+                media_version_id="mv-a", media_sha256="a" * 64,
+                source_in_us=0, source_out_us=500_000,
+                sample_start=0, sample_end_exclusive=24_000,
+            ),
+            manifest_clip(
+                clip_id="n-1", track="NARRATION", item_kind="AUDIO_CLIP",
+                start_frame=25, end_frame_exclusive=50, fps=FPS_25, sample_rate_hz=SAMPLE_RATE,
+                media_version_id="mv-b", media_sha256="b" * 64,
+                source_in_us=0, source_out_us=1_000_000,
+                sample_start=48_000, sample_end_exclusive=96_000,
+            ),
+        ],
+    )
+    output = tmp_path / "mix.wav"
+    command = build_mix_command(
+        manifest=manifest,
+        narration_paths=[],
+        bgm_path=None,
+        sfx_paths=[],
+        output_path=output,
+        audio_sources={"mv-a": first, "mv-b": second},
+    )
+    completed = _run([str(FFMPEG), *command.to_argv()])
+    assert completed.returncode == 0, completed.stderr[-3000:]
+    # Sentence one occupies 0.0–0.5 s, the gap 0.5–1.0 s, sentence two 1.0–2.0 s.
+    assert _pcm_rms(output, start_seconds=0.05, duration_seconds=0.35) > -40.0
+    assert _pcm_rms(output, start_seconds=0.60, duration_seconds=0.30) == float("-inf")
+    assert _pcm_rms(output, start_seconds=1.10, duration_seconds=0.60) > -40.0
+    # Both sentences were placed absolutely, not concatenated in list order.
+    assert "adelay=0" not in str(command) or "adelay=48000S" in str(command)
+    assert "adelay=48000S:all=1" in str(command)
+
+
+@requires_ffmpeg
+def test_real_ffmpeg_manifest_audio_honours_a_non_zero_source_trim(tmp_path: Path) -> None:
+    """R07: the declared source window is applied, so a silent head is skipped."""
+
+    source = tmp_path / "source.wav"
+    _silence_then_tone_wav(source, silence_seconds=1.0, tone_seconds=1.0, frequency=880)
+    manifest = _audio_manifest(
+        25,
+        [
+            manifest_clip(
+                clip_id="n-0", track="NARRATION", item_kind="AUDIO_CLIP",
+                start_frame=0, end_frame_exclusive=25, fps=FPS_25, sample_rate_hz=SAMPLE_RATE,
+                media_version_id="mv-a", media_sha256="a" * 64,
+                source_in_us=1_000_000, source_out_us=2_000_000,
+                sample_start=0, sample_end_exclusive=48_000,
+            )
+        ],
+    )
+    output = tmp_path / "mix.wav"
+    command = build_mix_command(
+        manifest=manifest,
+        narration_paths=[],
+        bgm_path=None,
+        sfx_paths=[],
+        output_path=output,
+        audio_sources={"mv-a": source},
+    )
+    completed = _run([str(FFMPEG), *command.to_argv()])
+    assert completed.returncode == 0, completed.stderr[-3000:]
+    # start_sample=48000 is the second half of the source, so the mix is audible
+    # from its first sample.  Ignoring the trim would leave the silent head in.
+    assert "atrim=start_sample=48000" in str(command)
+    assert _pcm_rms(output, start_seconds=0.05, duration_seconds=0.80) > -40.0
+
+
+@requires_ffmpeg
+def test_real_ffmpeg_manifest_audio_places_a_declared_sfx_at_its_own_position(tmp_path: Path) -> None:
+    """A bed entry is placed where the manifest says, not appended after the voice."""
+
+    voice = tmp_path / "voice.wav"
+    sfx = tmp_path / "sfx.wav"
+    _tone_wav(voice, seconds=2.0, frequency=440)
+    _tone_wav(sfx, seconds=0.2, frequency=1320)
+    # A 3 s film: 2 s of narration, then a declared 0.5 s pause, then the effect.
+    manifest = _audio_manifest(
+        75,
+        [
+            manifest_clip(
+                clip_id="n-0", track="NARRATION", item_kind="AUDIO_CLIP",
+                start_frame=0, end_frame_exclusive=50, fps=FPS_25, sample_rate_hz=SAMPLE_RATE,
+                media_version_id="mv-v", media_sha256="a" * 64,
+                source_in_us=0, source_out_us=2_000_000,
+                sample_start=0, sample_end_exclusive=96_000,
+            ),
+            manifest_clip(
+                clip_id="s-0", track="SFX", item_kind="AUDIO_CLIP",
+                start_frame=60, end_frame_exclusive=75, fps=FPS_25, sample_rate_hz=SAMPLE_RATE,
+                media_version_id="mv-s", media_sha256="b" * 64,
+                source_in_us=0, source_out_us=200_000,
+                sample_start=120_000, sample_end_exclusive=129_600,
+            ),
+        ],
+    )
+    output = tmp_path / "mix.wav"
+    command = build_mix_command(
+        manifest=manifest,
+        narration_paths=[],
+        bgm_path=None,
+        sfx_paths=[],
+        output_path=output,
+        audio_sources={"mv-v": voice, "mv-s": sfx},
+    )
+    completed = _run([str(FFMPEG), *command.to_argv()])
+    assert completed.returncode == 0, completed.stderr[-3000:]
+    assert "adelay=120000S:all=1" in str(command)
+    probe = _run([
+        str(FFPROBE), "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=nw=1:nk=1", str(output),
+    ])
+    assert probe.returncode == 0
+    assert abs(float(probe.stdout.strip()) - 3.0) < 0.05
+    # Narration, then the declared pause, then the effect — not appended back to back.
+    assert _pcm_rms(output, start_seconds=0.10, duration_seconds=0.40) > -40.0
+    assert _pcm_rms(output, start_seconds=2.10, duration_seconds=0.30) == float("-inf")
+    assert _pcm_rms(output, start_seconds=2.55, duration_seconds=0.15) > -40.0

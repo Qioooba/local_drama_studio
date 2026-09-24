@@ -10,7 +10,7 @@
  *    different facts and get three different labels.
  */
 
-import type { ExplainerStep, ExplainerStepStatus } from "../../generated/api";
+import type { ExplainerOutputRequest, ExplainerStep, ExplainerStepStatus } from "../../generated/api";
 
 export const RUN_STATUS_LABELS: Record<string, string> = {
   QUEUED: "排队中",
@@ -198,4 +198,65 @@ export function subtitleModeLabel(mode: string | null | undefined): string {
     default:
       return mode ?? "—";
   }
+}
+
+export function editionKey(voiceLocale: string, subtitleMode: string, aspect: string): string {
+  const language = voiceLocale.split("-")[0].toLowerCase();
+  const sub = subtitleMode === "NONE" ? "clean" : subtitleMode === "BILINGUAL_BURNED" ? "bilingual" : "captioned";
+  const asp = aspect.replace(":", "");
+  return `${language}-${sub}-${asp}`;
+}
+
+export function outputFor(
+  voiceLocale: string,
+  aspect: ExplainerOutputRequest["aspect_ratio"],
+  subtitleMode: ExplainerOutputRequest["subtitle_mode"],
+  subtitleLocales: string[],
+): ExplainerOutputRequest {
+  return {
+    edition_key: editionKey(voiceLocale, subtitleMode, aspect),
+    voice_locale: voiceLocale,
+    subtitle_locales: subtitleLocales,
+    subtitle_mode: subtitleMode,
+    aspect_ratio: aspect,
+    fps: { num: 25, den: 1 },
+    duration_policy: "NATURAL_NARRATION",
+    allow_soft_subtitle_fallback: false,
+  };
+}
+
+export function resolveOutputsForExplainer(
+  editions?: Array<Record<string, unknown>> | null,
+  sourceLocale?: string | null,
+  aspectRatio?: string | null,
+): ExplainerOutputRequest[] {
+  const fallbackAspect = (aspectRatio === "9:16" || aspectRatio === "3:4" || aspectRatio === "1:1" ? aspectRatio : "16:9") as ExplainerOutputRequest["aspect_ratio"];
+  if (editions && editions.length > 0) {
+    return editions.map((edition) => {
+      const voiceLocale = String(edition.voice_locale || sourceLocale || "zh-CN");
+      const subtitleLocales = Array.isArray(edition.subtitle_locales_json)
+        ? (edition.subtitle_locales_json as unknown[]).map(String)
+        : Array.isArray(edition.subtitle_locales)
+          ? (edition.subtitle_locales as unknown[]).map(String)
+          : [voiceLocale];
+      const subtitleMode = (edition.subtitle_mode as ExplainerOutputRequest["subtitle_mode"]) || "BURNED";
+      const aspect = (edition.aspect_ratio as ExplainerOutputRequest["aspect_ratio"]) || fallbackAspect;
+      const key = String(edition.edition_key || editionKey(voiceLocale, subtitleMode, aspect));
+      return {
+        edition_key: key,
+        voice_locale: voiceLocale,
+        subtitle_locales: subtitleLocales,
+        subtitle_mode: subtitleMode,
+        aspect_ratio: aspect,
+        fps: {
+          num: typeof edition.fps_num === "number" ? edition.fps_num : 25,
+          den: typeof edition.fps_den === "number" ? edition.fps_den : 1,
+        },
+        duration_policy: (edition.duration_policy as ExplainerOutputRequest["duration_policy"]) || "NATURAL_NARRATION",
+        allow_soft_subtitle_fallback: Boolean(edition.allow_soft_subtitle_fallback),
+      };
+    });
+  }
+  const locale = sourceLocale || "zh-CN";
+  return [outputFor(locale, fallbackAspect, "BURNED", [locale])];
 }

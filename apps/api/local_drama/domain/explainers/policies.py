@@ -675,16 +675,23 @@ def project_run_status(
 
     ``explainer_runs.status`` is a projection of the existing workflow/job
     truth, so this helper is the single place that maps step facts to it.
+
+    A cancelled or genuinely failed step is reported before a completed export:
+    the export step succeeding only proves that *it* finished, so checking it
+    first let a run read ``COMPLETED`` while another required step was
+    ``TERMINAL_FAILED`` and its delivery package was blocked.
     """
 
-    if completed:
-        return RunStatus.COMPLETED.value
     if cancel_requested:
         return RunStatus.CANCELLING.value
-    if has_blockers and any(status == "BLOCKED" for status in step_statuses.values()):
-        return RunStatus.WAITING_INPUT.value
+    if any(status == "CANCELLED" for status in step_statuses.values()):
+        return RunStatus.CANCELLED.value
     if any(status in {"RETRYABLE_FAILED", "TERMINAL_FAILED"} for status in step_statuses.values()):
         return RunStatus.FAILED.value
+    if completed:
+        return RunStatus.COMPLETED.value
+    if has_blockers and any(status == "BLOCKED" for status in step_statuses.values()):
+        return RunStatus.WAITING_INPUT.value
     if exporting:
         return RunStatus.EXPORTING.value
     if ready_to_export:

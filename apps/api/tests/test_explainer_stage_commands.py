@@ -15,8 +15,6 @@ Reproduced defects on the audit snapshot:
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 
 from local_drama.application.explainers.stage_commands import (
@@ -342,4 +340,80 @@ def test_unknown_stage_is_reported_as_unavailable_not_accepted(database: Databas
     )
     assert result["status"] == STAGE_CAPABILITY_UNAVAILABLE
     assert _counts(database)["jobs"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# local repairs
+# --------------------------------------------------------------------------- #
+def test_repair_submits_a_real_job_for_a_rerunnable_responsible_step(database: Database) -> None:
+    """``repairs{confirm:true}`` must create a claimable job, not just say it did."""
+
+    _seed(database)
+    service = build_explainers_command_service(database)
+    before = _counts(database)["jobs"]
+    result = service.submit_repair(
+        project_id=PROJECT_ID,
+        video_id=VIDEO_ID,
+        issue_ids=["issue-1"],
+        responsible_steps=["COMPOSITION_RENDER"],
+        beat_ids=[],
+        revision=1,
+        idempotency_key="repair-1",
+    )
+    assert result["status"] == "ACCEPTED"
+    assert result["submitted"] is True
+    assert len(result["job_ids"]) == 1
+    assert _counts(database)["jobs"] == before + 1
+    with database.connect() as connection:
+        job = connection.execute("SELECT * FROM jobs WHERE id = ?", (result["job_ids"][0],)).fetchone()
+    assert str(job["type"]) == EXPLAINER_STAGE_JOB_TYPES["COMPOSITION_RENDER"]
+    assert str(job["state"]) == "QUEUED"
+    import json
+
+    snapshot = json.loads(str(job["input_snapshot_json"]))
+    assert snapshot["semantic_inputs"]["issue_ids"] == ["issue-1"]
+    assert snapshot["semantic_inputs"]["repair_of_step"] == "COMPOSITION_RENDER"
+
+
+def test_repair_reports_unschedulable_steps_instead_of_faking_success(database: Database) -> None:
+    """A beat's picture has no standalone command: say so, create nothing."""
+
+    _seed(database)
+    service = build_explainers_command_service(database)
+    before = _counts(database)["jobs"]
+    result = service.submit_repair(
+        project_id=PROJECT_ID,
+        video_id=VIDEO_ID,
+        issue_ids=["issue-1"],
+        responsible_steps=["VISUAL_GENERATION"],
+        beat_ids=["beat-1"],
+        revision=1,
+        idempotency_key="repair-2",
+    )
+    assert result["status"] == "REPAIR_NOT_SCHEDULABLE"
+    assert result["submitted"] is False
+    assert result["job_ids"] == []
+    assert result["unschedulable"][0]["responsible_step_code"] == "VISUAL_GENERATION"
+    assert result["unschedulable"][0]["reason"] == "NO_STANDALONE_REPAIR_COMMAND"
+    assert _counts(database)["jobs"] == before
+
+
+def test_repair_mixes_schedulable_and_unschedulable_steps(database: Database) -> None:
+    _seed(database)
+    service = build_explainers_command_service(database)
+    before = _counts(database)["jobs"]
+    result = service.submit_repair(
+        project_id=PROJECT_ID,
+        video_id=VIDEO_ID,
+        issue_ids=["issue-1"],
+        responsible_steps=["COMPOSITION_RENDER", "VISUAL_GENERATION"],
+        revision=1,
+        idempotency_key="repair-3",
+    )
+    assert result["status"] == "ACCEPTED"
+    assert result["submitted"] is True
+    assert len(result["job_ids"]) == 1
+    assert [item["responsible_step_code"] for item in result["unschedulable"]] == ["VISUAL_GENERATION"]
+    # Only the schedulable step produced a job.
+    assert _counts(database)["jobs"] == before + 1
 

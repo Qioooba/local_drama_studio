@@ -621,6 +621,52 @@ class ExplainerProductionService:
             )
             resolved_outputs = [dict(item) for item in (outputs or [])]
             if not resolved_outputs:
+                existing_editions = repo.editions(str(video["id"]))
+                if existing_editions:
+                    resolved_outputs = [
+                        {
+                            "edition_key": str(item["edition_key"]),
+                            "voice_locale": str(item["voice_locale"]),
+                            "subtitle_locales": list(item.get("subtitle_locales_json") or [item["voice_locale"]]),
+                            "subtitle_mode": str(item.get("subtitle_mode") or "BURNED"),
+                            "aspect_ratio": str(item.get("aspect_ratio") or "16:9"),
+                            "fps": {"num": int(item.get("fps_num") or 25), "den": int(item.get("fps_den") or 1)},
+                            "duration_policy": str(item.get("duration_policy") or "NATURAL_NARRATION"),
+                            "allow_soft_subtitle_fallback": bool(item.get("allow_soft_subtitle_fallback")),
+                        }
+                        for item in existing_editions
+                    ]
+                else:
+                    project = repo.project_row(project_id)
+                    aspect = str(project.get("aspect_ratio") or "16:9")
+                    voice_locale = str(video.get("source_locale") or project.get("primary_language") or "zh-CN")
+                    subtitle_mode = str(project.get("subtitle_mode") or "BURNED")
+                    lang = voice_locale.split("-")[0].lower()
+                    sub_tag = (
+                        "clean"
+                        if subtitle_mode == "NONE"
+                        else "bilingual"
+                        if subtitle_mode == "BILINGUAL_BURNED"
+                        else "captioned"
+                    )
+                    asp = aspect.replace(":", "")
+                    key = f"{lang}-{sub_tag}-{asp}"
+                    resolved_outputs = [
+                        {
+                            "edition_key": key,
+                            "voice_locale": voice_locale,
+                            "subtitle_locales": [voice_locale] if subtitle_mode != "NONE" else [],
+                            "subtitle_mode": subtitle_mode,
+                            "aspect_ratio": aspect,
+                            "fps": {
+                                "num": int(project.get("fps_num") or 25),
+                                "den": int(project.get("fps_den") or 1),
+                            },
+                            "duration_policy": "NATURAL_NARRATION",
+                            "allow_soft_subtitle_fallback": False,
+                        }
+                    ]
+            if not resolved_outputs:
                 blockers.append(
                     PreflightBlocker(
                         "SCHEMA_INVALID",
@@ -1008,7 +1054,8 @@ class ExplainerProductionService:
             # write belongs here, in the same transaction as the run that consumes
             # it, so a submitted plan can never point at an edition that was never
             # created.
-            if outputs:
+            effective_outputs = outputs or fresh.get("frozen_inputs", {}).get("outputs") or []
+            if effective_outputs:
                 from local_drama.application.explainers.production_pipeline import (
                     ensure_editions_for_outputs,
                 )
@@ -1016,7 +1063,7 @@ class ExplainerProductionService:
                 ensure_editions_for_outputs(
                     repo,
                     video=video,
-                    outputs=outputs,
+                    outputs=effective_outputs,
                     generation_height=self._generation_height(),
                 )
             run = repo.insert(
@@ -1082,6 +1129,14 @@ class ExplainerProductionService:
             video = repo.get("explainer_videos", str(run["video_id"]))
         step_statuses = {str(step["planned_step_code"]): str(step["status"]) for step in steps}
         blockers = list(run.get("blockers_json") or [])
+        # Design §7.5: a run may only read COMPLETED when every required step is
+        # settled *and* the export step succeeded.  Checking the export step alone
+        # let a run look finished while another required step was still pending or
+        # stale.
+        settled_success = {"SUCCEEDED", "SKIPPED_WITH_REASON"}
+        all_required_settled = all(
+            step_statuses.get(step["step_code"]) in settled_success for step in TASK_SKELETON
+        )
         projected = project_run_status(
             step_statuses=step_statuses,
             has_blockers=bool(blockers),
@@ -1091,7 +1146,7 @@ class ExplainerProductionService:
             )
             and step_statuses.get("EXPLAINER_EXPORT") in {None, "PENDING", "RUNNING"},
             exporting=step_statuses.get("EXPLAINER_EXPORT") == "RUNNING",
-            completed=step_statuses.get("EXPLAINER_EXPORT") == "SUCCEEDED",
+            completed=all_required_settled and step_statuses.get("EXPLAINER_EXPORT") == "SUCCEEDED",
         )
         if workflow_run is not None and workflow_run.get("status") == "PAUSED_HITL":
             projected = RunStatus.WAITING_INPUT.value
@@ -1404,6 +1459,7 @@ class ExplainerProductionService:
             "project_id": project_id,
             "video_id": str(video["id"]),
             "issue_ids": list(issue_ids),
+            "revision": current_revision,
             "responsible_steps": sorted(responsible_steps) or ["EXPLAINER_STORYBOARD"],
             "beats": runnable,
             "locked_beats_skipped": skipped_locked,
@@ -1420,6 +1476,7 @@ class ExplainerProductionService:
         with self.database.connect() as connection:
             repo = self._repo(connection)
             repo.require_explainer_project(project_id)
+            project = repo.project_row(project_id)
             video = repo.require_video_for_project(project_id)
             editions = repo.editions(str(video["id"]))
             runs = repo.list_where(
@@ -1433,6 +1490,13 @@ class ExplainerProductionService:
                 subject_kind="EDITION",
                 subject_revision_id=str(editions[0]["id"]) if editions else "",
             ) if editions else []
+            input_payload: dict[str, Any] = {}
+            if video.get("input_payload_json"):
+                try:
+                    raw_payload = video["input_payload_json"]
+                    input_payload = json.loads(raw_payload) if isinstance(raw_payload, str) else dict(raw_payload)
+                except Exception:
+                    input_payload = {}
         return {
             "project_id": project_id,
             "video": {
@@ -1455,6 +1519,9 @@ class ExplainerProductionService:
                 "channel_profile_version_id": video.get("current_channel_profile_version_id"),
                 "input_kind": video.get("input_kind"),
                 "source_locale": video.get("source_locale"),
+                "aspect_ratio": project.get("aspect_ratio") or "16:9",
+                "story_text": str(input_payload.get("story_text") or input_payload.get("pasted_text") or ""),
+                "input_payload": input_payload,
             },
             "editions": editions,
             "beat_count": len(beats),

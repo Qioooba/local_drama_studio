@@ -56,6 +56,10 @@ QC_LAYER_STATUS: dict[str, str] = {
     "DEPTH": "WIRED_WHEN_FRAME_SAMPLER_AND_VISUAL_PROVIDER_ARE_SUPPLIED",
 }
 
+#: The stage that owns picture adoption.  ``VISUAL_GENERATION`` registers the
+#: candidates; this stage adopts them once the checks have run (design §4.2).
+ADOPTION_STAGE = "EXPLAINER_VISUAL_QC"
+
 #: Reason codes recorded when a layer cannot run.
 LAYER_NOT_RUN_PREFIX = "LAYER_NOT_RUN"
 PROVIDER_ABSENT_REASON = "VISUAL_QC_PROVIDER_NOT_CONFIGURED"
@@ -232,6 +236,8 @@ def build_qc_handlers(
     subtitle_reader: Callable[[ExplainerRepository, Mapping[str, Any]], Mapping[str, Any]] | None = None,
     fact_reader: Callable[[ExplainerRepository, Mapping[str, Any]], Mapping[str, Any]] | None = None,
     sampling_reader: Callable[[ExplainerRepository, Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    candidate_adopter: Callable[[ExplainerRepository, Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    candidate_checker: Callable[..., Mapping[str, Any]] | None = None,
 ) -> dict[str, Callable[[dict[str, Any], Mapping[str, Any]], dict[str, Any]]]:
     """The QC stage handlers, keyed by stage code, in the worker-handler shape.
 
@@ -253,6 +259,7 @@ def build_qc_handlers(
                 subtitle_reader=subtitle_reader,
                 fact_reader=fact_reader,
                 sampling_reader=sampling_reader,
+                candidate_adopter=candidate_adopter,
             )
 
         return handler
@@ -270,6 +277,8 @@ def run_qc_layers(
     subtitle_reader: Callable[[ExplainerRepository, Mapping[str, Any]], Mapping[str, Any]] | None = None,
     fact_reader: Callable[[ExplainerRepository, Mapping[str, Any]], Mapping[str, Any]] | None = None,
     sampling_reader: Callable[[ExplainerRepository, Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    candidate_adopter: Callable[[ExplainerRepository, Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    candidate_checker: Callable[..., Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run the requested QC layers for one subject and persist every report.
 
@@ -295,6 +304,7 @@ def run_qc_layers(
     reports: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     provider_capability: dict[str, Any] | None = None
+    candidate_adoption: dict[str, Any] | None = None
     with repo_factory() as repo:
         service = quality_factory(repo)
         subject_hash = subject["declared_subject_hash"] or resolve_subject_hash(
@@ -412,6 +422,20 @@ def run_qc_layers(
                 # ``port`` already recorded the sampling layer as not run.
                 pass
 
+        # The picture check runs before adoption: the gate can only adopt material
+        # whose required checks PASSED, and these are the fields that carry that
+        # answer.  A check that could not run writes nothing and says why, so the
+        # candidate stays UNKNOWN instead of quietly passing (design §6.2).
+        if stage == ADOPTION_STAGE and candidate_checker is not None:
+            candidate_checks = _check_beat_candidates(repo, context, candidate_checker)
+
+        # Picture adoption belongs to this stage, not to generation: the candidates
+        # are registered by ``VISUAL_GENERATION`` and only adopted once the checks
+        # have run (design §4.2/"通过后统一采用").  A beat with no adoption is
+        # unfinished work and is reported as such below.
+        if stage == ADOPTION_STAGE and candidate_adopter is not None:
+            candidate_adoption = dict(candidate_adopter(repo, context))
+
     completed = [str(item.get("detector") or item.get("subject_kind") or "") for item in reports]
     # The stage status is derived from the layer reports, not from their count: a
     # layer that reported NOT_RUN or FAIL must not be summarised as PASS just
@@ -434,6 +458,14 @@ def run_qc_layers(
         status = "PARTIAL"
     else:
         status = "PASS"
+    required_selections_present: bool | None = None
+    if candidate_adoption is not None:
+        required_selections_present = bool(candidate_adoption.get("every_beat_has_a_selection"))
+        if not required_selections_present:
+            # A beat without an adopted candidate cannot be rendered, so this stage is
+            # not finished.  It waits for a human decision (adopt, regenerate, or run
+            # the content check) instead of passing with an empty picture track.
+            status = "NEEDS_HITL"
     report: dict[str, Any] = {
         "schema_version": "localdrama.explainer-qc-run.v1",
         "stage_code": stage,
@@ -454,17 +486,90 @@ def run_qc_layers(
         "human_approval_written": False,
         "publication_authorized": False,
         "human_reviewed_claimed": False,
+        "candidate_adoption": candidate_adoption,
+        "required_selections_present": required_selections_present,
         "status": status,
         "machine_check": {"status": status, "ok": status == "PASS"},
         "summary": (
             f"已按层分别记录 {len(reports)} 份质检报告"
             + (f"，另有 {len(skipped)} 层因缺少真实测量端口而未运行（不计为通过）" if skipped else "")
+            + (
+                ""
+                if required_selections_present is None or required_selections_present
+                else f"；{int(candidate_adoption.get('needs_review_count') or 0)} 个画面段尚无可采用的候选，等待人工处理"
+            )
         ),
     }
     if skipped:
         # A layer that did not run is UNCHECKED, never a pass.
         report["unverified_checks"] = [f"{LAYER_NOT_RUN_PREFIX}:{item['layer']}" for item in skipped]
     return report
+
+
+def _check_beat_candidates(
+    repo: ExplainerRepository,
+    context: Mapping[str, Any],
+    candidate_checker: Callable[[ExplainerRepository, Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]], Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Run the picture check for every generated candidate and record its verdicts.
+
+    The verdicts land in the candidate's ``qc_summary_json``, bound to the media hash
+    and to a hash of the frozen expectation they were measured against, which is what
+    the adoption gate reads.  A check that did not run writes no verdict at all.
+    """
+
+    from local_drama.domain.explainers.contracts import content_hash
+
+    video_id = str(context.get("video_id") or "")
+    results: list[dict[str, Any]] = []
+    for beat in repo.beats(video_id):
+        beat_id = str(beat["id"])
+        candidates = repo.list_where(
+            "explainer_media_candidates", {"beat_id": beat_id}, order_by="variant_no", descending=False
+        )
+        for candidate in candidates:
+            verdict = dict(candidate_checker(repo, context, beat, candidate) or {})
+            entry: dict[str, Any] = {
+                "beat_id": beat_id,
+                "beat_code": str(beat["code"]),
+                "candidate_id": str(candidate["id"]),
+                "checked": bool(verdict.get("checked")),
+                "reason": str(verdict.get("reason") or ""),
+            }
+            if not verdict.get("checked"):
+                results.append(entry)
+                continue
+            summary = candidate.get("qc_summary_json")
+            merged = dict(summary) if isinstance(summary, Mapping) else {}
+            merged.update(verdict.get("verdicts") or {})
+            merged["content_check"] = {
+                "checked": True,
+                "checker_version": "candidate_visual_v1",
+                "media_sha256": str(candidate.get("media_sha256") or ""),
+                "expectation_hash": content_hash(dict(verdict.get("expectation") or {})),
+                "expectation": {
+                    "beat_code": str(beat["code"]),
+                    "visual_intent": str(beat.get("visual_intent") or ""),
+                    "must_be_motion": bool(beat.get("must_be_motion")),
+                    "render_type_planned": str(beat.get("render_type") or ""),
+                    "render_type_actual": str(verdict.get("expectation", {}).get("render_type_actual") or ""),
+                },
+                "check_states": dict(verdict.get("check_states") or {}),
+                "issue_kinds": list(verdict.get("issue_kinds") or []),
+                "sampled_frame_refs": list(verdict.get("sampled_frame_refs") or []),
+                "evidence": list(verdict.get("evidence") or []),
+                "unknown_is_not_a_pass": True,
+            }
+            repo.update(
+                "explainer_media_candidates",
+                str(candidate["id"]),
+                {"qc_summary_json": merged},
+                actor="explainer-qc",
+            )
+            entry["check_states"] = dict(verdict.get("check_states") or {})
+            entry["issue_kinds"] = list(verdict.get("issue_kinds") or [])
+            results.append(entry)
+    return results
 
 
 # --------------------------------------------------------------------- readers

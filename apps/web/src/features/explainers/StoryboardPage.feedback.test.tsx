@@ -16,6 +16,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../generated/api", () => ({
+  adoptExplainerGeneratedBeats: vi.fn(),
   getExplainerBeatImpact: vi.fn(),
   selectExplainerBeatCandidate: vi.fn(),
 }));

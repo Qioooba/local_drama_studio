@@ -2519,8 +2519,20 @@ export async function controlExplainerRun(runId: string, action: 'pause' | 'resu
   return requestJson(`/api/v2/explainer-runs/${encodeURIComponent(runId)}:${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
-export async function planExplainerRepairs(projectId: string, payload: Record<string, unknown>, baseUrl = ''): Promise<Record<string, unknown>> {
-  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/repairs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+export async function planExplainerRepairs(projectId: string, payload: Record<string, unknown>, idempotencyKey?: string, baseUrl = ''): Promise<Record<string, unknown>> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // The preview call (confirm=false) submits nothing and needs no key; the
+  // confirming call creates real repair jobs, so the server requires the key then.
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/repairs`, { method: 'POST', headers, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function adoptExplainerGeneratedBeats(projectId: string, payload: { expected_revision: number; actor: string; edition_id?: string | null; beat_ids?: string[]; confirm?: boolean }, idempotencyKey?: string, baseUrl = ''): Promise<Record<string, unknown>> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // The preview (confirm=false) writes nothing. Confirming records one HUMAN
+  // adoption per beat, so only that call needs the operation key.
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/beats:adopt-generated`, { method: 'POST', headers, body: JSON.stringify(payload) }, baseUrl);
 }
 
 export async function listExplainerBeats(projectId: string, editionId?: string, baseUrl = ''): Promise<{ video_id: string; beats: ExplainerBeat[]; render_type_counts: Record<string, number>; actual_render_type_counts: Record<string, number>; planned_and_actual_reported_separately: true }> {

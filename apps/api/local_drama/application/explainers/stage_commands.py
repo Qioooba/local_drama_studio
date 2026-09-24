@@ -32,6 +32,7 @@ from local_drama.infrastructure.database.explainer_repository import ExplainerRe
 __all__ = [
     "EXPLAINER_STAGE_JOB_TYPES",
     "ExplainersCommandService",
+    "REPAIR_STAGE_FOR_RESPONSIBLE_STEP",
     "STAGE_CAPABILITY_UNAVAILABLE",
     "build_explainers_command_service",
 ]
@@ -59,6 +60,20 @@ EXPLAINER_STAGE_JOB_TYPES: Mapping[str, str] = {
 
 #: Reason code used when a stage cannot be scheduled in this build.
 STAGE_CAPABILITY_UNAVAILABLE = "CAPABILITY_UNAVAILABLE"
+
+#: A QC issue names the step responsible for it.  Only steps that own a standalone
+#: command can be re-run on their own; the rest describe work that belongs to the
+#: production graph (a beat's picture, the script) and cannot be scheduled as one
+#: job.  Those are reported as unschedulable instead of being answered with a
+#: fabricated acceptance (design §8.2).
+REPAIR_STAGE_FOR_RESPONSIBLE_STEP: Mapping[str, str] = {
+    "COMPOSITION_RENDER": "COMPOSITION_RENDER",
+    "COMPOSITION_QC": "COMPOSITION_QC",
+    "EXPLAINER_POLICY_EVALUATE": "EXPLAINER_POLICY_EVALUATE",
+    "EXPLAINER_EXPORT": "EXPLAINER_EXPORT",
+    "NARRATION_TTS": "NARRATION_TTS",
+    "NARRATION_ALIGN": "NARRATION_ALIGN",
+}
 
 
 @dataclass(frozen=True)
@@ -483,6 +498,97 @@ class ExplainersCommandService:
             )
         )
 
+
+    # ------------------------------------------------------------------ repairs
+    def submit_repair(
+        self,
+        *,
+        project_id: str,
+        video_id: str,
+        issue_ids: Sequence[str],
+        responsible_steps: Sequence[str],
+        beat_ids: Sequence[str] = (),
+        revision: int = 0,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Schedule one real job per re-runnable responsible step.
+
+        The repair endpoint used to answer ``submitted: true`` while writing
+        nothing at all: the reviewer pressed "fix this issue" and no job, no state
+        change and no retry existed.  This submits through the same stage commands
+        the manual buttons use, so every returned ``job_id`` is claimable.
+
+        A responsible step with no standalone command (a beat's picture, the
+        script) is reported in ``unschedulable`` with its reason.  When *no* step
+        can be scheduled the whole command reports ``REPAIR_NOT_SCHEDULABLE``
+        rather than a success, which is the design's required answer for a request
+        that cannot be honoured.
+        """
+
+        submissions: list[dict[str, Any]] = []
+        unschedulable: list[dict[str, Any]] = []
+        for step in dict.fromkeys(str(item) for item in responsible_steps if str(item)):
+            stage = REPAIR_STAGE_FOR_RESPONSIBLE_STEP.get(step)
+            if stage is None:
+                unschedulable.append(
+                    {
+                        "responsible_step_code": step,
+                        "reason": "NO_STANDALONE_REPAIR_COMMAND",
+                        "next_step": "该步骤由生产图中的画面/讲稿阶段承担，请重跑对应阶段而不是单独提交。",
+                    }
+                )
+                continue
+            result = self._submit_stage(
+                _StageRequest(
+                    stage_code=stage,
+                    project_id=project_id,
+                    video_id=video_id,
+                    subject_type="EXPLAINER_VIDEO",
+                    subject_id=video_id,
+                    subject_kind="VIDEO",
+                    snapshot={
+                        "semantic_inputs": {
+                            "project_id": project_id,
+                            "video_id": video_id,
+                            "issue_ids": [str(item) for item in issue_ids],
+                            "beat_ids": [str(item) for item in beat_ids],
+                            "repair_revision": int(revision),
+                            "repair_of_step": step,
+                        }
+                    },
+                    idempotency_key=f"{idempotency_key}:{stage}",
+                )
+            )
+            submissions.append({"responsible_step_code": step, "stage_code": stage, **result})
+        job_ids = [
+            str(item.get("job_id") or item.get("operation_id") or "")
+            for item in submissions
+            if str(item.get("status")) in {"ACCEPTED", "RECOVERY_REQUIRED"}
+        ]
+        scheduled = [item for item in submissions if str(item.get("status")) == "ACCEPTED"]
+        if not scheduled:
+            return {
+                "status": "REPAIR_NOT_SCHEDULABLE",
+                "project_id": project_id,
+                "video_id": video_id,
+                "issue_ids": [str(item) for item in issue_ids],
+                "submitted": False,
+                "job_ids": job_ids,
+                "stages": submissions,
+                "unschedulable": unschedulable,
+                "note": "没有任何可独立执行的返工阶段，未创建任务。",
+            }
+        return {
+            "status": "ACCEPTED",
+            "project_id": project_id,
+            "video_id": video_id,
+            "issue_ids": [str(item) for item in issue_ids],
+            "submitted": True,
+            "job_ids": [item for item in job_ids if item],
+            "stages": submissions,
+            "unschedulable": unschedulable,
+            "note": "已按问题责任阶段提交真实返工任务；未列出的步骤无法单独执行。",
+        }
 
     # ------------------------------------------------------------------ export
     def submit_export(

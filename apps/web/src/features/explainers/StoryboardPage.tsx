@@ -10,9 +10,11 @@ import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "react-router-dom";
 import {
+  adoptExplainerGeneratedBeats,
   getExplainerBeatImpact,
   selectExplainerBeatCandidate,
 } from "../../generated/api";
+import { completeOperation, operationIdempotencyKey } from "../../services/commandId";
 import { queryKeys } from "../../query/queryKeys";
 import {
   InlineError,
@@ -85,6 +87,52 @@ export function ExplainerStoryboardPage() {
           ? `${message}（画面段已被其他操作更新，已保留当前选择；请刷新后重试）`
           : message,
       );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.explainers.all });
+    },
+  });
+
+  const batchAdopt = useMutation({
+    // Two steps, one operation: preview the scope, then confirm it. The confirming
+    // call records one HUMAN adoption per beat, which is the operator's batch
+    // decision — machine adoption still requires every applicable check to pass.
+    mutationFn: async ({ confirm }: { confirm: boolean }) => {
+      const revision = Number((beats[0] as unknown as Record<string, unknown> | undefined)?.revision ?? 1);
+      const request = {
+        expected_revision: revision,
+        actor: "local-user",
+        edition_id: editionId ?? null,
+        confirm,
+      };
+      const key = confirm
+        ? operationIdempotencyKey(`explainer-batch-adopt:${projectId}`, request)
+        : undefined;
+      const result = await adoptExplainerGeneratedBeats(projectId, request, key);
+      if (confirm) completeOperation(`explainer-batch-adopt:${projectId}`);
+      return result as Record<string, unknown>;
+    },
+    onSuccess: async (record) => {
+      setError(null);
+      if (record.requires_confirmation === true) {
+        const planned = Number((record.plan as Record<string, unknown> | undefined)?.planned_count ?? 0);
+        const review = ((record.needs_review as unknown[]) ?? []).length;
+        setFeedback(
+          `预览：将采用 ${planned} 个已生成画面；${review} 个画面段没有可采用的候选。确认后按人工权威采用并记录操作者。`,
+        );
+      } else {
+        const adopted = Number(record.adopted_count ?? 0);
+        const review = Number(record.needs_review_count ?? 0);
+        setFeedback(
+          adopted > 0
+            ? `已按人工权威采用 ${adopted} 个画面；${review} 个画面段仍需处理（技术硬错误不可采用）。`
+            : `未采用任何画面；${review} 个画面段缺少可采用的候选，请先重新生成。`,
+        );
+      }
+      setFeedbackBeatId(selectedBeatId);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.explainers.all });
+    },
+    onError: (mutationError) => {
+      setFeedback(null);
+      setError(mutationError instanceof Error ? mutationError.message : String(mutationError));
       void queryClient.invalidateQueries({ queryKey: queryKeys.explainers.all });
     },
   });
@@ -279,6 +327,23 @@ export function ExplainerStoryboardPage() {
               }}
             >
               以人工身份锁定当前候选
+            </button>
+            {/* Batch handling for the same class of problem: generation registers
+                candidates, adoption is a separate decision, and the operator makes it
+                once for every beat that still has none (design §2.5). */}
+            <button
+              type="button"
+              disabled={batchAdopt.isPending}
+              onClick={() => batchAdopt.mutate({ confirm: false })}
+            >
+              预览待采用画面
+            </button>
+            <button
+              type="button"
+              disabled={batchAdopt.isPending}
+              onClick={() => batchAdopt.mutate({ confirm: true })}
+            >
+              采用全部已生成画面
             </button>
           </div>
           {/* FE-A06: the impact preview gets a real panel instead of a transient,

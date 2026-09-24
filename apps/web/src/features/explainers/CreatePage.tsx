@@ -43,40 +43,64 @@ const DURATION_PRESETS = [
 
 const ASPECTS: Array<ExplainerOutputRequest["aspect_ratio"]> = ["16:9", "9:16", "3:4", "1:1"];
 
-function defaultOutputs(voiceLocale: string, aspect: ExplainerOutputRequest["aspect_ratio"], bilingual: boolean, portrait: boolean): ExplainerOutputRequest[] {
+/**
+ * The edition key says what the edition *is*: language, subtitle treatment, aspect.
+ *
+ * A fixed key like `zh-clean-169` used for a vertical or English edition described
+ * something other than the request, and the server refuses such a mismatch. The
+ * same three inputs always produce the same key, which is also what makes replaying
+ * a submission reuse the edition instead of forking a second one of the same shape.
+ */
+function editionKey(voiceLocale: string, subtitleMode: string, aspect: string): string {
+  const language = (voiceLocale.split("-")[0] || "und").toLowerCase();
+  const mode = subtitleMode.toUpperCase();
+  const subtitleToken = mode === "NONE" ? "clean" : mode.startsWith("BILINGUAL") ? "bilingual" : "captioned";
+  return `${language}-${subtitleToken}-${aspect.replace(":", "")}`;
+}
+
+function outputFor(
+  voiceLocale: string,
+  aspect: ExplainerOutputRequest["aspect_ratio"],
+  subtitleMode: ExplainerOutputRequest["subtitle_mode"],
+  subtitleLocales: string[],
+): ExplainerOutputRequest {
+  return {
+    edition_key: editionKey(voiceLocale, subtitleMode, aspect),
+    voice_locale: voiceLocale,
+    subtitle_locales: subtitleLocales,
+    subtitle_mode: subtitleMode,
+    aspect_ratio: aspect,
+    fps: { num: 25, den: 1 },
+    duration_policy: "NATURAL_NARRATION",
+    allow_soft_subtitle_fallback: false,
+  };
+}
+
+/**
+ * The default is exactly one captioned edition in the current language and aspect,
+ * with its SRT exported alongside it. Bilingual subtitles, a separate voice
+ * language, a second aspect and a clean master are opt-in additions: defaulting all
+ * of them on produced four editions for every request (design §1.3, case V03).
+ */
+function defaultOutputs(
+  voiceLocale: string,
+  aspect: ExplainerOutputRequest["aspect_ratio"],
+  bilingual: boolean,
+  portrait: boolean,
+  cleanMaster: boolean,
+): ExplainerOutputRequest[] {
+  const language = voiceLocale.split("-")[0].toLowerCase();
+  const englishScope = language !== "en" ? ["en-US"] : [];
   const outputs: ExplainerOutputRequest[] = [
-    {
-      edition_key: "zh-clean-169",
-      voice_locale: voiceLocale,
-      subtitle_locales: [],
-      subtitle_mode: "NONE",
-      aspect_ratio: aspect,
-      fps: { num: 25, den: 1 },
-      duration_policy: "NATURAL_NARRATION",
-      allow_soft_subtitle_fallback: false,
-    },
-    {
-      edition_key: bilingual ? "zh-bilingual-169" : "zh-captioned-169",
-      voice_locale: voiceLocale,
-      subtitle_locales: bilingual ? ["zh-CN", "en-US"] : [voiceLocale],
-      subtitle_mode: bilingual ? "BILINGUAL_BURNED" : "BURNED",
-      aspect_ratio: aspect,
-      fps: { num: 25, den: 1 },
-      duration_policy: "NATURAL_NARRATION",
-      allow_soft_subtitle_fallback: false,
-    },
+    bilingual && englishScope.length > 0
+      ? outputFor(voiceLocale, aspect, "BILINGUAL_BURNED", [voiceLocale, ...englishScope])
+      : outputFor(voiceLocale, aspect, "BURNED", [voiceLocale]),
   ];
-  if (portrait) {
-    outputs.push({
-      edition_key: "zh-captioned-916",
-      voice_locale: voiceLocale,
-      subtitle_locales: [voiceLocale],
-      subtitle_mode: "BURNED",
-      aspect_ratio: "9:16",
-      fps: { num: 25, den: 1 },
-      duration_policy: "NATURAL_NARRATION",
-      allow_soft_subtitle_fallback: false,
-    });
+  if (portrait && aspect !== "9:16") {
+    outputs.push(outputFor(voiceLocale, "9:16", "BURNED", [voiceLocale]));
+  }
+  if (cleanMaster) {
+    outputs.push(outputFor(voiceLocale, aspect, "NONE", []));
   }
   return outputs;
 }
@@ -92,9 +116,12 @@ export function ExplainerCreatePage() {
   const [targetSeconds, setTargetSeconds] = useState(300);
   const [sourceLocale, setSourceLocale] = useState("zh-CN");
   const [aspect, setAspect] = useState<ExplainerOutputRequest["aspect_ratio"]>("16:9");
-  const [bilingual, setBilingual] = useState(true);
-  const [portrait, setPortrait] = useState(true);
-  const [englishEdition, setEnglishEdition] = useState(true);
+  // Defaults follow the design: one captioned edition in the current language and
+  // aspect. Every extra output is an explicit opt-in.
+  const [bilingual, setBilingual] = useState(false);
+  const [portrait, setPortrait] = useState(false);
+  const [englishEdition, setEnglishEdition] = useState(false);
+  const [cleanMaster, setCleanMaster] = useState(false);
   const [automationMode, setAutomationMode] = useState<AutomationMode>("AUTO_WITH_EXCEPTIONS");
   const [researchMode, setResearchMode] = useState<"OFFLINE_IMPORT" | "WEB_RESEARCH">("OFFLINE_IMPORT");
   const [allowedDomains, setAllowedDomains] = useState("");
@@ -107,22 +134,12 @@ export function ExplainerCreatePage() {
   const [createdProjectId, setCreatedProjectId] = useState<string | null>(null);
 
   const outputs = useMemo(() => {
-    const base = defaultOutputs(sourceLocale, aspect, bilingual, portrait);
+    const base = defaultOutputs(sourceLocale, aspect, bilingual, portrait, cleanMaster);
     if (!englishEdition) return base;
-    return [
-      ...base,
-      {
-        edition_key: "en-captioned-169",
-        voice_locale: "en-US",
-        subtitle_locales: ["en-US"],
-        subtitle_mode: "BURNED" as const,
-        aspect_ratio: aspect,
-        fps: { num: 25, den: 1 },
-        duration_policy: "NATURAL_NARRATION" as const,
-        allow_soft_subtitle_fallback: false,
-      },
-    ];
-  }, [aspect, bilingual, englishEdition, portrait, sourceLocale]);
+    const language = sourceLocale.split("-")[0].toLowerCase();
+    if (language === "en") return base;
+    return [...base, outputFor("en-US", aspect, "BURNED", ["en-US"])];
+  }, [aspect, bilingual, cleanMaster, englishEdition, portrait, sourceLocale]);
 
   const createAndPreflight = useMutation({
     mutationFn: async () => {
@@ -309,12 +326,13 @@ export function ExplainerCreatePage() {
       </div>
 
       <div className="explainer-actions" style={{ marginTop: 12 }}>
+        <label className="badge"><input type="checkbox" checked={cleanMaster} onChange={(event) => setCleanMaster(event.target.checked)} /> 额外输出无字幕干净版</label>
         <label className="badge"><input type="checkbox" checked={bilingual} onChange={(event) => setBilingual(event.target.checked)} /> 中文配音 + 中英双语字幕</label>
         <label className="badge"><input type="checkbox" checked={englishEdition} onChange={(event) => setEnglishEdition(event.target.checked)} /> 独立英语配音版</label>
         <label className="badge"><input type="checkbox" checked={portrait} onChange={(event) => setPortrait(event.target.checked)} /> 竖版输出</label>
       </div>
       <p className="explainer-note">
-        英语配音版使用独立的英文 TTS 时钟、独立剪辑点和字幕，不会照搬中文绝对时码。竖版重新排版构图与安全区，不是把横屏居中裁切。
+        默认只生成当前语言、当前画幅的带字幕一版，并同步导出字幕 SRT；以下选项按需增加额外版本。英语配音版使用独立的英文 TTS 时钟、独立剪辑点和字幕，不会照搬中文绝对时码。竖版重新排版构图与安全区，不是把横屏居中裁切。
       </p>
     </section>
 

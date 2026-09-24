@@ -29,6 +29,11 @@ from local_drama.domain.explainers.contracts import (
     utc_now_iso,
 )
 
+#: Sentinel for "beats written before plan attribution existed" (0105).  Legacy
+#: rows are never backfilled (there is no trustworthy evidence of which plan
+#: produced them), so reading them is an explicit choice rather than a default.
+LEGACY_UNATTRIBUTED_BEATS = "__LEGACY_UNATTRIBUTED__"
+
 JSON_COLUMNS: dict[str, frozenset[str]] = {
     "explainer_videos": frozenset({"input_payload_json", "research_allowed_domains_json"}),
     "channel_profile_versions": frozenset(
@@ -600,26 +605,75 @@ class ExplainerRepository:
         )
 
     # ------------------------------------------------------------------ beats / editions
-    def beats(self, video_id: str) -> list[dict[str, Any]]:
+    def beats(self, video_id: str, *, plan_step_binding_id: str | None = None) -> list[dict[str, Any]]:
+        """Beats of one video, optionally of the plan that produced them.
+
+        ``plan_step_binding_id`` scopes the read to a single storyboard plan so a
+        worker cannot mix a new plan with the previous plan's beats.  Rows written
+        before plan attribution existed carry ``NULL``; pass
+        ``plan_step_binding_id=LEGACY_UNATTRIBUTED_BEATS`` to read exactly those
+        (audit A11).
+        """
+
+        if plan_step_binding_id == LEGACY_UNATTRIBUTED_BEATS:
+            return decode_rows(
+                "explainer_visual_beats",
+                self.query_all(
+                    """SELECT * FROM explainer_visual_beats
+                    WHERE video_id = ? AND plan_step_binding_id IS NULL ORDER BY ordinal""",
+                    (video_id,),
+                ),
+            )
+        if plan_step_binding_id:
+            return decode_rows(
+                "explainer_visual_beats",
+                self.query_all(
+                    """SELECT * FROM explainer_visual_beats
+                    WHERE video_id = ? AND plan_step_binding_id = ? ORDER BY ordinal""",
+                    (video_id, plan_step_binding_id),
+                ),
+            )
         return decode_rows(
             "explainer_visual_beats",
             self.query_all("SELECT * FROM explainer_visual_beats WHERE video_id = ? ORDER BY ordinal", (video_id,)),
         )
 
-    def beat_links(self, video_id: str) -> list[dict[str, Any]]:
+    def beat_links(self, video_id: str, *, plan_step_binding_id: str | None = None) -> list[dict[str, Any]]:
+        plan_filter = ""
+        parameters: list[Any] = [video_id]
+        if plan_step_binding_id == LEGACY_UNATTRIBUTED_BEATS:
+            plan_filter = " AND b.plan_step_binding_id IS NULL"
+        elif plan_step_binding_id:
+            plan_filter = " AND b.plan_step_binding_id = ?"
+            parameters.append(plan_step_binding_id)
         return decode_rows(
             "beat_narration_links",
             self.query_all(
-                """
+                f"""
                 SELECT l.*, s.canonical_segment_id, s.locale, s.display_text
                 FROM beat_narration_links l
                 JOIN narration_segments s ON s.id = l.narration_segment_id
-                WHERE l.video_id = ?
+                JOIN explainer_visual_beats b ON b.id = l.beat_id
+                WHERE l.video_id = ?{plan_filter}
                 ORDER BY l.beat_id, l.ordinal
                 """,
-                (video_id,),
+                tuple(parameters),
             ),
         )
+
+    def current_plan_step_binding(self, video_id: str) -> str | None:
+        """The plan the newest attributed beats belong to, if any."""
+
+        row = self.query_one(
+            """SELECT plan_step_binding_id FROM explainer_visual_beats
+            WHERE video_id = ? AND plan_step_binding_id IS NOT NULL
+            ORDER BY ordinal DESC LIMIT 1""",
+            (video_id,),
+        )
+        if row is None:
+            return None
+        value = row.get("plan_step_binding_id")
+        return str(value) if value else None
 
     def editions(self, video_id: str) -> list[dict[str, Any]]:
         return decode_rows(

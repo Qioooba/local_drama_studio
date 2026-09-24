@@ -27,6 +27,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from local_drama.application.explainers.aligner_timestamps import normalize_aligner_timestamps
 from local_drama.application.explainers.media_qc import build_media_qc_readers
 from local_drama.application.explainers.quality import ExplainerQualityService
 from local_drama.application.explainers.schedules import ExplainerScheduleService
@@ -121,11 +122,19 @@ class LocalAiNarrationTtsRuntime:
             prompt_text=prompt_text.strip() or None,
             speed=speech_rate,
         )
+        # ``speed_applied_natively`` is the runtime's own report, never an
+        # assumption.  Declaring it ``True`` unconditionally told the caller its
+        # audible rate was already handled when the locked VoxCPM2 build exposes
+        # no native speed control at all, so the declared atempo post-process was
+        # skipped and the requested speech rate silently did not apply.
         return {
             "runtime": "voxcpm2-subprocess",
             "network_used": bool(result.payload.get("network_used", False)),
             "elapsed_seconds": result.payload.get("elapsed_seconds"),
-            "speed_applied_natively": True,
+            "duration_seconds": result.payload.get("duration_seconds"),
+            "sample_rate_hz": result.payload.get("sample_rate"),
+            "speed_applied_natively": bool(result.payload.get("speed_applied_natively", False)),
+            "tts_parameters": dict(result.payload.get("parameters") or {}),
             "voice_mode": "MODEL_DEFAULT" if prompt_path is None else "CLONED_REFERENCE",
             "command": list(result.command),
         }
@@ -194,6 +203,28 @@ class LocalForcedAlignerAdapter:
             )
         return self.runtime
 
+    @staticmethod
+    def normalize_timestamps(timestamps: Any) -> list[dict[str, Any]]:
+        """The one conversion from aligner output to the pipeline's word timings.
+
+        The aligner reports ``text``/``start_time``/``end_time`` in **seconds at
+        its own input rate**; every consumer here reads ``token`` with
+        ``start_sample``/``end_sample``.  The conversion lives in
+        :mod:`local_drama.application.explainers.aligner_timestamps` so the
+        resident-model ``alignment-batch`` path used by the pipeline align stage
+        cannot drift from this one.  Forwarding raw aligner dictionaries on that
+        path made every token unalignable while the stage still reported success.
+        """
+
+        try:
+            return normalize_aligner_timestamps(timestamps)
+        except ValueError as error:
+            raise DomainRuleError(
+                "NARRATION_ALIGNMENT_OUTPUT_INVALID",
+                "对齐运行时返回的词级时间戳不合法",
+                {"reason": str(error)[:200]},
+            ) from error
+
     def align(
         self,
         *,
@@ -210,33 +241,13 @@ class LocalForcedAlignerAdapter:
         execution = runtime.align(media_path, spoken_text, language=language)
         payload = execution.payload
         timestamps = payload.get("timestamps")
-        if not isinstance(timestamps, list):
+        if not isinstance(timestamps, Sequence) or isinstance(timestamps, (str, bytes)):
             raise DomainRuleError(
                 "NARRATION_ALIGNMENT_OUTPUT_INVALID",
                 "对齐运行时没有返回时间戳列表",
                 {"runtime_status": payload.get("status")},
             )
-        # Timestamps are converted to integer milliseconds.  A timestamp the
-        # runtime did not return is simply absent from the list; the handler then
-        # reports it as unaligned rather than receiving a fabricated value.
-        word_timings: list[dict[str, Any]] = []
-        for item in timestamps:
-            if not isinstance(item, Mapping):
-                continue
-            text = str(item.get("text") or "")
-            start = item.get("start_time")
-            end = item.get("end_time")
-            if not text or start is None or end is None:
-                continue
-            start_ms = int(round(float(start) * 1000))
-            end_ms = int(round(float(end) * 1000))
-            if end_ms < start_ms:
-                raise DomainRuleError(
-                    "NARRATION_ALIGNMENT_OUTPUT_INVALID",
-                    "对齐运行时返回了结束早于开始的词级时间戳",
-                    {"token": text, "start_ms": start_ms, "end_ms": end_ms},
-                )
-            word_timings.append({"text": text, "start_ms": start_ms, "end_ms": end_ms})
+        word_timings = self.normalize_timestamps(timestamps)
         return {
             "word_timings": word_timings,
             "alignment_status": "ALIGNED" if word_timings else "PARTIAL",
@@ -268,8 +279,15 @@ class LocalAsrAdapter:
         del timeout_seconds  # the subprocess runtime owns its own bounded timeout
         execution = self.runtime.transcribe(media_path)
         payload = execution.payload
-        transcription = str(payload.get("transcription") or "").strip()
+        # The runtime task and the review consumer do not agree on the field name:
+        # the task reports ``transcription`` (the ASR processor's own vocabulary)
+        # while ``run_narration_align_job`` reads ``text``.  Sending only one of
+        # them left the review comparing an empty transcript against the script,
+        # which reports every token as heard-nothing rather than a missing
+        # runtime.  Both keys now carry the same value, and ``text`` is primary.
+        transcription = str(payload.get("transcription") or payload.get("text") or "").strip()
         return {
+            "text": transcription,
             "transcription": transcription,
             "language": payload.get("language") or locale,
             "detector_version": "qwen3-asr-1.7b-hf",
@@ -454,10 +472,22 @@ def build_explainer_task_handlers(
             repo_factory=repo_factory,
             technical_reader=technical_reader,
             sampling_reader=sampling_reader,
+            # The visual QC stage adopts the picture candidates it has checked; the
+            # adopter is the pipeline's single-entry command, not a second adoption
+            # path (audit A06).
+            candidate_adopter=_candidate_adopter(),
             **build_qc_readers(),
         )
     )
     return handlers
+
+
+def _candidate_adopter() -> Any:
+    """The picture-adoption command, imported lazily to avoid an import cycle."""
+
+    from local_drama.application.explainers.production_pipeline import make_candidate_adopter
+
+    return make_candidate_adopter()
 
 
 def build_media_qc_handlers(

@@ -3,18 +3,138 @@ from __future__ import annotations
 import argparse
 import base64
 import json
-import math
 import time
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 DEFAULT_MODEL_ROOT = Path(r"F:\AI_Models\LocalDramaStudio")
 
+#: VoxCPM2 diffusion sampling steps.  4 is the project's speed-oriented default;
+#: the upstream model default is 10 and the 4/10 comparison is a declared
+#: experiment, not a claim that both are equal in quality.
+DEFAULT_INFERENCE_TIMESTEPS = 4
+
+#: New-audio length ceiling in generated patches.  One patch is ~0.16 s at the
+#: standard VoxCPM2 geometry (patch_size 4, Audio VAE 8x6x5x2x2x2 = 1920 at
+#: 48 kHz), so 256 is roughly 41 s of headroom for a 15-25 s narration segment.
+DEFAULT_MAX_LEN = 256
+
+#: Classifier-free guidance.  Recorded explicitly instead of relying on a
+#: library default that may change between the locked versions.
+DEFAULT_CFG_VALUE = 2.0
+
+#: Independent ASR output ceiling.  Official Qwen3-ASR generation config uses a
+#: large ceiling and stops at the end-of-sequence token, so 512 removes the
+#: truncation risk the previous 128 carried without forcing long output.
+DEFAULT_ASR_MAX_NEW_TOKENS = 512
+
+#: Reference-audio parameters the runtime looks for when it decides whether the
+#: locked VoxCPM build accepts a fixed reference voice.
+_REFERENCE_PARAMETER_CANDIDATES = ("prompt_wav_path", "prompt_text", "reference_wav_path")
+
+#: Speech-rate parameter names, most specific first.
+_SPEED_PARAMETER_CANDIDATES = ("speed", "speech_rate", "rate")
+
 
 def _decode_text(value: str) -> str:
     """Decode the ASCII-safe text transport used by the Windows parent."""
     return base64.b64decode(value.encode("ascii"), validate=True).decode("utf-8")
+
+
+def _generate_parameters(model: Any) -> tuple[frozenset[str], bool]:
+    """Parameter names accepted by ``model.generate``, plus whether it takes ``**kwargs``.
+
+    The upstream wrapper is ``def generate(self, *args, **kwargs)``, which forwards
+    to a private ``_generate`` that *does* declare ``prompt_wav_path``/``prompt_text``/
+    ``reference_wav_path``/``cfg_value``.  A plain ``inspect.signature(model.generate)``
+    therefore sees no explicit names at all, and the previous code read that as
+    "the installed VoxCPM lacks prompt_wav_path" and refused every cloned-voice
+    narration.  An explicit ``**kwargs`` channel is a declaration that arbitrary
+    keyword arguments are forwarded, so it is treated as supporting the
+    parameters the runtime knows how to pass.
+    """
+
+    import inspect
+
+    try:
+        parameters = inspect.signature(model.generate).parameters
+    except (TypeError, ValueError):  # pragma: no cover - a non-introspectable callable
+        return frozenset(), True
+    names = frozenset(parameters)
+    accepts_extra_keywords = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+    )
+    return names, accepts_extra_keywords
+
+
+def _supports(parameter_names: frozenset[str], accepts_extra_keywords: bool, name: str) -> bool:
+    return accepts_extra_keywords or name in parameter_names
+
+
+def _voxcpm_generate_kwargs(
+    *,
+    text: str,
+    inference_timesteps: int,
+    max_len: int,
+    cfg_value: float,
+    supports: Callable[[str], bool],
+    min_len: int = 2,
+    retry_badcase: bool = False,
+    prompt_audio: Path | None = None,
+    prompt_text: str | None = None,
+    speed: float | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The one parameter construction shared by the single and batch VoxCPM paths.
+
+    ``supports`` answers "does the locked model accept this keyword?".  Returns
+    ``(kwargs, facts)`` where ``facts`` records what was actually requested, what
+    was passed through, and whether the model applied the speech rate natively.
+    Keeping one builder means the smoke task and the production batch task cannot
+    drift into different ``max_len``/``cfg``/reference behaviour, which is exactly
+    how a fix applied to only the batch path would silently stop applying to the
+    other.  ``speed_applied_natively`` is *reported*, never assumed: the worker
+    needs it to decide whether the audible rate still requires its atempo pass.
+    """
+
+    generate_kwargs: dict[str, Any] = {
+        "text": text,
+        "inference_timesteps": int(inference_timesteps),
+        "min_len": int(min_len),
+        "max_len": int(max_len),
+        "retry_badcase": bool(retry_badcase),
+    }
+    if supports("cfg_value"):
+        generate_kwargs["cfg_value"] = float(cfg_value)
+    if prompt_audio is not None:
+        # A fixed reference voice is a declared product parameter; the runtime
+        # refuses loudly instead of quietly narrating with the model's own voice.
+        if not supports("prompt_wav_path"):
+            raise RuntimeError("VOXCPM_PROMPT_UNSUPPORTED: installed VoxCPM lacks prompt_wav_path")
+        generate_kwargs["prompt_wav_path"] = str(Path(prompt_audio).resolve())
+        if prompt_text and supports("prompt_text"):
+            generate_kwargs["prompt_text"] = str(prompt_text)
+    applied_speed_natively = False
+    requested_speed = None if speed is None else round(float(speed), 6)
+    if requested_speed is not None and requested_speed != 1.0:
+        for candidate in _SPEED_PARAMETER_CANDIDATES:
+            if supports(candidate):
+                generate_kwargs[candidate] = requested_speed
+                applied_speed_natively = True
+                break
+    facts = {
+        "inference_timesteps": int(inference_timesteps),
+        "min_len": int(min_len),
+        "max_len": int(max_len),
+        "cfg_value": float(cfg_value) if supports("cfg_value") else None,
+        "max_len_passed": supports("max_len"),
+        "reference_passed": prompt_audio is not None,
+        "prompt_text_passed": bool(prompt_text) and prompt_audio is not None and supports("prompt_text"),
+        "requested_speed": requested_speed,
+        "speed_applied_natively": applied_speed_natively,
+    }
+    return generate_kwargs, facts
 
 
 def _emit(payload: dict[str, Any], output: Path | None) -> None:
@@ -54,6 +174,9 @@ def _voxcpm_batch(
     prompt_audio: Path | None = None,
     prompt_text: str | None = None,
     speed: float | None = None,
+    inference_timesteps: int = DEFAULT_INFERENCE_TIMESTEPS,
+    max_len: int = DEFAULT_MAX_LEN,
+    cfg_value: float = DEFAULT_CFG_VALUE,
 ) -> dict[str, Any]:
     """Synthesise many narration segments in one process.
 
@@ -62,8 +185,6 @@ def _voxcpm_batch(
     resident and writes one WAV per requested item, reporting per-item status so
     one bad segment cannot discard the rest of the batch.
     """
-
-    import inspect
 
     import numpy as np
     import soundfile as sf
@@ -76,7 +197,11 @@ def _voxcpm_batch(
     started = time.perf_counter()
     model, model_path = _load_voxcpm(model_root)
     load_seconds = round(time.perf_counter() - started, 3)
-    parameter_names = inspect.signature(model.generate).parameters
+    parameter_names, accepts_extra_keywords = _generate_parameters(model)
+
+    def supports(name: str) -> bool:
+        return _supports(parameter_names, accepts_extra_keywords, name)
+
     results: list[dict[str, Any]] = []
     for item in items:
         item_id = str(item.get("id") or "")
@@ -86,26 +211,16 @@ def _voxcpm_batch(
         try:
             if not text.strip():
                 raise RuntimeError("empty narration text")
-            generate_kwargs: dict[str, Any] = {
-                "text": text,
-                "inference_timesteps": 4,
-                "min_len": 2,
-                "max_len": 192,
-                "retry_badcase": False,
-            }
-            if prompt_audio is not None:
-                if "prompt_wav_path" not in parameter_names:
-                    raise RuntimeError("VOXCPM_PROMPT_UNSUPPORTED: installed VoxCPM lacks prompt_wav_path")
-                generate_kwargs["prompt_wav_path"] = str(Path(prompt_audio).resolve())
-                if prompt_text and "prompt_text" in parameter_names:
-                    generate_kwargs["prompt_text"] = prompt_text
-            applied_speed_natively = False
-            if speed is not None and float(speed) != 1.0:
-                for candidate in ("speed", "speech_rate", "rate"):
-                    if candidate in parameter_names:
-                        generate_kwargs[candidate] = float(speed)
-                        applied_speed_natively = True
-                        break
+            generate_kwargs, facts = _voxcpm_generate_kwargs(
+                text=text,
+                inference_timesteps=inference_timesteps,
+                max_len=max_len,
+                cfg_value=cfg_value,
+                supports=supports,
+                prompt_audio=prompt_audio,
+                prompt_text=prompt_text,
+                speed=speed,
+            )
             waveform = model.generate(**generate_kwargs)
             samples = np.asarray(waveform, dtype=np.float32).reshape(-1)
             if samples.size < 4800 or not np.isfinite(samples).all() or float(np.max(np.abs(samples))) <= 0:
@@ -120,7 +235,9 @@ def _voxcpm_batch(
                     "sample_count": int(samples.size),
                     "duration_seconds": round(samples.size / 48000, 3),
                     "elapsed_seconds": round(time.perf_counter() - item_started, 3),
-                    "speed_applied_natively": applied_speed_natively,
+                    "requested_speed": facts["requested_speed"],
+                    "speed_applied_natively": facts["speed_applied_natively"],
+                    "parameters": facts,
                     "error": None,
                 }
             )
@@ -138,8 +255,87 @@ def _voxcpm_batch(
         "elapsed_seconds": round(time.perf_counter() - started, 3),
         "prompt_audio": None if prompt_audio is None else str(Path(prompt_audio).resolve()),
         "requested_speed": None if speed is None else round(float(speed), 6),
+        "parameters": {
+            "inference_timesteps": int(inference_timesteps),
+            "min_len": 2,
+            "max_len": int(max_len),
+            "cfg_value": float(cfg_value),
+            "retry_badcase": False,
+        },
         "network_used": False,
     }
+
+
+def _forced_aligner_sample_rate(processor: Any) -> int:
+    """The aligner's own input sampling rate, read from its processor config.
+
+    ``decode_forced_alignment`` reports seconds; the pipeline compares aligner
+    chunks with narration takes that are stored at 48 kHz, so the sample numbers
+    must be derived at the rate the aligner actually declares instead of a
+    hardcoded constant that a future checkpoint could silently falsify.
+    """
+
+    extractor = getattr(processor, "feature_extractor", None)
+    rate = getattr(extractor, "sampling_rate", None)
+    try:
+        rate_value = int(rate)
+    except (TypeError, ValueError):
+        return 16000
+    return rate_value if rate_value > 0 else 16000
+
+
+def _alignment_timestamps(
+    processor: Any,
+    *,
+    logits: Any,
+    input_ids: Any,
+    word_lists: Any,
+    timestamp_token_id: int,
+    sample_rate_hz: int,
+) -> list[dict[str, Any]]:
+    """One normalised timestamp list shared by the single and batch alignment tasks.
+
+    Every entry carries the same fact in the two units the pipeline reads:
+    ``token`` + ``start_sample``/``end_sample`` (the canonical word-timing
+    vocabulary of ``narration_alignment_revisions``) and ``start_ms``/``end_ms``
+    for review.  Emitting only ``start_time``/``end_time`` seconds made the
+    batch aligner's chunks unreadable to ``_match_chunks_to_tokens``, which
+    looks for ``token``/``start_sample``: every token then came back unaligned
+    while the stage still reported success.
+    """
+
+    raw = processor.decode_forced_alignment(
+        logits=logits,
+        input_ids=input_ids,
+        word_lists=word_lists,
+        timestamp_token_id=timestamp_token_id,
+    )[0]
+    normalized: list[dict[str, Any]] = []
+    for entry in raw:
+        text = str(entry.get("text") or "").strip()
+        start = entry.get("start_time")
+        end = entry.get("end_time")
+        if not text or start is None or end is None:
+            continue
+        start_seconds = float(start)
+        end_seconds = float(end)
+        if end_seconds < start_seconds:
+            raise RuntimeError("Qwen3 ForcedAligner returned a timestamp ending before it starts")
+        normalized.append(
+            {
+                "token": text,
+                "start_ms": round(start_seconds * 1000),
+                "end_ms": round(end_seconds * 1000),
+                "start_sample": round(start_seconds * sample_rate_hz),
+                "end_sample": round(end_seconds * sample_rate_hz),
+                "sample_rate_hz": int(sample_rate_hz),
+                "start_time": round(start_seconds, 3),
+                "end_time": round(end_seconds, 3),
+            }
+        )
+    if not normalized:
+        raise RuntimeError("Qwen3 ForcedAligner returned no usable timestamps")
+    return normalized
 
 
 def _alignment_batch(
@@ -165,6 +361,7 @@ def _alignment_batch(
         local_files_only=True,
     ).eval()
     load_seconds = round(time.perf_counter() - started, 3)
+    sample_rate_hz = _forced_aligner_sample_rate(processor)
     results: list[dict[str, Any]] = []
     for item in items:
         item_id = str(item.get("id") or "")
@@ -182,30 +379,20 @@ def _alignment_batch(
             inputs = inputs.to(model.device, model.dtype)
             with torch.inference_mode():
                 outputs = model(**inputs)
-            timestamps = processor.decode_forced_alignment(
+            normalized = _alignment_timestamps(
+                processor,
                 logits=outputs.logits,
                 input_ids=inputs["input_ids"],
                 word_lists=word_lists,
                 timestamp_token_id=model.config.timestamp_token_id,
-            )[0]
-            normalized = [
-                {
-                    "text": str(entry["text"]),
-                    "start_time": round(float(entry["start_time"]), 3),
-                    "end_time": round(float(entry["end_time"]), 3),
-                }
-                for entry in timestamps
-            ]
-            if not normalized or any(
-                not math.isfinite(entry["start_time"]) or entry["end_time"] < entry["start_time"]
-                for entry in normalized
-            ):
-                raise RuntimeError("Qwen3 ForcedAligner returned invalid timestamps")
+                sample_rate_hz=sample_rate_hz,
+            )
             results.append(
                 {
                     "id": item_id,
                     "status": "PASS",
                     "timestamps": normalized,
+                    "sample_rate_hz": sample_rate_hz,
                     "elapsed_seconds": round(time.perf_counter() - item_started, 3),
                     "error": None,
                 }
@@ -223,6 +410,8 @@ def _alignment_batch(
         "model_load_seconds": load_seconds,
         "elapsed_seconds": round(time.perf_counter() - started, 3),
         "language": language,
+        "sample_rate_hz": sample_rate_hz,
+        "timestamp_segment_ms": int(getattr(model.config, "timestamp_segment_time", 0) or 0),
         "network_used": False,
     }
 
@@ -299,9 +488,10 @@ def _voxcpm_smoke(
     prompt_audio: Path | None = None,
     prompt_text: str | None = None,
     speed: float | None = None,
+    inference_timesteps: int = DEFAULT_INFERENCE_TIMESTEPS,
+    max_len: int = DEFAULT_MAX_LEN,
+    cfg_value: float = DEFAULT_CFG_VALUE,
 ) -> dict[str, Any]:
-    import inspect
-
     import numpy as np
     import soundfile as sf
     from voxcpm import VoxCPM
@@ -315,37 +505,26 @@ def _voxcpm_smoke(
         optimize=False,
         device="cuda",
     )
-    generate_kwargs: dict[str, Any] = {
-        "text": text,
-        "inference_timesteps": 4,
-        "min_len": 2,
-        "max_len": 192,
-        "retry_badcase": False,
-    }
-    if prompt_audio is not None:
-        # Zero-shot cloning is only requested by production voice profiles; the
-        # smoke default (no --prompt-audio) must keep working on every install.
-        parameter_names = inspect.signature(model.generate).parameters
-        if "prompt_wav_path" not in parameter_names:
-            raise RuntimeError("VOXCPM_PROMPT_UNSUPPORTED: installed VoxCPM lacks prompt_wav_path")
-        generate_kwargs["prompt_wav_path"] = str(prompt_audio.resolve())
-        if prompt_text:
-            if "prompt_text" not in parameter_names:
-                raise RuntimeError("VOXCPM_PROMPT_UNSUPPORTED: installed VoxCPM lacks prompt_text")
-            generate_kwargs["prompt_text"] = prompt_text
+    parameter_names, accepts_extra_keywords = _generate_parameters(model)
+
+    def supports(name: str) -> bool:
+        return _supports(parameter_names, accepts_extra_keywords, name)
+
     # Speed is a declared product parameter.  The installed model may or may not
-    # expose a native control; when it does we pass the value through, and the
-    # product additionally applies a declared atempo post-process so the audible
-    # rate always matches the user's setting.  ``speed_applied_natively``
-    # records which path actually happened instead of assuming either one.
-    applied_speed_natively = False
-    if speed is not None and speed != 1.0:
-        parameter_names = inspect.signature(model.generate).parameters
-        for candidate in ("speed", "speech_rate", "rate"):
-            if candidate in parameter_names:
-                generate_kwargs[candidate] = float(speed)
-                applied_speed_natively = True
-                break
+    # expose a native control; when it does the value is passed through, and when
+    # it does not the caller keeps its declared atempo post-process so the audible
+    # rate still matches the user's setting.  ``speed_applied_natively`` reports
+    # which path actually happened instead of assuming either one.
+    generate_kwargs, facts = _voxcpm_generate_kwargs(
+        text=text,
+        inference_timesteps=inference_timesteps,
+        max_len=max_len,
+        cfg_value=cfg_value,
+        supports=supports,
+        prompt_audio=prompt_audio,
+        prompt_text=prompt_text,
+        speed=speed,
+    )
     waveform = model.generate(**generate_kwargs)
     samples = np.asarray(waveform, dtype=np.float32).reshape(-1)
     if (
@@ -367,12 +546,13 @@ def _voxcpm_smoke(
         "peak": round(float(np.max(np.abs(samples))), 6),
         "elapsed_seconds": round(time.perf_counter() - started, 3),
         "requested_speed": None if speed is None else round(float(speed), 6),
-        "speed_applied_natively": applied_speed_natively,
+        "speed_applied_natively": facts["speed_applied_natively"],
+        "parameters": facts,
         "network_used": False,
     }
 
 
-def _asr_smoke(model_root: Path, audio_input: Path) -> dict[str, Any]:
+def _asr_smoke(model_root: Path, audio_input: Path, *, max_new_tokens: int = DEFAULT_ASR_MAX_NEW_TOKENS) -> dict[str, Any]:
     import torch
     from transformers import AutoModelForMultimodalLM, AutoProcessor
 
@@ -388,7 +568,14 @@ def _asr_smoke(model_root: Path, audio_input: Path) -> dict[str, Any]:
     inputs = processor.apply_transcription_request(audio=str(audio_input.resolve()))
     inputs = inputs.to(model.device, model.dtype)
     with torch.inference_mode():
-        output_ids = model.generate(**inputs, max_new_tokens=128, do_sample=False)
+        # 512 is an output *ceiling*, not a fixed length: a transcription that
+        # reaches its end-of-sequence token stops there.  The previous 128 was
+        # short enough to cut a long narration segment mid-sentence, and a
+        # truncated transcript would have been compared against the script as if
+        # the missing words had never been spoken.
+        output_ids = model.generate(
+            **inputs, max_new_tokens=int(max_new_tokens), do_sample=False
+        )
     generated_ids = output_ids[:, inputs["input_ids"].shape[1] :]
     parsed = processor.decode(generated_ids, return_format="parsed")[0]
     transcription = str(parsed.get("transcription") or "").strip()
@@ -401,6 +588,8 @@ def _asr_smoke(model_root: Path, audio_input: Path) -> dict[str, Any]:
         "audio": str(audio_input.resolve()),
         "language": parsed.get("language"),
         "transcription": transcription,
+        "max_new_tokens": int(max_new_tokens),
+        "do_sample": False,
         "elapsed_seconds": round(time.perf_counter() - started, 3),
         "network_used": False,
     }
@@ -432,25 +621,15 @@ def _alignment_smoke(
     inputs = inputs.to(model.device, model.dtype)
     with torch.inference_mode():
         outputs = model(**inputs)
-    timestamps = processor.decode_forced_alignment(
+    sample_rate_hz = _forced_aligner_sample_rate(processor)
+    normalized = _alignment_timestamps(
+        processor,
         logits=outputs.logits,
         input_ids=inputs["input_ids"],
         word_lists=word_lists,
         timestamp_token_id=model.config.timestamp_token_id,
-    )[0]
-    normalized = [
-        {
-            "text": str(item["text"]),
-            "start_time": round(float(item["start_time"]), 3),
-            "end_time": round(float(item["end_time"]), 3),
-        }
-        for item in timestamps
-    ]
-    if not normalized or any(
-        not math.isfinite(item["start_time"]) or item["end_time"] < item["start_time"]
-        for item in normalized
-    ):
-        raise RuntimeError("Qwen3 ForcedAligner returned invalid timestamps")
+        sample_rate_hz=sample_rate_hz,
+    )
     return {
         "task": "alignment",
         "status": "PASS",
@@ -459,6 +638,8 @@ def _alignment_smoke(
         "transcript": transcript,
         "language": language,
         "timestamps": normalized,
+        "sample_rate_hz": sample_rate_hz,
+        "timestamp_segment_ms": int(getattr(model.config, "timestamp_segment_time", 0) or 0),
         "elapsed_seconds": round(time.perf_counter() - started, 3),
         "network_used": False,
     }
@@ -527,6 +708,33 @@ def main() -> int:
         default=None,
         help="Declared product speech-rate multiplier (0.5-2.0). Passed to the model when it exposes a native control.",
     )
+    # The narration parameters are declared machine settings, so the two
+    # experiments the plan describes (4 vs 10 diffusion steps, and a longer
+    # max_len) are one settings change instead of a source edit.
+    parser.add_argument(
+        "--inference-timesteps",
+        type=int,
+        default=DEFAULT_INFERENCE_TIMESTEPS,
+        help="VoxCPM2 diffusion sampling steps (project default 4; upstream default 10).",
+    )
+    parser.add_argument(
+        "--max-len",
+        type=int,
+        default=DEFAULT_MAX_LEN,
+        help="VoxCPM2 generated-patch ceiling; one patch is ~0.16 s (256 is roughly 41 s).",
+    )
+    parser.add_argument(
+        "--cfg-value",
+        type=float,
+        default=DEFAULT_CFG_VALUE,
+        help="VoxCPM2 classifier-free guidance value.",
+    )
+    parser.add_argument(
+        "--asr-max-new-tokens",
+        type=int,
+        default=DEFAULT_ASR_MAX_NEW_TOKENS,
+        help="Independent ASR output ceiling; generation still stops at end of sequence.",
+    )
     parser.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
     parser.add_argument("--ollama-model", default="qwen3.8:27b")
     parser.add_argument("--output", type=Path)
@@ -539,6 +747,11 @@ def main() -> int:
     transcript = _decode_text(args.transcript_b64) if args.transcript_b64 else args.transcript
     language = _decode_text(args.language_b64) if args.language_b64 else args.language
     prompt_text = _decode_text(args.prompt_text_b64) if args.prompt_text_b64 else args.prompt_text
+    narration_parameters = {
+        "inference_timesteps": args.inference_timesteps,
+        "max_len": args.max_len,
+        "cfg_value": args.cfg_value,
+    }
 
     if args.task == "embedding":
         result = _embedding_smoke(
@@ -556,6 +769,7 @@ def main() -> int:
             prompt_audio=args.prompt_audio,
             prompt_text=prompt_text,
             speed=args.speed,
+            **narration_parameters,
         )
     elif args.task == "voxcpm2-batch":
         if args.batch_manifest is None or args.output_dir is None:
@@ -567,6 +781,7 @@ def main() -> int:
             prompt_audio=args.prompt_audio,
             prompt_text=prompt_text,
             speed=args.speed,
+            **narration_parameters,
         )
     elif args.task == "alignment-batch":
         if args.batch_manifest is None:
@@ -575,7 +790,9 @@ def main() -> int:
     elif args.task == "asr":
         if args.audio_input is None or not args.audio_input.is_file():
             parser.error("--audio-input must name an existing audio file")
-        result = _asr_smoke(args.model_root, args.audio_input)
+        result = _asr_smoke(
+            args.model_root, args.audio_input, max_new_tokens=args.asr_max_new_tokens
+        )
     elif args.task == "alignment":
         if (
             args.audio_input is None
