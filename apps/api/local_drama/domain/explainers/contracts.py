@@ -251,15 +251,25 @@ class VisualFactuality(StrEnum):
 
 
 class RenderType(StrEnum):
-    STILL_MOTION = "STILL_MOTION"
-    PARALLAX = "PARALLAX"
+    """How a picture beat is really rendered.
+
+    A 解说 (explainer) film is an AI 图生视频 product: every beat that carries a
+    moving picture must come from a real image-to-video generation.  The retired
+    ``STILL_MOTION`` / ``PARALLAX`` values described a still image plus a
+    deterministic FFmpeg camera move; that is not a video model's output and must
+    never be labelled as one, so the whole deterministic push/pull picture path
+    was removed instead of being kept as a silent substitute.
+    """
+
     I2V = "I2V"
     INFOGRAPHIC = "INFOGRAPHIC"
     LICENSED_MEDIA = "LICENSED_MEDIA"
 
 
 class VisualFallback(StrEnum):
-    I2V_TO_MOTION_STILL = "I2V_TO_MOTION_STILL"
+    #: ``I2V_TO_MOTION_STILL`` used to be the pre-authorized degradation of a
+    #: failed image-to-video into a still with a camera move.  It is gone: a
+    #: missing real generation is a blocker to report, not a picture to fake.
     I2V_TO_INFORMATION_GRAPHIC = "I2V_TO_INFORMATION_GRAPHIC"
     APPROVED_LOWER_RESOURCE_PROFILE = "APPROVED_LOWER_RESOURCE_PROFILE"
     SIMPLER_MOTION = "SIMPLER_MOTION"
@@ -847,10 +857,7 @@ def default_budget() -> Budget:
 
 def default_fallback_policy() -> FallbackPolicy:
     return FallbackPolicy(
-        allowed_visual_fallbacks=(
-            VisualFallback.I2V_TO_MOTION_STILL.value,
-            VisualFallback.I2V_TO_INFORMATION_GRAPHIC.value,
-        ),
+        allowed_visual_fallbacks=(VisualFallback.I2V_TO_INFORMATION_GRAPHIC.value,),
         script_rewrite_policy="NO_AUTOMATIC_REWRITE",
         max_script_revisions=0,
     )

@@ -58,9 +58,26 @@ class FakeClient:
     def chat_json(self, system: str, user: str, images: Any = None, *, json_schema: Any = None, inference_options: Any = None) -> dict[str, Any]:
         self.calls.append({"system": system, "user": user, "schema": json_schema, "options": inference_options})
         key = _schema_key(json_schema)
+        if key == "script_contract" and key not in self.responses:
+            # A model that answers the strict ``script-draft.v2`` request with the legacy
+            # segment shape: the planner must fall back to the legacy contract and say
+            # so, which is what the legacy-path tests below assert.
+            key = "script" if "script" in self.responses else key
         if key not in self.responses:
             raise AssertionError(f"fake has no response for schema {key}")
         return self.responses[key]
+
+
+def _is_script_draft_schema(schema: Any) -> bool:
+    if not isinstance(schema, dict):
+        return False
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return False
+    version = properties.get("schema_version")
+    if isinstance(version, dict) and "script-draft.v2" in json.dumps(version):
+        return True
+    return "insufficient_content" in properties and "outline" in properties
 
 
 def _schema_key(schema: Any) -> str:
@@ -70,6 +87,8 @@ def _schema_key(schema: Any) -> str:
         return "script"
     if schema is BEAT_SCHEMA:
         return "beats"
+    if _is_script_draft_schema(schema):
+        return "script_contract"
     return "facts"
 
 
@@ -245,7 +264,7 @@ def _beats_response() -> dict[str, Any]:
         "beats": [
             {
                 "code": "B001",
-                "render_type": "STILL_MOTION",
+                "render_type": "I2V",
                 "segment_ids": ["seg_001"],
                 "visual_intent": "雨夜中的灯塔剪影",
                 "visual_factuality": "FICTIONAL",
@@ -256,7 +275,7 @@ def _beats_response() -> dict[str, Any]:
             },
             {
                 "code": "B002",
-                "render_type": "STILL_MOTION",
+                "render_type": "I2V",
                 "segment_ids": ["seg_002", "seg_003"],
                 "visual_intent": "值班室三人围着日志",
                 "visual_factuality": "FICTIONAL",
@@ -430,7 +449,14 @@ def test_script_stage_writes_and_freezes_a_revision(database: Database) -> None:
         assert segments[2]["spoken_text"] != segments[2]["display_text"]
         video = repo.get("explainer_videos", "video-1")
         assert str(video["current_script_revision_id"]) == revision_id
-    assert client.calls[0]["schema"] is SEGMENT_SCHEMA
+    # §C5.3: the design's ``script-draft.v2`` contract is asked first.  This fake
+    # answers it with the legacy segment shape, so the stage must fall back to
+    # ``SEGMENT_SCHEMA`` and record that it did instead of reporting the design
+    # contract as satisfied.
+    assert _is_script_draft_schema(client.calls[0]["schema"])
+    assert SEGMENT_SCHEMA in [call["schema"] for call in client.calls]
+    assert report["produced"]["contract_used"] == "legacy.segment.v1"
+    assert report["produced"]["v2_fallback_reason"]["code"]
 
 
 def test_script_stage_refuses_a_fact_segment_without_a_claim(database: Database) -> None:
@@ -535,7 +561,7 @@ def test_storyboard_stage_creates_a_many_to_many_plan(database: Database) -> Non
             "semantic_inputs": {
                 "project_id": PROJECT_ID,
                 "video_id": "video-1",
-                "usable_render_types": ["STILL_MOTION", "INFOGRAPHIC"],
+                "usable_render_types": ["I2V", "INFOGRAPHIC"],
             },
         },
     )
@@ -553,9 +579,55 @@ def test_storyboard_stage_creates_a_many_to_many_plan(database: Database) -> Non
         assert len({str(item["narration_segment_id"]) for item in links}) == 3
 
 
+def test_the_storyboard_handler_refuses_an_empty_capability_snapshot(database: Database) -> None:
+    """No capability snapshot is not an excuse to fall back to a still-picture path.
+
+    The handler used to fill ``usable_render_types`` with a still/graphic default; now
+    an empty set reaches the planner, which refuses with ``CAPABILITY_UNAVAILABLE``
+    instead of planning pictures the run cannot really produce.
+    """
+
+    _frozen_script(database)
+    planner, _ = _planner({"beats": _beats_response()})
+    handlers = build_stage_handlers(planner_factory=lambda: planner, repo_factory=_repo_factory(database))
+    with pytest.raises(ExplainerContractError) as error:
+        handlers["EXPLAINER_STORYBOARD"](
+            {"id": "job-empty-capability"},
+            {
+                "task_code": "EXPLAINER_STORYBOARD",
+                "semantic_inputs": {"project_id": PROJECT_ID, "video_id": "video-1"},
+            },
+        )
+    assert error.value.code == ExplainerErrorCode.CAPABILITY_UNAVAILABLE.value
+
+
+def test_the_storyboard_prompt_requires_real_ai_i2v_and_forbids_still_push_pull(database: Database) -> None:
+    """§D3.1: the storyboard prompt must state the one real picture route.
+
+    The retired 静图推拉 route is gone from the product, so the model may neither plan
+    a still-image-with-camera-move picture nor treat one as an I2V substitute or a
+    degradation.  The prompt is the only place that fact reaches the model.
+    """
+
+    _frozen_script(database)
+    planner, client = _planner({"beats": _beats_response()})
+    with database.connect() as connection:
+        planner.plan_storyboard(
+            repo=ExplainerRepository(connection),
+            project_id=PROJECT_ID,
+            video_id="video-1",
+            usable_render_types=["I2V", "INFOGRAPHIC", "LICENSED_MEDIA"],
+        )
+    prompt = client.calls[0]["user"]
+    assert "本片所有活动画面一律由真实的 AI 图生视频（I2V）产生；不存在“静图推拉”或任何静图动效方案。" in prompt
+    assert "不要规划任何静图加推拉/位移的画面方式" in prompt
+    assert "推镜与位移不是人物动作" in prompt
+
+
 def test_storyboard_refuses_a_render_type_outside_the_capability_snapshot(database: Database) -> None:
     _frozen_script(database)
     response = _beats_response()
+    response["beats"][0]["render_type"] = "INFOGRAPHIC"
     response["beats"][1]["render_type"] = "I2V"
     planner, _ = _planner({"beats": response})
     with database.connect() as connection:
@@ -564,26 +636,24 @@ def test_storyboard_refuses_a_render_type_outside_the_capability_snapshot(databa
                 repo=ExplainerRepository(connection),
                 project_id=PROJECT_ID,
                 video_id="video-1",
-                usable_render_types=["STILL_MOTION", "INFOGRAPHIC"],
+                usable_render_types=["INFOGRAPHIC"],
             )
     assert error.value.code == ExplainerErrorCode.CAPABILITY_UNAVAILABLE.value
 
 
-def test_storyboard_records_a_coerced_motion_requirement_instead_of_claiming_motion(
+def test_storyboard_promotes_a_motion_requirement_to_i2v_instead_of_claiming_a_still(
     database: Database,
 ) -> None:
-    """A still picture type can never be reported as satisfying ``must_be_motion``.
+    """A beat that must move is promoted to real I2V, never silently left as a still.
 
-    The planner used to abort the whole run when the model asked for motion but
-    declared a still type.  This build's picture path is the deterministic
-    still/graphic renderer, so the plan is kept with the declared type, the motion
-    requirement is dropped and the degradation is recorded on the beat — the one
-    thing that must never happen is a beat that still claims ``must_be_motion``
-    while its render type cannot move.
+    The retired route kept the still type and dropped the motion requirement.  Now a
+    ``must_be_motion`` beat whose declared type cannot move is promoted to ``I2V`` when
+    the run can execute it, and the promotion is recorded instead of hidden.
     """
 
     _frozen_script(database)
     response = _beats_response()
+    response["beats"][0]["render_type"] = "INFOGRAPHIC"
     response["beats"][0]["must_be_motion"] = True
     planner, _ = _planner({"beats": response})
     with database.connect() as connection:
@@ -591,17 +661,37 @@ def test_storyboard_records_a_coerced_motion_requirement_instead_of_claiming_mot
             repo=ExplainerRepository(connection),
             project_id=PROJECT_ID,
             video_id="video-1",
-            usable_render_types=["STILL_MOTION", "INFOGRAPHIC"],
+            usable_render_types=["I2V", "INFOGRAPHIC"],
         )
-    coerced = list(plan.get("motion_coerced_beats") or [])
-    assert coerced, "must_be_motion + still render type must be recorded as coerced"
-    coerced_codes = {str(item["code"]) for item in coerced}
-    for beat in plan["beats"]:
-        if str(beat["code"]) in coerced_codes:
-            assert beat["must_be_motion"] is False
-            assert beat["motion_requirement_coerced"] is True
-        else:
-            assert beat["must_be_motion"] is False or beat["render_type"] in ("I2V", "PARALLAX")
+    promoted = list(plan.get("motion_promoted_beats") or [])
+    assert [str(item["code"]) for item in promoted] == ["B001"]
+    assert all(str(item["render_type"]) == "I2V" for item in promoted)
+    beat = next(item for item in plan["beats"] if item["code"] == "B001")
+    assert beat["render_type"] == "I2V"
+    assert beat["must_be_motion"] is True
+    assert beat["motion_requirement_coerced"] is True
+    # The retired bookkeeping key must not come back.
+    assert "motion_coerced_beats" not in plan
+
+
+def test_storyboard_refuses_a_motion_requirement_it_cannot_execute(database: Database) -> None:
+    """With no real I2V capability the plan is refused, not quietly made a still."""
+
+    _frozen_script(database)
+    response = _beats_response()
+    response["beats"][0]["render_type"] = "INFOGRAPHIC"
+    response["beats"][0]["must_be_motion"] = True
+    planner, _ = _planner({"beats": response})
+    with database.connect() as connection:
+        with pytest.raises(ExplainerContractError) as error:
+            planner.plan_storyboard(
+                repo=ExplainerRepository(connection),
+                project_id=PROJECT_ID,
+                video_id="video-1",
+                usable_render_types=["INFOGRAPHIC"],
+            )
+    assert error.value.code == ExplainerErrorCode.CAPABILITY_UNAVAILABLE.value
+    assert error.value.details["code"] == "B001"
 
 
 def test_storyboard_refuses_an_unknown_segment_or_entity(database: Database) -> None:
@@ -615,7 +705,7 @@ def test_storyboard_refuses_an_unknown_segment_or_entity(database: Database) -> 
                 repo=ExplainerRepository(connection),
                 project_id=PROJECT_ID,
                 video_id="video-1",
-                usable_render_types=["STILL_MOTION"],
+                usable_render_types=["I2V"],
             )
     assert "不存在的实体" in error.value.message
 
@@ -628,7 +718,7 @@ def test_storyboard_refuses_an_unknown_segment_or_entity(database: Database) -> 
                 repo=ExplainerRepository(connection),
                 project_id=PROJECT_ID,
                 video_id="video-1",
-                usable_render_types=["STILL_MOTION"],
+                usable_render_types=["I2V"],
             )
     assert "不存在的叙述段落" in error.value.message
 
@@ -651,7 +741,7 @@ def test_storyboard_refuses_a_plan_that_leaves_segments_uncovered(database: Data
                 repo=ExplainerRepository(connection),
                 project_id=PROJECT_ID,
                 video_id="video-1",
-                usable_render_types=["STILL_MOTION"],
+                usable_render_types=["I2V"],
             )
     assert "没有覆盖全部叙述段落" in error.value.message
     assert error.value.details["uncovered_segment_ids"] == ["seg_002", "seg_003"]
@@ -673,7 +763,7 @@ def test_storyboard_refuses_a_plan_that_runs_backwards(database: Database) -> No
                 repo=ExplainerRepository(connection),
                 project_id=PROJECT_ID,
                 video_id="video-1",
-                usable_render_types=["STILL_MOTION"],
+                usable_render_types=["I2V"],
             )
     assert "画面段顺序与旁白顺序不一致" in error.value.message
 
@@ -699,7 +789,7 @@ class _BatchCoveringClient:
             "beats": [
                 {
                     "code": f"B{index:03d}",
-                    "render_type": "STILL_MOTION",
+                    "render_type": "I2V",
                     "segment_ids": [str(item["canonical_segment_id"])],
                     "visual_intent": f"画面 {index}",
                     "visual_factuality": "FICTIONAL",
@@ -762,7 +852,7 @@ def test_storyboard_plans_every_segment_past_the_old_catalogue_cap(database: Dat
             repo=ExplainerRepository(connection),
             project_id=PROJECT_ID,
             video_id="video-1",
-            usable_render_types=["STILL_MOTION"],
+            usable_render_types=["I2V"],
         )
     assert plan["status"] == "PASS"
     assert plan["uncovered_segment_ids"] == []
@@ -809,7 +899,7 @@ def test_storyboard_batches_never_leave_a_batch_unplanned(database: Database) ->
                 repo=ExplainerRepository(connection),
                 project_id=PROJECT_ID,
                 video_id="video-1",
-                usable_render_types=["STILL_MOTION"],
+                usable_render_types=["I2V"],
             )
     assert "没有返回任何画面段" in error.value.message
 
@@ -823,7 +913,7 @@ def test_storyboard_needs_a_frozen_script(database: Database) -> None:
                 repo=ExplainerRepository(connection),
                 project_id=PROJECT_ID,
                 video_id="video-1",
-                usable_render_types=["STILL_MOTION"],
+                usable_render_types=["I2V"],
             )
     assert "还没有冻结的讲稿修订" in error.value.message
 

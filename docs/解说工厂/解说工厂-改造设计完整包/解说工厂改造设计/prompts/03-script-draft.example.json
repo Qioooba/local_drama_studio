@@ -1,0 +1,26 @@
+{
+  "schema_version": "localdrama.explainer.script-draft.v2",
+  "outline": [
+    {
+      "title": "开头的问题",
+      "audience_question": "观众要理解什么"
+    }
+  ],
+  "segments": [
+    {
+      "chapter_index": 0,
+      "display_text": "一段使用已有事实编写的口播。",
+      "statement_type": "FACT",
+      "claim_ids": [
+        "provided-claim-id"
+      ],
+      "entity_ids": [
+        "provided-entity-id"
+      ],
+      "pronunciation_suggestions": [],
+      "pause_after_ms": 250
+    }
+  ],
+  "insufficient_content": false,
+  "missing_content_note": ""
+}

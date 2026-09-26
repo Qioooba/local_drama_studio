@@ -16,31 +16,57 @@ export interface RouteContext {
   episodeId: string | null;
   shotId: string | null;
   /**
-   * Explainer workspace page key (overview/script/assets/storyboard/audio/review).
-   * Present only for EXPLAINER-scope routes; the explainer domain is deliberately
-   * not modelled as an episode so the shell never queries an episode catalog.
+   * Explainer workspace page key.  Present only for EXPLAINER-scope routes; the
+   * explainer domain is deliberately not modelled as an episode so the shell
+   * never queries an episode catalog.
    */
   explainerPage?: string | null;
 }
 
 /**
  * Pages inside the explainer workspace.  Their order is the documented
- * production order from the design spec and is also the visible tab order.
+ * production order (design §B1.1) and is also the visible step order:
+ * script / assets / audio / storyboard / clips / review.
+ *
+ * `overview` is deliberately *not* one of them any more: 总览与生产 was retired
+ * as a seventh tab and its content moved into the 制作进度 drawer.  The old
+ * route stays reachable (see `EXPLAINER_LEGACY_PAGES`) and redirects to the
+ * first step that needs attention.
  */
-export const EXPLAINER_PAGES = ["overview", "script", "assets", "storyboard", "audio", "review"] as const;
+export const EXPLAINER_PAGES = ["script", "assets", "audio", "storyboard", "clips", "review"] as const;
 export type ExplainerPage = (typeof EXPLAINER_PAGES)[number];
 
+/** Retired explainer pages that stay routable for old deep links only. */
+export const EXPLAINER_LEGACY_PAGES = ["overview"] as const;
+export type ExplainerLegacyPage = (typeof EXPLAINER_LEGACY_PAGES)[number];
+export type ExplainerRoutePage = ExplainerPage | ExplainerLegacyPage;
+
 export const EXPLAINER_PAGE_LABELS: Record<ExplainerPage, string> = {
-  overview: "总览与生产",
-  script: "资料与解说稿",
+  script: "内容与讲稿",
   assets: "人物与风格",
+  audio: "配音",
   storyboard: "分镜与画面",
-  audio: "声音与字幕",
-  review: "审片与导出",
+  clips: "视频片段",
+  review: "预览与导出",
+};
+
+/** The retired page is now the 制作进度 drawer, so that is its label. */
+export const EXPLAINER_LEGACY_PAGE_LABELS: Record<ExplainerLegacyPage, string> = {
+  overview: "制作进度",
 };
 
 export function isExplainerPage(value: string | undefined | null): value is ExplainerPage {
   return Boolean(value) && (EXPLAINER_PAGES as readonly string[]).includes(value as string);
+}
+
+export function isExplainerLegacyPage(value: string | undefined | null): value is ExplainerLegacyPage {
+  return Boolean(value) && (EXPLAINER_LEGACY_PAGES as readonly string[]).includes(value as string);
+}
+
+export function explainerRoutePageLabel(value: string | undefined | null): string {
+  if (isExplainerPage(value)) return EXPLAINER_PAGE_LABELS[value];
+  if (isExplainerLegacyPage(value)) return EXPLAINER_LEGACY_PAGE_LABELS[value];
+  return "解说工作区";
 }
 
 const encode = (value: string) => encodeURIComponent(value.trim());
@@ -54,6 +80,7 @@ export const routes = {
   explainerNew: () => "/explainers/new",
   explainerOverview: (projectId: string) => `/explainers/${encode(projectId)}/overview`,
   explainerPage: (projectId: string, page: ExplainerPage) => `/explainers/${encode(projectId)}/${page}`,
+  explainerClips: (projectId: string) => `/explainers/${encode(projectId)}/clips`,
   adaptationPlans: (projectId: string) => "/projects/" + encode(projectId) + "/story/plans",
   adaptationPlan: (projectId: string, planId: string) => "/projects/" + encode(projectId) + "/story/plans/" + encode(planId),
   projectHome: (projectId: string) => `/projects/${encode(projectId)}`,
@@ -85,12 +112,13 @@ export const ROUTE_REGISTRY: Record<string, RouteMetadata> = {
   quickCreate: { id: "quickCreate", scope: "GLOBAL", title: "快速生成", pathPattern: "/quick-create" },
   explainers: { id: "explainers", scope: "GLOBAL", title: "解说工厂", pathPattern: "/explainers" },
   explainerNew: { id: "explainerNew", scope: "GLOBAL", title: "新建解说", pathPattern: "/explainers/new", parentRouteId: "explainers" },
-  explainerOverview: { id: "explainerOverview", scope: "EXPLAINER", title: "总览与生产", pathPattern: "/explainers/:projectId/overview", parentRouteId: "explainers" },
-  explainerScript: { id: "explainerScript", scope: "EXPLAINER", title: "资料与解说稿", pathPattern: "/explainers/:projectId/script", parentRouteId: "explainerOverview" },
-  explainerAssets: { id: "explainerAssets", scope: "EXPLAINER", title: "人物与风格", pathPattern: "/explainers/:projectId/assets", parentRouteId: "explainerOverview" },
-  explainerStoryboard: { id: "explainerStoryboard", scope: "EXPLAINER", title: "分镜与画面", pathPattern: "/explainers/:projectId/storyboard", parentRouteId: "explainerOverview" },
-  explainerAudio: { id: "explainerAudio", scope: "EXPLAINER", title: "声音与字幕", pathPattern: "/explainers/:projectId/audio", parentRouteId: "explainerOverview" },
-  explainerReview: { id: "explainerReview", scope: "EXPLAINER", title: "审片与导出", pathPattern: "/explainers/:projectId/review", parentRouteId: "explainerOverview" },
+  explainerOverview: { id: "explainerOverview", scope: "EXPLAINER", title: "制作进度", pathPattern: "/explainers/:projectId/overview", parentRouteId: "explainers" },
+  explainerScript: { id: "explainerScript", scope: "EXPLAINER", title: "内容与讲稿", pathPattern: "/explainers/:projectId/script", parentRouteId: "explainers" },
+  explainerAssets: { id: "explainerAssets", scope: "EXPLAINER", title: "人物与风格", pathPattern: "/explainers/:projectId/assets", parentRouteId: "explainers" },
+  explainerAudio: { id: "explainerAudio", scope: "EXPLAINER", title: "配音", pathPattern: "/explainers/:projectId/audio", parentRouteId: "explainers" },
+  explainerStoryboard: { id: "explainerStoryboard", scope: "EXPLAINER", title: "分镜与画面", pathPattern: "/explainers/:projectId/storyboard", parentRouteId: "explainers" },
+  explainerClips: { id: "explainerClips", scope: "EXPLAINER", title: "视频片段", pathPattern: "/explainers/:projectId/clips", parentRouteId: "explainers" },
+  explainerReview: { id: "explainerReview", scope: "EXPLAINER", title: "预览与导出", pathPattern: "/explainers/:projectId/review", parentRouteId: "explainers" },
   adaptationPlans: { id: "adaptationPlans", scope: "PROJECT", title: "改编规划", pathPattern: "/projects/:projectId/story/plans", parentRouteId: "story" },
   adaptationPlan: { id: "adaptationPlan", scope: "PROJECT", title: "改编规划", pathPattern: "/projects/:projectId/story/plans/:planId", parentRouteId: "adaptationPlans" },
   projectHome: { id: "projectHome", scope: "PROJECT", title: "首页", pathPattern: "/projects/:projectId", parentRouteId: "projects" },
@@ -127,10 +155,14 @@ export function parseRouteContext(pathname: string): RouteContext {
   if (clean === "/explainers/new") return { routeId: "explainerNew", scope: "GLOBAL", projectId: null, episodeId: null, shotId: null, explainerPage: null };
   // The explainer domain has no season/episode context: it is its own scope so
   // the shell never resolves an episode catalog for an explainer project.
-  const explainer = clean.match(/^\/explainers\/([^/]+)\/(overview|script|assets|storyboard|audio|review)$/);
+  //
+  // The page alternation includes the retired `overview` on purpose: old deep
+  // links must still resolve (and then redirect), while every unknown sub-page
+  // keeps failing closed to a null route.
+  const explainer = clean.match(/^\/explainers\/([^/]+)\/(overview|script|assets|audio|storyboard|clips|review)$/);
   if (explainer) {
     const projectId = decode(explainer[1]);
-    const page = explainer[2] as ExplainerPage;
+    const page = explainer[2] as ExplainerRoutePage;
     if (!projectId) return empty();
     const routeId = `explainer${page[0].toUpperCase()}${page.slice(1)}`;
     return { routeId, scope: "EXPLAINER", projectId, episodeId: null, shotId: null, explainerPage: page };
@@ -183,13 +215,14 @@ export function buildBreadcrumbs({ pathname, projectTitle, seasonTitle, episodeT
   if (context.routeId === "explainers") return [{ label: "解说工厂", isCurrent: true }];
   if (context.routeId === "explainerNew") return [{ label: "解说工厂", to: routes.explainers() }, { label: "新建解说", isCurrent: true }];
   if (context.routeId === "projects") return [...items, { label: "项目", isCurrent: true }];
-  // The explainer workspace breadcrumb never mentions a season or an episode.
-  if (context.scope === "EXPLAINER" && context.projectId) {
-    const root: BreadcrumbItem = { label: "解说工厂", to: routes.explainers() };
-    const title: BreadcrumbItem = { label: projectTitle || "解说作品" };
-    if (context.routeId === "explainerOverview") return [root, { ...title, isCurrent: true }];
-    const pageLabel = context.explainerPage ? EXPLAINER_PAGE_LABELS[context.explainerPage as ExplainerPage] : "总览与生产";
-    return [root, { ...title, to: routes.explainerOverview(context.projectId) }, { label: pageLabel, isCurrent: true }];
+  // The explainer workspace breadcrumb is intentionally a single crumb: the
+  // workspace shell renders its own 返回作品列表 link, an editable-looking title
+  // and the numeric step bar, so a second multi-level breadcrumb would only
+  // duplicate the same navigation (design §B1.1 item 4).  A single crumb is also
+  // below the shell's own "render breadcrumbs only when there is a hierarchy"
+  // threshold, so no breadcrumb row is drawn at all.
+  if (context.scope === "EXPLAINER") {
+    return [{ label: explainerRoutePageLabel(context.explainerPage), isCurrent: true }];
   }
   if (context.projectId) {
     items.push({ label: "项目", to: routes.projects() });

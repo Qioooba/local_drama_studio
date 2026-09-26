@@ -24,6 +24,7 @@ from __future__ import annotations
 import array
 import hashlib
 import math
+import re
 import shutil
 import subprocess
 import sys
@@ -589,6 +590,95 @@ def test_real_ffmpeg_multi_narration_mix_binds_and_produces_audio(tmp_path: Path
     assert completed.returncode == 0, completed.stderr[-3000:]
     assert output.exists() and output.stat().st_size > 0
     assert "[n0][n1]concat=n=2:v=0:a=1[voice]" in str(command)
+
+
+@requires_ffmpeg
+def test_real_ffmpeg_declared_narration_keeps_every_take_at_its_absolute_position(tmp_path: Path) -> None:
+    """Absolutely placed narration must be summed, never concatenated.
+
+    Measured defect this pins: each declared clip is placed with ``adelay`` to its
+    own ``sample_start``, and the mixer then *concatenated* those placed tracks, so
+    every clip's offset was applied again on top of the previous clips' spans.  On
+    the real 406 s audit film only 9 of 52 narration takes were audible and 82 % of
+    the film was digital silence, although all 52 source WAVs carried continuous
+    speech.
+
+    The assertion is on the decoded PCM: take A must be audible at 0 s, take B at
+    2 s, and the window before B must stay silent.
+    """
+
+    manifest = build_manifest(
+        edition_id="ed-abs",
+        composition_revision_id="cr-abs",
+        aspect_ratio=AspectRatio("16:9"),
+        fps=FPS_25,
+        total_frames=100,  # 4 s at 25 fps
+        audio_sample_rate_hz=SAMPLE_RATE,
+        clips=[
+            manifest_clip(
+                clip_id="a-1",
+                track="NARRATION",
+                item_kind="AUDIO_CLIP",
+                media_version_id="mv-a",
+                media_sha256="a" * 64,
+                start_frame=0,
+                end_frame_exclusive=25,
+                fps=FPS_25,
+                sample_rate_hz=SAMPLE_RATE,
+                sample_start=0,
+                sample_end_exclusive=SAMPLE_RATE,
+                source_in_us=0,
+                source_out_us=500_000,
+            ),
+            manifest_clip(
+                clip_id="a-2",
+                track="NARRATION",
+                item_kind="AUDIO_CLIP",
+                media_version_id="mv-b",
+                media_sha256="b" * 64,
+                start_frame=50,
+                end_frame_exclusive=75,
+                fps=FPS_25,
+                sample_rate_hz=SAMPLE_RATE,
+                sample_start=2 * SAMPLE_RATE,
+                sample_end_exclusive=3 * SAMPLE_RATE,
+                source_in_us=0,
+                source_out_us=500_000,
+            ),
+        ],
+        chunks=[ManifestChunkSpec(chunk_no=0, start_frame=0, end_frame_exclusive=100)],
+        validate_structure=False,
+    )
+    first = tmp_path / "a.wav"
+    second = tmp_path / "b.wav"
+    _tone_wav(first, seconds=0.5, frequency=440)
+    _tone_wav(second, seconds=0.5, frequency=880)
+    output = tmp_path / "mix.wav"
+    command = build_mix_command(
+        manifest=manifest,
+        narration_paths=[],
+        bgm_path=None,
+        sfx_paths=[],
+        output_path=output,
+        audio_sources={"mv-a": first, "mv-b": second},
+    )
+    assert "[voice" in str(command) and "amix" in str(command)
+    completed = _run([str(FFMPEG), *command.to_argv()])
+    assert completed.returncode == 0, completed.stderr[-3000:]
+    assert output.exists() and output.stat().st_size > 0
+
+    def _mean_volume(*, start: float, duration: float) -> float:
+        measured = _run([
+            str(FFMPEG), "-hide_banner", "-nostats", "-ss", str(start), "-t", str(duration),
+            "-i", str(output), "-af", "volumedetect", "-f", "null", "-",
+        ])
+        match = re.search(r"mean_volume:\s*(-?[\d.]+)\s*dB", measured.stderr)
+        assert match is not None, measured.stderr[-1500:]
+        return float(match.group(1))
+
+    assert _mean_volume(start=0.0, duration=0.4) > -40.0, "the first take must be audible at 0 s"
+    assert _mean_volume(start=0.8, duration=0.6) < -60.0, "the gap before the second take must stay silent"
+    assert _mean_volume(start=2.0, duration=0.4) > -40.0, "the second take must be audible at 2 s"
 
 
 @requires_ffmpeg

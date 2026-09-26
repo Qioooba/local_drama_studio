@@ -1,0 +1,261 @@
+/* Explainer step 1 / step 2 page layouts (design §B2, §B3).
+ *
+ * Scope rule: every selector is written under `.explainer-workspace`, so this
+ * file cannot leak into the drama pages or the shared component stylesheets
+ * (design §B1.2 / §E3).  Nothing here introduces a second design system: only
+ * the existing colour, radius and spacing tokens are used.
+ *
+ * `/explainers/new` renders outside the workspace shell, so the create page puts
+ * `.explainer-workspace` on its own root element; that is the only reason the
+ * marker appears on more than one element.
+ */
+
+/* ---------------------------------------------------------------- step 1 ---- */
+/* 200 px paragraph directory / the single body editor / folded detail column. */
+.explainer-workspace .explainer-script-layout {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+  grid-template-columns: 200px minmax(0, 1fr) 288px;
+}
+.explainer-workspace .explainer-script__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+  font-size: 13px;
+}
+.explainer-workspace .explainer-script__toolbar-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.explainer-workspace .explainer-paragraph-list { max-height: 520px; }
+.explainer-workspace .explainer-paragraph-list .explainer-list-item small { line-height: 1.5; }
+.explainer-workspace .explainer-paragraph-editor textarea {
+  width: 100%;
+  min-height: 220px;
+  font-size: 15px;
+  line-height: 1.7;
+  font: inherit;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-input);
+  color: var(--text);
+  resize: vertical;
+}
+.explainer-workspace .explainer-paragraph-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.explainer-workspace .explainer-paragraph-body { font-size: 15px; line-height: 1.7; }
+.explainer-workspace .explainer-spoken-block {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+}
+.explainer-workspace .explainer-pronunciation-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.explainer-workspace .explainer-impact-note { color: var(--attention); font-size: 12px; }
+.explainer-workspace .explainer-newdraft {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--creative);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+.explainer-workspace .explainer-facts-drawer { display: flex; flex-direction: column; gap: 10px; }
+
+/* ------------------------------------------------------------ intake form --- */
+/* “你现在有什么”: two primary cards plus the secondary 从主题开始 entry (§B2.1). */
+.explainer-workspace .explainer-intake { display: flex; flex-direction: column; gap: 14px; }
+.explainer-workspace .explainer-intake__cards {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.explainer-workspace .explainer-intake__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 96px;
+  padding: 14px 16px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  color: var(--text);
+  cursor: pointer;
+}
+.explainer-workspace .explainer-intake__card:hover { border-color: var(--border-strong); }
+.explainer-workspace .explainer-intake__card[aria-pressed="true"] { border-color: var(--creative); background: var(--surface-selected); }
+.explainer-workspace .explainer-intake__card strong { font-size: 15px; }
+.explainer-workspace .explainer-intake__card small { color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.explainer-workspace .explainer-intake__secondary { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.explainer-workspace .explainer-intake__channels { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.explainer-workspace .explainer-intake__channel {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+.explainer-workspace .explainer-intake__channel[aria-pressed="true"] { border-color: var(--creative); background: var(--surface-selected); }
+.explainer-workspace .explainer-intake__body { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-muted); }
+.explainer-workspace .explainer-intake__body textarea {
+  width: 100%;
+  min-height: 180px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.7;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-input);
+  color: var(--text);
+  resize: vertical;
+}
+.explainer-workspace .explainer-intake__title-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+.explainer-workspace .explainer-intake__title-row small { color: var(--text-muted); font-size: 12px; }
+.explainer-workspace .explainer-intake details {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  background: var(--surface-subtle);
+}
+.explainer-workspace .explainer-intake summary { cursor: pointer; font-size: 13px; color: var(--text-muted); }
+
+/* ---------------------------------------------------------- settings panel -- */
+/* 288–320 px new-work settings; it folds below the body on a narrow container. */
+.explainer-workspace .explainer-create-layout {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr) 304px;
+}
+.explainer-workspace .explainer-settings { display: flex; flex-direction: column; gap: 12px; }
+.explainer-workspace .explainer-settings__note { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.explainer-workspace .explainer-settings details {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  background: var(--surface-subtle);
+}
+.explainer-workspace .explainer-settings summary { cursor: pointer; font-size: 13px; color: var(--text-muted); }
+.explainer-workspace .explainer-settings__versions { display: flex; flex-direction: column; gap: 6px; }
+.explainer-workspace .explainer-settings__versions label { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text); }
+.explainer-workspace .explainer-estimate { display: flex; flex-direction: column; gap: 2px; }
+.explainer-workspace .explainer-estimate strong { font-size: 14px; }
+.explainer-workspace .explainer-estimate small { color: var(--text-muted); font-size: 12px; }
+
+/* ---------------------------------------------------------------- step 2 ---- */
+.explainer-workspace .explainer-style-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+  font-size: 13px;
+}
+.explainer-workspace .explainer-style-strip__actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.explainer-workspace .explainer-category-switch { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.explainer-workspace .explainer-category-switch button {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+.explainer-workspace .explainer-category-switch button[aria-pressed="true"] { border-color: var(--creative); background: var(--surface-selected); }
+.explainer-workspace .explainer-asset-list { display: flex; flex-direction: column; gap: 8px; max-height: 620px; overflow: auto; }
+.explainer-workspace .explainer-asset-card {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px;
+  text-align: left;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+  color: var(--text);
+  cursor: pointer;
+}
+.explainer-workspace .explainer-asset-card:hover { background: var(--surface-hover); }
+.explainer-workspace .explainer-asset-card.selected { border-color: var(--creative); background: var(--surface-selected); }
+.explainer-workspace .explainer-asset-card__thumb { width: 56px; }
+.explainer-workspace .explainer-asset-card__meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.explainer-workspace .explainer-asset-card__meta strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.explainer-workspace .explainer-asset-card__numbers { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11px; }
+.explainer-workspace .explainer-asset-card__numbers span {
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-badge);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.explainer-workspace .explainer-asset-card__numbers span.is-missing { color: var(--attention); border-color: rgba(242, 184, 75, .45); }
+.explainer-workspace .explainer-asset-card__numbers span.is-adopted { color: var(--approved); border-color: rgba(80, 216, 144, .4); }
+.explainer-workspace .explainer-reference-stage { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.explainer-workspace .explainer-reference-stage__media {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--media-surface);
+}
+.explainer-workspace .explainer-reference-stage__media img { max-width: 100%; max-height: min(58vh, 600px); object-fit: contain; }
+.explainer-workspace .explainer-advanced-detail { display: flex; flex-direction: column; gap: 4px; }
+.explainer-workspace .explainer-advanced-detail dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; margin: 0; font-size: 12px; }
+.explainer-workspace .explainer-advanced-detail dt { color: var(--text-muted); }
+.explainer-workspace .explainer-advanced-detail dd { margin: 0; overflow-wrap: anywhere; }
+.explainer-workspace .explainer-view-clause { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.explainer-workspace .explainer-view-clause span {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-badge);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+@container (max-width: 1180px) {
+  .explainer-workspace .explainer-script-layout { grid-template-columns: 200px minmax(0, 1fr); }
+  .explainer-workspace .explainer-script-layout > .explainer-script__aside { grid-column: 1 / -1; }
+  .explainer-workspace .explainer-create-layout { grid-template-columns: minmax(0, 1fr) 288px; }
+}
+@container (max-width: 860px) {
+  .explainer-workspace .explainer-script-layout,
+  .explainer-workspace .explainer-create-layout { grid-template-columns: minmax(0, 1fr); }
+  .explainer-workspace .explainer-intake__cards { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 1250px) {
+  .explainer-workspace .explainer-create-layout { grid-template-columns: minmax(0, 1fr) 288px; }
+}
+@media (max-width: 1024px) {
+  .explainer-workspace .explainer-script-layout,
+  .explainer-workspace .explainer-create-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 820px) {
+  .explainer-workspace .explainer-intake__cards { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Visible focus for every control this page family adds (design §E3). */
+.explainer-workspace .explainer-intake__card:focus-visible,
+.explainer-workspace .explainer-intake__channel:focus-visible,
+.explainer-workspace .explainer-category-switch button:focus-visible,
+.explainer-workspace .explainer-asset-card:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}

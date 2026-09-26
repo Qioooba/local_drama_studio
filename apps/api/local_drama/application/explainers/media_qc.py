@@ -53,6 +53,7 @@ class DecodeVerification:
         stderr_tail: str,
         completed: bool,
         failure_reason: str | None,
+        audio: Mapping[str, Any] | None = None,
     ) -> None:
         self.total_frames = total_frames
         self.decoded_frames = decoded_frames
@@ -62,6 +63,11 @@ class DecodeVerification:
         self.stderr_tail = stderr_tail
         self.completed = completed
         self.failure_reason = failure_reason
+        #: Integrated loudness, true peak and silent stretches of the delivered
+        #: audio, measured with this machine's FFmpeg.  ``None`` means the
+        #: measurement did not run — the technical layer then reports the loudness
+        #: checks as unverified instead of passing them by default.
+        self.audio = dict(audio) if audio else None
 
     @property
     def decode_complete(self) -> bool:
@@ -107,6 +113,15 @@ class DecodeVerification:
         }
         if self.frame_rate is not None:
             payload["fps_num"], payload["fps_den"] = self.frame_rate
+        if self.audio is not None:
+            # The loudness band and the silence rule are part of the delivered
+            # contract; before this they were unmeasured, so the technical layer
+            # could only report AUDIO_LOUDNESS_NOT_MEASURED for a film whose
+            # loudness it was supposed to verify.
+            payload["loudness_lufs"] = self.audio.get("loudness_lufs")
+            payload["peak_dbtp"] = self.audio.get("peak_dbtp")
+            payload["audio_gaps_ms"] = list(self.audio.get("audio_gaps_ms") or [])
+            payload["audio_measurement"] = dict(self.audio)
         return payload
 
 
@@ -273,7 +288,93 @@ class FfmpegDecodeVerifier:
             stderr_tail=stderr[-2000:],
             completed=completed,
             failure_reason=None if completed else "DECODE_EXIT_STATUS_NONZERO",
+            audio=self._measure_audio(path),
         )
+
+    def _measure_audio(self, path: Path) -> dict[str, Any] | None:
+        """Integrated loudness, true peak and silence stretches of the film.
+
+        One ``ebur128`` pass and one ``silencedetect`` pass over the delivered file.
+        A measurement that cannot be taken returns ``None`` (with the reason
+        recorded): a film must never be reported as loudness-checked when this
+        machine did not measure it.
+        """
+
+        if not self.ffmpeg_path:
+            return None
+        try:
+            loudness_run = _run(
+                [
+                    str(self.ffmpeg_path),
+                    "-nostdin",
+                    "-hide_banner",
+                    "-nostats",
+                    "-i",
+                    str(path),
+                    "-af",
+                    "ebur128=peak=true",
+                    "-f",
+                    "null",
+                    "-",
+                ],
+                timeout_seconds=self.timeout_seconds,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if loudness_run.returncode != 0:
+            return None
+        summary = (loudness_run.stderr or "").rsplit("Summary:", 1)[-1]
+        number = r"(-?(?:\d+(?:\.\d+)?|inf))"
+        integrated = re.search(rf"Integrated loudness:[\s\S]*?I:\s*{number}\s+LUFS", summary, re.IGNORECASE)
+        true_peak = re.search(rf"True peak:[\s\S]*?Peak:\s*{number}\s+dBFS", summary, re.IGNORECASE)
+        loudness_range = re.search(rf"Loudness range:[\s\S]*?LRA:\s*{number}\s+LU", summary, re.IGNORECASE)
+        if not integrated or not true_peak:
+            return None
+        try:
+            silence_run = _run(
+                [
+                    str(self.ffmpeg_path),
+                    "-nostdin",
+                    "-hide_banner",
+                    "-nostats",
+                    "-i",
+                    str(path),
+                    "-af",
+                    "silencedetect=n=-45dB:d=1.2",
+                    "-f",
+                    "null",
+                    "-",
+                ],
+                timeout_seconds=self.timeout_seconds,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            silence_run = None
+        gaps: list[dict[str, Any]] = []
+        if silence_run is not None and silence_run.returncode == 0:
+            pending: float | None = None
+            for line in (silence_run.stderr or "").splitlines():
+                start_match = re.search(r"silence_start:\s*(-?\d+(?:\.\d+)?)", line)
+                if start_match:
+                    pending = float(start_match.group(1))
+                    continue
+                end_match = re.search(
+                    r"silence_end:\s*(-?\d+(?:\.\d+)?).*?silence_duration:\s*(-?\d+(?:\.\d+)?)", line
+                )
+                if end_match and pending is not None:
+                    start_ms = int(round(max(0.0, pending) * 1000))
+                    duration_ms = int(round(max(0.0, float(end_match.group(2))) * 1000))
+                    gaps.append({"start_ms": start_ms, "end_ms": start_ms + duration_ms, "duration_ms": duration_ms})
+                    pending = None
+        return {
+            "loudness_lufs": float(integrated.group(1)),
+            "peak_dbtp": float(true_peak.group(1)),
+            "loudness_range_lu": float(loudness_range.group(1)) if loudness_range else None,
+            "audio_gaps_ms": gaps,
+            "silence_threshold_db": -45.0,
+            "silence_min_duration_seconds": 1.2,
+            "measurement_tool": "ffmpeg ebur128=peak=true + silencedetect",
+            "band": {"loudness_lufs": -16.0, "tolerance_lu": 1.0, "true_peak_dbtp": -1.0},
+        }
 
 
 def _last_progress_frame(stdout: str) -> int:
@@ -534,7 +635,32 @@ def build_media_qc_readers(
             "frame_source": str(path),
         }
 
-    return {"technical_reader": technical_reader, "sampling_reader": sampling_reader}
+    def extract_frames(
+        *,
+        source: Path,
+        frame_ids: Sequence[int],
+        frame_rate: tuple[int, int],
+        namespace: str,
+    ) -> dict[int, str]:
+        """Extract named frames from one media file, for the per-candidate check.
+
+        The per-candidate picture check and the composition sampling plan need the
+        same real decoder, but at different scopes: the plan reads a frozen
+        composition, while a candidate check reads one candidate's own file.  Both
+        go through the same sampler so a frame can never be produced two ways.
+        """
+
+        if not sampler.available:
+            raise DomainRuleError("DECODE_TOOL_UNAVAILABLE", "本机没有配置 ffmpeg，无法抽取质检帧")
+        return sampler.extract(
+            source=Path(source), frame_ids=frame_ids, frame_rate=frame_rate, namespace=namespace
+        )
+
+    return {
+        "technical_reader": technical_reader,
+        "sampling_reader": sampling_reader,
+        "extract_frames": extract_frames,
+    }
 
 
 def _composition_items(repo: Any, context: Mapping[str, Any]) -> list[dict[str, Any]]:

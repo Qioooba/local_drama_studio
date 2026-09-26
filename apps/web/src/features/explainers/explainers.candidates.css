@@ -1,0 +1,297 @@
+/*
+ * Candidate, comparison and generation-control styles for the explainer
+ * workspace.  Every rule is scoped under `.explainer-workspace` so the shared
+ * primitives (`components/ui/primitives.tsx`) and other products are untouched
+ * (spec B1.2: no parallel design system, no global leakage).
+ */
+
+.explainer-workspace .explainer-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.explainer-workspace .explainer-candidates__bar,
+.explainer-workspace .explainer-generation__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-height: 40px;
+}
+
+.explainer-workspace .explainer-candidates__bar h3,
+.explainer-workspace .explainer-generation__bar h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.explainer-workspace .explainer-candidates__count {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.explainer-workspace .explainer-candidates__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.explainer-workspace .explainer-candidate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.explainer-workspace .explainer-candidate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border-subtle, rgba(127, 127, 127, 0.28));
+  border-radius: 10px;
+  padding: 8px;
+  background: var(--surface-1, transparent);
+  min-width: 0;
+}
+
+.explainer-workspace .explainer-candidate-card.is-previewed {
+  outline: 2px solid var(--focus-ring, #4f8cff);
+  outline-offset: 1px;
+}
+
+.explainer-workspace .explainer-candidate-card.is-selected {
+  border-color: var(--accent-strong, #4f8cff);
+}
+
+.explainer-workspace .explainer-candidate-card.is-failed {
+  border-style: dashed;
+}
+
+.explainer-workspace .explainer-candidate-card__preview {
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.explainer-workspace .explainer-candidate-card__preview:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.explainer-workspace .explainer-candidate-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.explainer-workspace .explainer-candidate-card__no {
+  font-weight: 600;
+}
+
+.explainer-workspace .explainer-candidate-card__status.is-ready {
+  color: var(--success, #2f9e6b);
+}
+
+.explainer-workspace .explainer-candidate-card__status.is-failed {
+  color: var(--danger, #d2504b);
+}
+
+.explainer-workspace .explainer-candidate-card__status.is-pending,
+.explainer-workspace .explainer-candidate-card__status.is-generating {
+  color: var(--attention, #b98900);
+}
+
+.explainer-workspace .explainer-candidate-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.explainer-workspace .explainer-candidate-card__error {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--danger, #d2504b);
+}
+
+.explainer-workspace .explainer-candidate-detail {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.explainer-workspace .explainer-candidate-detail dt {
+  opacity: 0.7;
+}
+
+.explainer-workspace .explainer-candidate-detail dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.explainer-workspace .explainer-candidate-detail__wide {
+  grid-column: 1 / -1;
+}
+
+.explainer-workspace .explainer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle, rgba(127, 127, 127, 0.32));
+  font-size: 12px;
+}
+
+.explainer-workspace .explainer-chip.is-adopted {
+  border-color: var(--accent-strong, #4f8cff);
+  font-weight: 600;
+}
+
+.explainer-workspace .explainer-chip.is-locked::before {
+  content: "🔒";
+  font-size: 11px;
+}
+
+.explainer-workspace .explainer-chip.is-stale {
+  border-color: var(--attention, #b98900);
+}
+
+.explainer-workspace .explainer-generation {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.explainer-workspace .explainer-generation__plan {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.explainer-workspace .explainer-generation__plan dt {
+  opacity: 0.7;
+}
+
+.explainer-workspace .explainer-generation__plan dd {
+  margin: 0;
+  text-align: right;
+}
+
+.explainer-workspace .explainer-generation__submit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.explainer-workspace .explainer-compare__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.explainer-workspace .explainer-compare {
+  display: grid;
+  gap: 12px;
+}
+
+.explainer-workspace .explainer-compare--1 {
+  grid-template-columns: 1fr;
+}
+
+.explainer-workspace .explainer-compare--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.explainer-workspace .explainer-compare--3,
+.explainer-workspace .explainer-compare--4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.explainer-workspace .explainer-compare figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.explainer-workspace .explainer-compare figcaption {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.explainer-workspace .explainer-compare figure.is-selected figcaption {
+  font-weight: 600;
+}
+
+.explainer-workspace .explainer-compare img,
+.explainer-workspace .explainer-compare video {
+  width: 100%;
+  max-height: min(52vh, 520px);
+  object-fit: contain;
+  background: #000;
+  border-radius: 8px;
+}
+
+.explainer-workspace .explainer-btn {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, rgba(127, 127, 127, 0.32));
+  background: var(--surface-2, transparent);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.explainer-workspace .explainer-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.explainer-workspace .explainer-btn--primary {
+  border-color: var(--accent-strong, #4f8cff);
+  font-weight: 600;
+}
+
+.explainer-workspace .explainer-btn--quiet {
+  border-color: transparent;
+  background: none;
+  opacity: 0.8;
+}
+
+.explainer-workspace .explainer-btn:focus-visible,
+.explainer-workspace .explainer-candidate-card__preview:focus-visible {
+  outline: 2px solid var(--focus-ring, #4f8cff);
+  outline-offset: 2px;
+}
+
+/* Below 860px of available container width the candidate grid collapses to a
+   single readable column instead of squeezing previews (spec B1.2). */
+@container (max-width: 860px) {
+  .explainer-workspace .explainer-candidate-grid {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  }
+}

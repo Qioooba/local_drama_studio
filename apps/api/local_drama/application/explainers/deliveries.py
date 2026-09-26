@@ -606,9 +606,15 @@ class ExplainerDeliveryService:
         verified, caller_declared, records = self._verify_items(project_id=project_id, items=normalised)
         roster = self._roster_gaps(items=normalised, edition=scope["edition"])
         if not roster["complete"]:
+            # Name the missing entries in the message, not only in the structured
+            # details: a bare "清单不完整" told an operator nothing about which file
+            # the package still needs, and the details were not surfaced anywhere.
+            missing_text = "、".join(
+                [*roster["missing_required_roles"], *roster["missing_subtitle_locales"]]
+            ) or "未知条目"
             raise ExplainerContractError(
                 ExplainerErrorCode.OUTPUT_VALIDATION_FAILED.value,
-                "交付包清单不完整：缺少必需条目",
+                f"交付包清单不完整：缺少必需条目（{missing_text}）",
                 {
                     "missing_required_roles": roster["missing_required_roles"],
                     "missing_subtitle_locales": roster["missing_subtitle_locales"],

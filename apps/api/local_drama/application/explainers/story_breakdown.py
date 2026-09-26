@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 from local_drama.application.explainers.narration import ExplainerNarrationService
 from local_drama.application.explainers.text_planner import (
@@ -36,13 +36,30 @@ BREAKDOWN_SYSTEM_PROMPT = (
 )
 
 
+def build_explainer_story_breakdown_llm_service(database: DatabaseUnitOfWork, settings: Settings) -> Any:
+    """Wire the local LLM service this stage resolves its text model through.
+
+    Cross-service construction lives in this factory so the breakdown service itself
+    only depends on the client it is handed (repository architecture-debt policy:
+    a named ``build_*`` scope may name the concrete service it binds).
+    """
+
+    return LocalLLMService(database, settings)
+
+
+def build_explainer_story_breakdown_narration_service(repo: Any) -> Any:
+    """Wire the narration service used to persist a breakdown as a script revision."""
+
+    return ExplainerNarrationService(repo)
+
+
 class ExplainerStoryBreakdownService:
     def __init__(self, database: DatabaseUnitOfWork, settings: Settings) -> None:
         self.database = database
         self.settings = settings
 
     def _resolve_client(self, profile_version_id: str | None = None) -> tuple[Any, str | None]:
-        llm_service = LocalLLMService(self.database, self.settings)
+        llm_service = build_explainer_story_breakdown_llm_service(self.database, self.settings)
         if profile_version_id and profile_version_id.strip():
             client = llm_service.client(profile_version_id=profile_version_id.strip())
             return client, profile_version_id.strip()
@@ -208,7 +225,7 @@ class ExplainerStoryBreakdownService:
 
         with self.database.transaction() as connection:
             repo = ExplainerRepository(connection)
-            service = ExplainerNarrationService(repo)
+            service = build_explainer_story_breakdown_narration_service(repo)
             created = service.create_script_revision(
                 project_id=project_id,
                 video_id=str(video["id"]),

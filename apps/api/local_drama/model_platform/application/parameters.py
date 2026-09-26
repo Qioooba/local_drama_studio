@@ -172,8 +172,9 @@ class ParameterResolutionService:
                 {"expected": policy.profile_version_id, "actual": override.profile_version_id},
             )
         self._validate_values(contract, override.values, source=override.scope, allow_partial=True)
+        canonical = {name.upper(): name for name in contract.properties}
         for raw_name, value in override.values.items():
-            name = str(raw_name)
+            name = str(raw_name) if str(raw_name) in contract.properties else canonical[str(raw_name).upper()]
             if name not in policy.allowed_override_fields:
                 raise DomainRuleError("MP_PARAMETER_OVERRIDE_FORBIDDEN", "该参数未被当前 Profile 允许覆盖。", {"field": name})
             if override.scope not in contract.allowed_scopes(name):
@@ -195,11 +196,21 @@ class ParameterResolutionService:
         if not isinstance(values, Mapping):
             raise DomainRuleError("MP_PARAMETER_VALUES_INVALID", "参数值必须是 JSON 对象。", {"source": source})
         properties = contract.properties
-        unknown = sorted(str(name) for name in values if str(name) not in properties)
+        # Business code names the same deterministic knob differently by layer: the
+        # workflow binding declares ``SEED`` while a run override says ``seed``.
+        # Resolving a case-variant of a *declared* field (and only that) keeps the
+        # unknown-field rule intact while letting the explainer freeze a per-candidate
+        # seed through ``run_overrides``; measured failure without this was
+        # ``MP_PARAMETER_UNKNOWN {"fields": ...}`` on a submit that had already passed
+        # the read-only plan.
+        canonical = {name.upper(): name for name in properties}
+        unknown = sorted(
+            str(name) for name in values if str(name) not in properties and str(name).upper() not in canonical
+        )
         if unknown:
             raise DomainRuleError("MP_PARAMETER_UNKNOWN", "参数合同中不存在该字段。", {"source": source, "fields": unknown})
         for raw_name, value in values.items():
-            name = str(raw_name)
+            name = str(raw_name) if str(raw_name) in contract.properties else canonical[str(raw_name).upper()]
             definition = properties[name]
             _validate_field(name, value, definition, source)
         if not allow_partial:

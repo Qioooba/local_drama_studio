@@ -1,0 +1,175 @@
+{
+  "$defs": {
+    "FictionCharacter": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "maxLength": 300,
+          "title": "Role",
+          "type": "string"
+        },
+        "appearance": {
+          "maxLength": 2000,
+          "title": "Appearance",
+          "type": "string"
+        },
+        "stable_traits": {
+          "items": {
+            "maxLength": 300,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Stable Traits",
+          "type": "array"
+        },
+        "desire": {
+          "maxLength": 2000,
+          "title": "Desire",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "role",
+        "appearance",
+        "stable_traits",
+        "desire"
+      ],
+      "title": "FictionCharacter",
+      "type": "object"
+    },
+    "FictionStep": {
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "character_indexes": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 256,
+          "title": "Character Indexes",
+          "type": "array"
+        },
+        "location": {
+          "maxLength": 300,
+          "title": "Location",
+          "type": "string"
+        },
+        "cause": {
+          "maxLength": 2000,
+          "title": "Cause",
+          "type": "string"
+        },
+        "result": {
+          "maxLength": 2000,
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "summary",
+        "character_indexes",
+        "location",
+        "cause",
+        "result"
+      ],
+      "title": "FictionStep",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "localdrama.explainer.fiction-seed.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "premise": {
+      "maxLength": 8000,
+      "minLength": 1,
+      "title": "Premise",
+      "type": "string"
+    },
+    "setting": {
+      "maxLength": 8000,
+      "minLength": 1,
+      "title": "Setting",
+      "type": "string"
+    },
+    "characters": {
+      "items": {
+        "$ref": "#/$defs/FictionCharacter"
+      },
+      "maxItems": 32,
+      "title": "Characters",
+      "type": "array"
+    },
+    "story_steps": {
+      "items": {
+        "$ref": "#/$defs/FictionStep"
+      },
+      "maxItems": 160,
+      "minItems": 1,
+      "title": "Story Steps",
+      "type": "array"
+    },
+    "ending": {
+      "maxLength": 8000,
+      "minLength": 1,
+      "title": "Ending",
+      "type": "string"
+    },
+    "continuity_constraints": {
+      "items": {
+        "maxLength": 2000,
+        "type": "string"
+      },
+      "maxItems": 64,
+      "title": "Continuity Constraints",
+      "type": "array"
+    },
+    "scope_conflicts": {
+      "items": {
+        "maxLength": 2000,
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Scope Conflicts",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "title",
+    "premise",
+    "setting",
+    "characters",
+    "story_steps",
+    "ending",
+    "continuity_constraints",
+    "scope_conflicts"
+  ],
+  "title": "FictionSeed",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:localdrama:explainer:design:07-fiction-seed",
+  "description": "Design contract, not yet integrated. Static validation does not establish reference membership, project ownership, coverage, factuality or approval. Apply README service checks."
+}

@@ -1,0 +1,113 @@
+{
+  "commit": "d91a4107b6733a4783d860689fb819720463214a",
+  "verification_method": "Real FastAPI, real Vite and read-only HTTP client in one local execution network namespace. Hand-authored fictional fixtures in isolated SQLite. No browser or AI-model execution.",
+  "checks": [
+    {
+      "path": "/api/v1/health/live",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "/api/v1/health/ready",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "/api/v1/system/contract",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "/api/v1/projects",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "/api/v2/explainers",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "/api/v2/explainers/44774e5e-a97b-4d72-9621-d7aea92bbdda",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "/api/v2/explainers/44774e5e-a97b-4d72-9621-d7aea92bbdda/script",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "/api/v2/explainers/44774e5e-a97b-4d72-9621-d7aea92bbdda/segments",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "/api/v2/explainers/44774e5e-a97b-4d72-9621-d7aea92bbdda/assets",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "/api/v2/explainers/44774e5e-a97b-4d72-9621-d7aea92bbdda/beats",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "/api/v2/explainers/44774e5e-a97b-4d72-9621-d7aea92bbdda/editions",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "/api/v2/explainer-editions/286a6a62-7f01-4dc1-8c96-133544ca3d20/narration",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "/api/v1/projects/30d11f6b-7387-4f69-8fab-aacf5f9f9b60/story-assets",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "/api/v1/projects/30d11f6b-7387-4f69-8fab-aacf5f9f9b60/episodes/405040dd-311b-473f-bc64-bd1db9e743e9/timeline-selections",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "/api/v2/episodes/405040dd-311b-473f-bc64-bd1db9e743e9/shots/e42c919f-d906-441c-a373-74c608226101/studio",
+      "status": 200,
+      "kind": "API_GET"
+    },
+    {
+      "path": "http://127.0.0.1:5173/",
+      "status": 200,
+      "kind": "VITE_HTTP"
+    },
+    {
+      "path": "http://127.0.0.1:5173/api/v2/explainers/44774e5e-a97b-4d72-9621-d7aea92bbdda/script",
+      "status": 200,
+      "kind": "VITE_API_PROXY_GET"
+    }
+  ],
+  "check_count": 17,
+  "model_manifest": {
+    "configured": false,
+    "reason": "model_manifest.json missing",
+    "initialization_status": "failed",
+    "application_ready": true
+  },
+  "generated_record_counts": {
+    "jobs": 0,
+    "explainer_runs": 0,
+    "explainer_media_candidates": 0,
+    "narration_takes": 0,
+    "composition_renders": 0
+  },
+  "database_integrity": "ok",
+  "migration_heads": [
+    "0104_pipeline_apply_watermark"
+  ],
+  "browser_screenshots_this_round": 0,
+  "browser_limitation": "Supported browser access blocked by environment policy. No alternate browser or access workaround used.",
+  "tracked_source_changes": false,
+  "no_full_manuscript_in_summary": true
+}

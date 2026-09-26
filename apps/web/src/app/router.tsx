@@ -36,10 +36,11 @@ const HomePage = lazy(() => import("../pages/HomePage").then((module) => ({ defa
 const ExplainerFactoryPage = lazy(() => import("../features/explainers/FactoryPage").then((module) => ({ default: module.ExplainerFactoryPage })));
 const ExplainerCreatePage = lazy(() => import("../features/explainers/CreatePage").then((module) => ({ default: module.ExplainerCreatePage })));
 const ExplainerWorkspaceShell = lazy(() => import("../features/explainers/ExplainerWorkspaceShell").then((module) => ({ default: module.ExplainerWorkspaceShell })));
-const ExplainerOverviewPage = lazy(() => import("../features/explainers/OverviewPage").then((module) => ({ default: module.ExplainerOverviewPage })));
+const ExplainerOverviewRedirect = lazy(() => import("../features/explainers/ExplainerWorkspaceShell").then((module) => ({ default: module.ExplainerOverviewRedirect })));
 const ExplainerScriptPage = lazy(() => import("../features/explainers/ScriptPage").then((module) => ({ default: module.ExplainerScriptPage })));
 const ExplainerAssetsPage = lazy(() => import("../features/explainers/AssetsPage").then((module) => ({ default: module.ExplainerAssetsPage })));
 const ExplainerStoryboardPage = lazy(() => import("../features/explainers/StoryboardPage").then((module) => ({ default: module.ExplainerStoryboardPage })));
+const ExplainerClipsPage = lazy(() => import("../features/explainers/ClipsPage").then((module) => ({ default: module.ExplainerClipsPage })));
 const ExplainerAudioPage = lazy(() => import("../features/explainers/AudioPage").then((module) => ({ default: module.ExplainerAudioPage })));
 const ExplainerReviewPage = lazy(() => import("../features/explainers/ReviewPage").then((module) => ({ default: module.ExplainerReviewPage })));
 
@@ -103,13 +104,16 @@ export const router = createBrowserRouter([
   { path: "/explainers/new", element: <AppShell />, errorElement: <RouteErrorBoundary />, children: [{ index: true, element: page(<ExplainerCreatePage />) }] },
   {
     path: "/explainers/:projectId", element: <AppShell />, errorElement: <RouteErrorBoundary />, children: [
+      // The index route lands on the retired overview URL, which resolves the
+      // first step that actually needs attention from real workspace data.
       { index: true, element: <Navigate to="overview" replace /> },
       { element: <ExplainerWorkspaceShell />, children: [
-        { path: "overview", element: page(<ExplainerOverviewPage />) },
+        { path: "overview", element: page(<ExplainerOverviewRedirect />) },
         { path: "script", element: page(<ExplainerScriptPage />) },
         { path: "assets", element: page(<ExplainerAssetsPage />) },
-        { path: "storyboard", element: page(<ExplainerStoryboardPage />) },
         { path: "audio", element: page(<ExplainerAudioPage />) },
+        { path: "storyboard", element: page(<ExplainerStoryboardPage />) },
+        { path: "clips", element: page(<ExplainerClipsPage />) },
         { path: "review", element: page(<ExplainerReviewPage />) },
       ] },
     ],

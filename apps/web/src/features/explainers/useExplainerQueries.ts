@@ -4,11 +4,21 @@
  * All explainer queries go through this module so the query keys, the enabled
  * conditions and the "no fabricated fallback" behaviour stay in one place.  A
  * failed request surfaces an error; it never silently renders an empty success.
+ *
+ * Two rules from the design are load-bearing here (spec §B12.4, §B11):
+ *
+ * * A failed GET keeps the last known payload — react-query v5 keeps `data` on a
+ *   refetch error, and the pages read `data` before `error` so a broken refresh
+ *   shows “更新失败” next to real content instead of an empty state.
+ * * Every object-scoped query keys by its real owner (project + owner kind +
+ *   owner id + purpose), so adopting one entity reference cannot invalidate
+ *   another object's candidate list.
  */
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { queryKeys } from "../../query/queryKeys";
 import {
+  getExplainerAssets,
   getExplainerNarration,
   getExplainerOverview,
   getExplainerQc,
@@ -16,19 +26,23 @@ import {
   getExplainerSchedule,
   getExplainerScript,
   getExplainerSubtitles,
-  listExplainerAssets,
+  getExplainerWorkspaceReadiness,
   listExplainerBeatCandidates,
   listExplainerBeats,
   listExplainerEditions,
+  listExplainerEntityCandidates,
   listExplainerSchedules,
   listExplainerSegments,
   listExplainers,
+  type ExplainerAssetView,
   type ExplainerBeat,
+  type ExplainerCandidatePage,
   type ExplainerOverview,
   type ExplainerQcCoverage,
   type ExplainerRun,
   type ExplainerScriptView,
   type ExplainerSegment,
+  type ExplainerWorkspaceReadiness,
 } from "../../generated/api";
 
 /** Milliseconds before a workspace payload is considered stale. */
@@ -90,10 +104,48 @@ export function useExplainerSegments(projectId: string, revisionId?: string | nu
   });
 }
 
-export function useExplainerAssets(projectId: string) {
+/**
+ * The step-2 asset read model (`getExplainerAssets`, spec §B3.1).
+ *
+ * Entities carry `appearance_beat_count` (how many *shots* really reference the
+ * object) and `reference_binding_status` (whether a reference image is bound) as
+ * two separate facts; the retired `beat_reference_count` identity-binding count
+ * is never used as an appearance count.
+ */
+export function useExplainerAssets(projectId: string): UseQueryResult<ExplainerAssetView> {
   return useQuery({
     queryKey: queryKeys.explainers.assets(projectId),
-    queryFn: () => listExplainerAssets(projectId),
+    queryFn: () => getExplainerAssets(projectId),
+    enabled: Boolean(projectId),
+    staleTime: WORKSPACE_STALE_MS,
+  });
+}
+
+/**
+ * One object's reference candidates (`listExplainerEntityCandidates`).
+ *
+ * The list is scoped to the object, so a read failure here cannot look like
+ * "this project has no candidates" and a failed refresh keeps the known
+ * selection (the page renders last-known candidates plus “更新失败”).
+ */
+export function useExplainerEntityCandidates(
+  projectId: string,
+  entityId: string | null | undefined,
+  enabled = true,
+): UseQueryResult<ExplainerCandidatePage> {
+  return useQuery({
+    queryKey: queryKeys.explainers.entityCandidates(projectId, entityId ?? ""),
+    queryFn: () => listExplainerEntityCandidates(projectId, entityId!),
+    enabled: Boolean(projectId && entityId) && enabled,
+    staleTime: WORKSPACE_STALE_MS,
+  });
+}
+
+/** The six-step readiness projection behind the step bar and next-action hints (spec §F2.1). */
+export function useExplainerReadiness(projectId: string): UseQueryResult<ExplainerWorkspaceReadiness> {
+  return useQuery({
+    queryKey: queryKeys.explainers.readiness(projectId),
+    queryFn: () => getExplainerWorkspaceReadiness(projectId),
     enabled: Boolean(projectId),
     staleTime: WORKSPACE_STALE_MS,
   });

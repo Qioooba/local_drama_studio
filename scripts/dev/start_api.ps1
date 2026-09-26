@@ -3,7 +3,7 @@ param(
     [int]$Port = 3210,
     [string]$HostAddress = "127.0.0.1",
     [ValidateSet("LOCAL_ONLY", "LAN_SERVICE")]
-    [string]$NetworkMode = "LOCAL_ONLY",
+    [string]$NetworkMode,
     [switch]$Reload
 )
 
@@ -14,7 +14,11 @@ if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) { throw "Repository Py
 $env:PYTHONPATH = Join-Path $RepositoryRoot "apps\api"
 $env:LOCAL_DRAMA_HOST = $HostAddress
 $env:LOCAL_DRAMA_PORT = [string]$Port
-$env:LOCAL_DRAMA_NETWORK_MODE = $NetworkMode
+if ($PSBoundParameters.ContainsKey("NetworkMode")) {
+    $env:LOCAL_DRAMA_NETWORK_MODE = $NetworkMode
+} else {
+    Remove-Item env:LOCAL_DRAMA_NETWORK_MODE -ErrorAction SilentlyContinue
+}
 $Arguments = @("-m", "local_drama.entrypoints.api", "--host", $HostAddress, "--port", [string]$Port)
 if ($Reload) { $Arguments += "--reload" }
 & $Python @Arguments

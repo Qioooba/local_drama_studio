@@ -37,14 +37,17 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import re
 import traceback
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from local_drama.application.explainers.aligner_timestamps import normalize_aligner_timestamps
+from local_drama.application.explainers.aligner_timestamps import (
+    DEFAULT_ALIGNER_SAMPLE_RATE_HZ,
+    declared_aligner_sample_rate,
+    normalize_aligner_timestamps,
+)
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.explainers.contracts import (
     ASPECT_PIXELS,
@@ -136,6 +139,7 @@ def adopt_generated_candidates(
     authority: str = "MACHINE_POLICY",
     actor: str = "explainer-worker",
     beat_ids: Sequence[str] = (),
+    purpose: str = "VISUAL",
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Adopt each beat's generated candidate through the single adoption entry.
@@ -180,9 +184,18 @@ def adopt_generated_candidates(
         beat_id = str(beat["id"])
         if wanted_beats and beat_id not in wanted_beats:
             continue
-        candidates = repo.list_where(
-            "explainer_media_candidates", {"beat_id": beat_id}, order_by="variant_no", descending=False
-        )
+        candidates = [
+            item
+            for item in repo.list_where(
+                "explainer_media_candidates", {"beat_id": beat_id}, order_by="variant_no", descending=False
+            )
+            # Only the requested layer is a candidate for this adoption.  Without the
+            # filter the ranking could pick the beat's *keyframe* (a picture, not a
+            # clip), adopt it under its own KEYFRAME purpose, and leave the beat
+            # without the VISUAL selection the composition actually needs — while
+            # reporting success.
+            if str(item.get("purpose") or "VISUAL") == purpose
+        ]
         if not candidates:
             beats_without_candidate.append(
                 {"beat_id": beat_id, "beat_code": str(beat["code"]), "reason": "NO_CANDIDATE"}
@@ -578,14 +591,16 @@ def make_identity_assets_handler(
     """``IDENTITY_ASSETS``: freeze the edition set and the entity roster.
 
     The stage is the graph's declared dependency for "reference assets and channel
-    style".  In this build the picture path is deterministic (typeset scene cards
-    rendered by the shared FFmpeg graph), so no character reference imagery is
-    generated or claimed: what the stage really does is
+    style".  It does **not** generate character reference imagery itself: the
+    explainer's picture path is a real local image model driven per beat, and the
+    identity inputs an operator adopts travel with the *generation command* that
+    consumes them (a keyframe draw or a reference-edited redraw), not with this
+    stage.  What the stage really does is
 
     * materialise the editions the frozen plan asked for, so every later stage has
       a clock, a canvas and a language;
     * record the entity roster the fact stage extracted, with the honest statement
-      that no identity slot is consumed by a typeset card.
+      that this stage consumes no identity slot.
 
     ``generated_reference_images`` is therefore reported as ``0`` with a reason —
     never as a successful identity pack.
@@ -615,14 +630,15 @@ def make_identity_assets_handler(
             ]
             script_revision = _current_script_revision(repo, video=video, video_id=video_id)
         return _passed(
-            f"已冻结 {len(editions)} 个输出版本与 {len(entities)} 个实体；本机画面路径为确定性排版卡，不消费人物参考图。",
+            f"已冻结 {len(editions)} 个输出版本与 {len(entities)} 个实体；"
+            "本阶段不生成人物参考图，身份输入由各画面段的生成命令按需消费。",
             {
                 "edition_ids": [str(item["id"]) for item in editions],
                 "edition_keys": [str(item["edition_key"]) for item in editions],
                 "entity_count": len(entities),
                 "person_entity_codes": persons,
                 "generated_reference_images": 0,
-                "reference_generation_reason": "PICTURE_PATH_IS_DETERMINISTIC_TYPESET_CARD",
+                "reference_generation_reason": "REFERENCE_GENERATION_BELONGS_TO_THE_GENERATION_COMMAND",
                 "identity_slots_consumed": [],
                 "script_revision_id": None if script_revision is None else str(script_revision["id"]),
                 "human_approval_written": False,
@@ -922,6 +938,13 @@ def make_narration_align_handler(
             self._timings = {
                 str(key): normalize_aligner_timestamps(value) for key, value in timings.items()
             }
+            # The rate the batch's positions are in: a runtime that declares its own
+            # rate per timestamp is believed, otherwise the locked 16 kHz model is
+            # assumed.  ``run_narration_align_job`` converts to the take's rate.
+            self._aligner_sample_rate_hz = max(
+                (declared_aligner_sample_rate(value) for value in timings.values()),
+                default=DEFAULT_ALIGNER_SAMPLE_RATE_HZ,
+            )
             self._detector_version = detector_version
             self._model = model
             self.misses: list[str] = []
@@ -948,6 +971,7 @@ def make_narration_align_handler(
                 "detector_version": self._detector_version,
                 "media_sha256": media_sha256,
                 "sample_offset": int(sample_offset),
+                "aligner_sample_rate_hz": self._aligner_sample_rate_hz,
                 "network_used": False,
                 "model": self._model,
             }
@@ -1212,7 +1236,7 @@ def _load_timeline(
                         "canonical_segment_id": str(segment["canonical_segment_id"]),
                         "start_frame": inner_cursor,
                         "end_frame_exclusive": inner_cursor + count,
-                        "render_type": str(beat.get("render_type") or "STILL_MOTION"),
+                        "render_type": str(beat.get("render_type") or "I2V"),
                         "visual_intent": str(beat.get("visual_intent") or ""),
                         "preferred_duration_ms": beat.get("preferred_duration_ms"),
                     }
@@ -1244,6 +1268,59 @@ def _sha256_file(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+#: Render types that represent a real, composable clip that has been produced.  A
+#: retired still-motion row is deliberately absent: it is history, not a clip.
+REAL_CLIP_RENDER_TYPES = frozenset({"I2V", "INFOGRAPHIC", "LICENSED_MEDIA"})
+
+
+def _manifest_picture_path(clips: Sequence[Mapping[str, Any]]) -> str:
+    """The honest picture path of a composition, derived from its own clips.
+
+    A render whose every clip is an ``I2V`` model output is an AI-generated film; one
+    that also carries infographic or licensed-material clips is mixed.  Reporting a
+    constant here — the retired code always wrote "deterministic typeset card
+    motion" — would misdescribe a delivered film, so the value is computed.
+    """
+
+    types = {str(item.get("render_type_actual") or "") for item in clips}
+    types.discard("")
+    if types and types == {"I2V"}:
+        return "AI_I2V_GENERATED"
+    if "I2V" in types:
+        return "MIXED_AI_I2V_AND_OTHER"
+    if types:
+        return "NO_AI_I2V_" + "_".join(sorted(types))
+    return "PICTURE_PATH_UNRECORDED"
+
+
+def _aggregate_qc_status(statuses: Sequence[str]) -> str:
+    """The worst verdict across a film's per-layer QC reports.
+
+    QC writes one report per layer, and a bundle that names only the newest one can
+    present a NOT_RUN layer as the film's whole QC state.  The aggregate is the most
+    severe verdict, so a PASS on one layer can never hide a FAIL or an unchecked
+    layer on another.
+    """
+
+    order = {
+        "FAIL": 6,
+        "BLOCKED": 5,
+        "CORRUPT": 5,
+        "TERMINAL_FAILED": 5,
+        "PARTIAL": 4,
+        "NEEDS_HITL": 3,
+        "STALE_REVISION": 3,
+        "NOT_RUN": 2,
+        "PASS_WITH_ISSUES": 1,
+        "PASS": 0,
+        "SUCCEEDED": 0,
+    }
+    present = [str(item).upper() for item in statuses if str(item)]
+    if not present:
+        return "NOT_RUN"
+    return max(present, key=lambda item: order.get(item, 3))
 
 
 def _retry_on_locked(operation: Callable[[], Any], *, attempts: int = 10, delay_seconds: float = 3.0) -> Any:
@@ -1476,27 +1553,30 @@ def make_visual_generation_handler(
     media_service: Any,
     work_root: Path,
     picture_runtime: Any | None = None,
+    motion_runtime: Any | None = None,
 ) -> Callable[[dict[str, Any], Mapping[str, Any]], dict[str, Any]]:
-    """``VISUAL_GENERATION``: one clip per beat, from a real generated picture.
+    """``VISUAL_GENERATION``: one real AI clip per beat.
 
-    The design's picture taxonomy is *still motion*, *parallax*, *I2V*,
-    *infographic* and *licensed media*, and it pre-authorizes degrading a
-    generated shot to a motion still.  Every beat carries a generation-ready
-    prompt (``prompt_intent``) and the machine runs a real image model, so the
-    default path is: run the bound local model once per beat, scale the result onto
-    the edition canvas and give it a deterministic camera move.  ``picture_runtime``
-    performs that generation **inside this stage**: the worker claims one job at a
-    time, so a stage that waited on its own child GPU job would deadlock, and the
-    stage already runs under the worker's lease heartbeat.  When generation is
-    disabled, unavailable, or fails for a single beat, the deterministic typeset
-    card is produced instead and the candidate records exactly which path ran —
-    ``render_type_actual`` plus a ``fallback_reason`` that names the real cause.
-    Nothing here ever claims a generated shot that did not happen.
+    An explainer's moving pictures are **real image-to-video generations**.  The
+    retired path rendered a still picture and gave it a deterministic FFmpeg camera
+    push; that is not a video model's output, it cannot honestly be labelled
+    ``I2V``, and the product no longer offers it.  The path here is therefore: run
+    the bound local image model once per beat to get the first frame, adopt that
+    frame as the beat's keyframe, then run the bound local image-to-video model on
+    that keyframe to get the composable clip.
+
+    Both ``picture_runtime`` and ``motion_runtime`` run **inside this stage**: the
+    worker claims one job at a time, so a stage that waited on its own child GPU job
+    would deadlock, and the stage already runs under the worker's lease heartbeat.
+
+    Nothing here falls back to a still image.  A beat whose real generation failed
+    is recorded as a named failure and keeps no candidate, which is the honest
+    outcome: a missing clip must stay visible, not be papered over with a picture
+    that pretends to be video.
     """
 
     from local_drama.infrastructure.composition.ffmpeg_renderer import (
         FfmpegCommand,
-        FfmpegFilterGraph,
         FfmpegRunner,
         escape_filter_value,
     )
@@ -1504,64 +1584,7 @@ def make_visual_generation_handler(
     ffmpeg_path = getattr(settings, "ffmpeg_path", None)
     ffprobe_path = getattr(settings, "ffprobe_path", None)
     runner = FfmpegRunner(ffmpeg=ffmpeg_path or "ffmpeg", ffprobe=ffprobe_path or "ffprobe", timeout_seconds=1800.0)
-    font = _card_font()
-    renders_root = Path(work_root) / "explainer_cards"
     generated_root = Path(work_root) / "explainer_generated"
-
-    def _render_motion_clip(
-        *,
-        still_path: Path,
-        clip_path: Path,
-        width: int,
-        height: int,
-        fps_num: int,
-        fps_den: int,
-        frames: int,
-        purpose: str,
-        note: str,
-    ) -> dict[str, Any]:
-        """Turn one still into a moving beat clip with a deterministic slow push."""
-
-        duration = frames * fps_den / fps_num
-        zoom = (
-            "zoompan=z='min(1+0.06*on/{frames},1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-            f":d={frames}:s={width}x{height}:fps={fps_num}/{fps_den}"
-        ).format(frames=max(1, frames))
-        clip_command = FfmpegCommand(
-            args=(
-                "-hide_banner", "-nostats", "-y",
-                "-loop", "1", "-i", str(still_path),
-                "-vf", f"{zoom},format=yuv420p",
-                "-frames:v", str(max(1, frames)),
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-                "-r", f"{fps_num}/{fps_den}",
-                str(clip_path),
-            ),
-            purpose=purpose,
-            note=note,
-        )
-        clip_outcome = dict(runner.run(clip_command))
-        if str(clip_outcome.get("status")) != "SUCCEEDED":
-            # A zoompan expression the local build refuses must not lose the beat:
-            # the declared motion is degraded to a held still and reported.
-            static_command = FfmpegCommand(
-                args=(
-                    "-hide_banner", "-nostats", "-y",
-                    "-loop", "1", "-i", str(still_path),
-                    "-vf", "format=yuv420p",
-                    "-frames:v", str(max(1, frames)),
-                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-                    "-r", f"{fps_num}/{fps_den}",
-                    str(clip_path),
-                ),
-                purpose=f"{purpose}_STATIC",
-                note="推近表达式失败时的降级：保持静帧，仍按实测时长补齐帧数",
-            )
-            clip_outcome = dict(runner.run(static_command))
-            if str(clip_outcome.get("status")) != "SUCCEEDED":
-                return {"status": "FAILED", "stage": "beat-motion", **clip_outcome}
-            return {"status": "SUCCEEDED", "motion": "STATIC_FALLBACK", "duration_seconds": duration}
-        return {"status": "SUCCEEDED", "motion": "SLOW_PUSH", "duration_seconds": duration}
 
     def _fit_generated_still(
         *,
@@ -1611,48 +1634,6 @@ def make_visual_generation_handler(
         )
         return dict(runner.run(command))
 
-    def _render_card_clip(
-        *,
-        ass_path: Path,
-        still_path: Path,
-        clip_path: Path,
-        width: int,
-        height: int,
-        fps_num: int,
-        fps_den: int,
-        frames: int,
-    ) -> dict[str, Any]:
-        accent_height = max(2, int(round(height * 0.0056)))
-        still_command = FfmpegCommand(
-            args=(
-                "-hide_banner", "-nostats", "-y",
-                "-f", "lavfi", "-i", f"color=c={_CARD_PALETTE['background']}:s={width}x{height}",
-                "-vf", (
-                    f"drawbox=x=0:y=0:w={width}:h={int(height * 0.16)}:color={_CARD_PALETTE['band']}@1:t=fill,"
-                    f"drawbox=x=0:y={int(height * 0.16)}:w={width}:h={accent_height}:color={_CARD_PALETTE['accent']}@1:t=fill,"
-                    f"subtitles=filename={escape_filter_value(str(ass_path))}"
-                ),
-                "-frames:v", "1",
-                str(still_path),
-            ),
-            purpose="EXPLAINER_CARD_STILL",
-            note="确定性地用本机 FFmpeg + libass 绘制排版卡，不调用图像模型",
-        )
-        still_outcome = dict(runner.run(still_command))
-        if str(still_outcome.get("status")) != "SUCCEEDED":
-            return {"status": "FAILED", "stage": "card-still", **still_outcome}
-        return _render_motion_clip(
-            still_path=still_path,
-            clip_path=clip_path,
-            width=width,
-            height=height,
-            fps_num=fps_num,
-            fps_den=fps_den,
-            frames=frames,
-            purpose="EXPLAINER_CARD_MOTION",
-            note="静帧动效：同一母图上的确定性缓慢推近，不使用 -shortest",
-        )
-
     def _generated_prompt(beat: Mapping[str, Any]) -> str:
         """The prompt handed to the local image model for one beat.
 
@@ -1677,67 +1658,13 @@ def make_visual_generation_handler(
         digest = hashlib.sha256(f"{video_id}:{beat_id}:image".encode("utf-8")).hexdigest()
         return int(digest[:8], 16)
 
-    def _card_beat_picture(
-        *,
-        video_id: str,
-        beat_id: str,
-        body: str,
-        kicker: str,
-        footer: str,
-        frames: int,
-        duration_seconds: float,
-        width: int,
-        height: int,
-        fps_num: int,
-        fps_den: int,
-    ) -> dict[str, Any]:
-        """The declared fallback: a deterministic typeset card with a slow push."""
+    def _motion_seed(*, video_id: str, beat_id: str) -> int:
+        """A reproducible motion seed per beat, independent of the keyframe seed."""
 
-        card_dir = renders_root / video_id / beat_id
-        card_dir.mkdir(parents=True, exist_ok=True)
-        ass_path = card_dir / "card.ass"
-        ass_path.write_text(
-            _card_ass(
-                text=body, kicker=kicker, footer=footer, duration_seconds=duration_seconds, width=width, height=height
-            ),
-            encoding="utf-8",
-        )
-        still_path = card_dir / "card.png"
-        clip_path = card_dir / "card.mp4"
-        outcome = _render_card_clip(
-            ass_path=ass_path,
-            still_path=still_path,
-            clip_path=clip_path,
-            width=width,
-            height=height,
-            fps_num=fps_num,
-            fps_den=fps_den,
-            frames=frames,
-        )
-        if outcome.get("status") != "SUCCEEDED":
-            return {"status": "FAILED", "reason": f"{outcome.get('stage')}:{outcome.get('status')}"}
-        if font is None:
-            return {"status": "FAILED", "reason": "CJK_FONT_NOT_FOUND_ON_THIS_MACHINE"}
-        return {
-            "status": "SUCCEEDED",
-            "clip_path": clip_path,
-            "still_path": still_path,
-            "actual_type": "MOTION_STILL",
-            "fallback_reason": "DETERMINISTIC_TYPESET_CARD_PATH",
-            "lineage": {
-                "source": "LOCAL_FFMPEG_TYPESET_CARD",
-                "card_ass_sha256": _sha256_file(ass_path),
-                "clip_sha256": _sha256_file(clip_path),
-                "duration_seconds": duration_seconds,
-                "frames": frames,
-                "motion": outcome.get("motion"),
-                "generated_picture_model": None,
-                "note": "本机未调用图像/视频生成模型；画面为确定性排版卡与其静帧动效。",
-            },
-            "execution_snapshot": {"provider": "LOCAL_FFMPEG", "network_used": False},
-        }
+        digest = hashlib.sha256(f"{video_id}:{beat_id}:motion".encode("utf-8")).hexdigest()
+        return int(digest[:8], 16)
 
-    def _generated_beat_picture(
+    def _beat_keyframe(
         *,
         runtime: Any,
         probe: Mapping[str, Any],
@@ -1746,14 +1673,18 @@ def make_visual_generation_handler(
         beat: Mapping[str, Any],
         kicker: str,
         footer: str,
-        frames: int,
         duration_seconds: float,
         width: int,
         height: int,
-        fps_num: int,
-        fps_den: int,
     ) -> dict[str, Any]:
-        """One real generated picture for one beat, plus its camera move."""
+        """One real generated first frame for one beat.
+
+        The first frame is the *input* to the image-to-video model, so it is a real
+        generated picture fitted onto the edition canvas with its kicker and AI
+        disclosure burned in.  The narration caption is not drawn here: the captioned
+        edition burns the subtitle track during composition and a second copy would
+        double it.
+        """
 
         prompt = _generated_prompt(beat)
         image = runtime.generate_image(
@@ -1769,9 +1700,6 @@ def make_visual_generation_handler(
         )
         beat_dir = generated_root / video_id / beat_id
         beat_dir.mkdir(parents=True, exist_ok=True)
-        # The kicker and the AI disclosure are burned onto the generated frame.  The
-        # narration caption is not: the captioned edition burns the subtitle track in
-        # the composition pass, and a second copy would double the caption.
         label_ass = beat_dir / "labels.ass"
         label_ass.write_text(
             _card_ass(
@@ -1779,7 +1707,7 @@ def make_visual_generation_handler(
             ),
             encoding="utf-8",
         )
-        still_path = beat_dir / "still.png"
+        still_path = beat_dir / "keyframe.png"
         fit = _fit_generated_still(
             source_image=Path(image["path"]),
             still_path=still_path,
@@ -1789,32 +1717,11 @@ def make_visual_generation_handler(
         )
         if fit.get("status") != "SUCCEEDED":
             raise RuntimeError(f"generated-still-fit:{fit.get('stage') or fit.get('status')}")
-        clip_path = beat_dir / "clip.mp4"
-        outcome = _render_motion_clip(
-            still_path=still_path,
-            clip_path=clip_path,
-            width=width,
-            height=height,
-            fps_num=fps_num,
-            fps_den=fps_den,
-            frames=frames,
-            purpose="EXPLAINER_GENERATED_MOTION",
-            note="本机生成画面 + 确定性缓慢推近（相机运动，非模型生成的动态）",
-        )
-        if outcome.get("status") != "SUCCEEDED":
-            raise RuntimeError(f"generated-motion:{outcome.get('stage') or outcome.get('status')}")
-        planned = str(beat.get("render_type") or "STILL_MOTION")
-        # A generated still with a camera move is a motion still; it is never
-        # reported as the planned I2V, because no model generated that motion.
-        actual_type = "MOTION_STILL" if planned in {"I2V", "STILL_MOTION", "PARALLAX"} else planned
-        if actual_type not in {"MOTION_STILL", "I2V", "PARALLAX", "INFOGRAPHIC", "LICENSED_MEDIA"}:
-            actual_type = "MOTION_STILL"
         return {
             "status": "SUCCEEDED",
-            "clip_path": clip_path,
             "still_path": still_path,
-            "actual_type": actual_type,
-            "fallback_reason": None,
+            "prompt": prompt,
+            "image": image,
             "lineage": {
                 "source": "LOCAL_GENERATED_IMAGE",
                 "generated_picture_model": str(image.get("model_code") or ""),
@@ -1829,17 +1736,77 @@ def make_visual_generation_handler(
                 "generation_steps": int(image.get("steps") or 0),
                 "generation_seconds": float(image.get("elapsed_seconds") or 0.0),
                 "image_sha256": str(image.get("sha256") or ""),
-                "clip_sha256": _sha256_file(clip_path),
-                "duration_seconds": duration_seconds,
-                "frames": frames,
-                "motion": outcome.get("motion"),
-                "camera_motion_only": True,
-                "planned_render_type": planned,
-                "note": "画面由本机图像生成模型产出；动态仅为确定性推镜，不是模型生成的视频。",
+                "note": "首帧由本机图像生成模型产出，作为图生视频的输入。",
             },
             "execution_snapshot": {
                 "provider": f"COMFYUI:{image.get('runtime_code') or 'local'}",
                 "model_code": str(image.get("model_code") or ""),
+                "network_used": False,
+            },
+        }
+
+    def _beat_clip(
+        *,
+        project_id: str,
+        runtime: Any,
+        probe: Mapping[str, Any],
+        video_id: str,
+        beat_id: str,
+        beat: Mapping[str, Any],
+        keyframe_media_version_id: str,
+        keyframe_sha256: str,
+        frames: int,
+    ) -> dict[str, Any]:
+        """One real AI image-to-video clip for one beat.
+
+        The clip is a model output, so ``render_type_actual`` is ``I2V`` — the honest
+        value.  There is no still-image substitute: a model that did not run cannot
+        produce a clip, and the caller records the failure instead.
+        """
+
+        motion_prompt = str(beat.get("prompt_intent") or "").strip() or str(beat.get("visual_intent") or "").strip()
+        if not motion_prompt:
+            motion_prompt = "a slow, natural continuation of the narrated subject"
+        motion_prompt = (
+            f"{motion_prompt} Animate this exact frame: one continuous natural motion of the subject "
+            "and one restrained camera move, keeping the identity, wardrobe, scene and lighting "
+            "unchanged. No text, no letters, no captions, no watermark."
+        )
+        video = runtime.generate_video(
+            binding=probe,
+            project_id=project_id,
+            first_frame_media_version_id=keyframe_media_version_id,
+            first_frame_sha256=keyframe_sha256,
+            prompt=motion_prompt,
+            seed=_motion_seed(video_id=video_id, beat_id=beat_id),
+            frames=frames,
+            output_prefix=f"local_drama/explainer/{video_id[:8]}",
+            timeout_seconds=float(getattr(settings, "explainer_video_timeout_seconds", 1800.0) or 1800.0),
+        )
+        return {
+            "status": "SUCCEEDED",
+            "clip_path": Path(str(video["path"])),
+            "actual_type": "I2V",
+            "fallback_reason": None,
+            "lineage": {
+                "source": "LOCAL_GENERATED_VIDEO",
+                "generated_motion_model": str(video.get("capability") or ""),
+                "motion_profile_version_id": str(video.get("profile_version_id") or ""),
+                "motion_workflow_version_id": str(video.get("workflow_version_id") or ""),
+                "motion_prompt_sha256": hashlib.sha256(motion_prompt.encode("utf-8")).hexdigest(),
+                "motion_seed": int(video.get("seed") or 0),
+                "motion_prompt_id": str(video.get("prompt_id") or ""),
+                "motion_seconds": float(video.get("elapsed_seconds") or 0.0),
+                "clip_sha256": str(video.get("sha256") or ""),
+                "first_frame_media_version_id": str(keyframe_media_version_id),
+                "first_frame_sha256": str(keyframe_sha256),
+                "frames_requested": int(video.get("frames_requested") or frames),
+                "planned_render_type": str(beat.get("render_type") or "I2V"),
+                "note": "片段由本机图生视频模型产出，是真实的模型生成动态。",
+            },
+            "execution_snapshot": {
+                "provider": f"COMFYUI:{video.get('profile_version_id') or 'local'}",
+                "capability": str(video.get("capability") or ""),
                 "network_used": False,
             },
         }
@@ -1851,12 +1818,11 @@ def make_visual_generation_handler(
         video_id = str(payload.get("video_id") or "")
         generated: list[dict[str, Any]] = []
         failures: list[dict[str, Any]] = []
-        picture_source = str(getattr(settings, "explainer_picture_source", "LOCAL_GENERATION") or "").upper()
         capability_snapshot = payload.get("capability_snapshot")
         if not isinstance(capability_snapshot, Mapping):
             capability_snapshot = None
         picture_probe: dict[str, Any] = {"available": False, "reason": "PICTURE_RUNTIME_NOT_CONFIGURED"}
-        if picture_source == "LOCAL_GENERATION" and picture_runtime is not None:
+        if picture_runtime is not None:
             try:
                 picture_probe = dict(picture_runtime.probe(capability_snapshot))
             except Exception as error:  # a broken runtime degrades, it never aborts the stage
@@ -1865,12 +1831,23 @@ def make_visual_generation_handler(
                     "reason": "PICTURE_PROBE_FAILED",
                     "detail": {"error": type(error).__name__},
                 }
+        # The moving picture is a real image-to-video generation; without a working
+        # motion runtime the beat has no clip at all, so the probe is a hard gate.
+        motion_probe: dict[str, Any] = {"available": False, "reason": "MOTION_RUNTIME_NOT_CONFIGURED"}
+        if motion_runtime is not None:
+            try:
+                motion_probe = dict(motion_runtime.probe(capability_snapshot))
+            except Exception as error:
+                motion_probe = {
+                    "available": False,
+                    "reason": "MOTION_PROBE_FAILED",
+                    "detail": {"error": type(error).__name__},
+                }
         with repo_factory() as repo:
             video, editions = _video_and_editions(repo, project_id=project_id, video_id=video_id)
             if not editions:
                 return _blocked("该作品没有输出版本，无法生成画面", "SCHEMA_INVALID", {"video_id": video_id})
             beats = {str(item["id"]): item for item in repo.beats(video_id)}
-            disclosure = _disclosure_line(str(video.get("content_kind") or ""))
             generated_disclosure = _generated_disclosure_line()
             # One clip per beat, sized for the longest edition placement so every
             # edition can reference the same immutable media version.
@@ -1887,22 +1864,52 @@ def make_visual_generation_handler(
                     if current is None or span > current["frames"]:
                         needed[str(beat_id)] = {
                             "frames": span,
-                            "render_type": placement.get("render_type") or "STILL_MOTION",
+                            "render_type": placement.get("render_type") or "I2V",
                             "segment_ids": [str(placement["segment_id"])],
                             "visual_intent": str(placement.get("visual_intent") or ""),
                         }
+            # A caller may narrow the stage to an explicit beat selection (a repair of
+            # one画面段, or a first pass over a few beats).  An empty list means the
+            # whole film, which is what the production graph always asks for.
+            requested_beats = {
+                str(item)
+                for item in (payload.get("beat_ids") or [])
+                if str(item).strip()
+            }
+            if requested_beats:
+                unknown = sorted(requested_beats - set(beats))
+                if unknown:
+                    return _blocked(
+                        "所选画面段不属于该作品",
+                        "INVALID_REQUEST",
+                        {"video_id": video_id, "unknown_beat_ids": unknown[:10]},
+                    )
+                needed = {key: value for key, value in needed.items() if key in requested_beats}
+            # Only a READY *VISUAL* candidate that is a real produced clip means this
+            # beat already has one.  Keying this by any candidate made a beat with only
+            # a keyframe (or only an entity reference) look finished; counting a
+            # retired still-motion row would make a film whose clips are the removed
+            # still-with-a-camera-move look complete and never regenerate them.
             existing = {
                 str(item["beat_id"]): item
                 for item in repo.list_where("explainer_media_candidates", {"video_id": video_id})
                 if str(item.get("status")) == "READY"
+                and str(item.get("purpose") or "VISUAL") == "VISUAL"
+                and str(item.get("render_type_actual") or "") in REAL_CLIP_RENDER_TYPES
             }
-            primary_edition = editions[0]
+            requested_edition_id = str(payload.get("edition_id") or "").strip()
+            primary_edition = next(
+                (item for item in editions if str(item["id"]) == requested_edition_id),
+                editions[0],
+            )
             width = int(primary_edition["width"])
             height = int(primary_edition["height"])
             fps_num = int(primary_edition["fps_num"])
             fps_den = int(primary_edition["fps_den"])
 
         def _run_beats() -> None:
+            from local_drama.application.explainers.storyboard import build_storyboard_service
+
             for beat_id, requirement in sorted(needed.items(), key=lambda item: int(beats[item[0]]["ordinal"])):
                 if beat_id in existing:
                     generated.append({"beat_id": beat_id, "reused": True, "candidate_id": str(existing[beat_id]["id"])})
@@ -1911,23 +1918,37 @@ def make_visual_generation_handler(
                 frames = max(1, int(requirement["frames"]))
                 duration_seconds = frames * fps_den / fps_num
                 with repo_factory() as repo:
-                    body = _beat_card_text(
-                        repo,
-                        segment_ids=requirement["segment_ids"],
-                        intent=requirement["visual_intent"],
-                    )
                     entities = [
                         str(code) for code in (beat.get("entity_refs_json") or []) if str(code)
                     ][:6]
                     entity_line = ("实体：" + "、".join(entities)) if entities else ""
+                    # A first frame the operator already adopted and locked is the
+                    # input, not a suggestion: re-drawing it would silently discard a
+                    # human decision and waste a GPU run.  Only a beat without an
+                    # adopted keyframe gets a fresh one.
+                    adopted_keyframe = repo.resolved_beat_selection(
+                        beat_id, str(primary_edition["id"]), purpose="KEYFRAME"
+                    )
                 kicker = f"画面 {int(beat['ordinal']) + 1:02d} · {beat['code']}"
-                footer = " ｜ ".join([part for part in (entity_line, disclosure) if part])
                 generated_footer = " ｜ ".join([part for part in (entity_line, generated_disclosure) if part])
-                attempt: dict[str, Any] | None = None
-                declared_reason: str | None = None
-                if picture_probe.get("available"):
+                # 1) real first frame; 2) real image-to-video clip on that frame.
+                # There is no still-image substitute any more: a beat that cannot be
+                # really generated is reported and left without a candidate.
+                keyframe: dict[str, Any] | None = None
+                if adopted_keyframe is not None and str(adopted_keyframe.get("media_version_id") or ""):
+                    keyframe_media_version_id = str(adopted_keyframe["media_version_id"])
+                    keyframe_sha256 = str(adopted_keyframe.get("media_sha256") or "")
+                    keyframe_lineage: dict[str, Any] = {
+                        "source": "ADOPTED_KEYFRAME",
+                        "selection_id": str(adopted_keyframe.get("id") or ""),
+                        "candidate_id": str(adopted_keyframe.get("candidate_id") or ""),
+                        "adopted_by": str(adopted_keyframe.get("actor") or ""),
+                        "adoption_authority": str(adopted_keyframe.get("adoption_authority") or ""),
+                        "note": "首帧沿用人工已采用的首帧候选，未重新生成。",
+                    }
+                else:
                     try:
-                        attempt = _generated_beat_picture(
+                        keyframe = _beat_keyframe(
                             runtime=picture_runtime,
                             probe=picture_probe,
                             video_id=video_id,
@@ -1935,12 +1956,9 @@ def make_visual_generation_handler(
                             beat=beat,
                             kicker=kicker,
                             footer=generated_footer,
-                            frames=frames,
                             duration_seconds=duration_seconds,
                             width=width,
                             height=height,
-                            fps_num=fps_num,
-                            fps_den=fps_den,
                         )
                     except Exception as error:
                         code = str(getattr(error, "code", type(error).__name__))
@@ -1951,36 +1969,86 @@ def make_visual_generation_handler(
                             {
                                 "beat_id": beat_id,
                                 "stage": "picture-generation",
-                                "reason": code,
+                                "reason": str(picture_probe.get("reason") or code) if not picture_probe.get("available") else code,
                                 "detail": _last_frames(error),
                             }
                         )
-                        attempt = None
-                        declared_reason = f"PICTURE_GENERATION_FAILED:{code}"
-                else:
-                    declared_reason = str(picture_probe.get("reason") or "PICTURE_GENERATION_UNAVAILABLE")
-                if attempt is None:
-                    attempt = _card_beat_picture(
+                        continue
+                    # The first frame becomes a project media version first: the I2V
+                    # input bridge only accepts a verified business reference, never a
+                    # path, so the file has to be registered and hashed before the
+                    # motion model may consume it.
+                    registered_keyframe = media_service.import_file(
+                        project_id,
+                        Path(str(keyframe["still_path"])),
+                        purpose="EXPLAINER_BEAT_KEYFRAME",
+                        owner_type="EXPLAINER_VIDEO",
+                        owner_id=video_id,
+                        media_kind="IMAGE",
+                        stage="KEYFRAME",
+                        actor="explainer-worker",
+                        schedule_derivatives=True,
+                    )
+                    keyframe_media_version_id = str(registered_keyframe.get("media_version_id"))
+                    keyframe_sha256 = str(registered_keyframe.get("sha256"))
+                    keyframe_lineage = dict(keyframe["lineage"])
+                try:
+                    attempt = _beat_clip(
+                        project_id=project_id,
+                        runtime=motion_runtime,
+                        probe=motion_probe,
                         video_id=video_id,
                         beat_id=beat_id,
-                        body=body,
-                        kicker=kicker,
-                        footer=footer,
+                        beat=beat,
+                        keyframe_media_version_id=keyframe_media_version_id,
+                        keyframe_sha256=keyframe_sha256,
                         frames=frames,
-                        duration_seconds=duration_seconds,
-                        width=width,
-                        height=height,
-                        fps_num=fps_num,
-                        fps_den=fps_den,
                     )
-                    if attempt.get("status") != "SUCCEEDED":
-                        failures.append({"beat_id": beat_id, "stage": "card", "reason": attempt.get("reason")})
-                        continue
-                    # A card produced because generation failed (or never ran) states
-                    # the real cause; only a card produced by configuration keeps the
-                    # card path's own declared reason.
-                    if declared_reason:
-                        attempt["fallback_reason"] = declared_reason
+                except Exception as error:
+                    code = str(getattr(error, "code", type(error).__name__))
+                    failures.append(
+                        {
+                            "beat_id": beat_id,
+                            "stage": "motion-generation",
+                            "reason": str(motion_probe.get("reason") or code) if not motion_probe.get("available") else code,
+                            "detail": _last_frames(error),
+                        }
+                    )
+                    continue
+                if keyframe is not None:
+                    try:
+                        with repo_factory() as repo:
+                            # The keyframe is registered as its own adopt-able candidate so
+                            # the operator can re-draw the first frame and re-run motion from
+                            # it without losing the clip they already accepted.
+                            build_storyboard_service(repo).register_candidate(
+                                project_id=str(video["project_id"]),
+                                video_id=video_id,
+                                beat_id=beat_id,
+                                candidate_kind="CREATIVE",
+                                media_version_id=keyframe_media_version_id,
+                                render_type_actual=None,
+                                fallback_reason=None,
+                                purpose="KEYFRAME",
+                                lineage={**keyframe_lineage, "adopted_by": "explainer-worker"},
+                                execution_snapshot=dict(keyframe["execution_snapshot"]),
+                                qc_summary={
+                                    "file_valid": True,
+                                    "measured_by": "VISUAL_GENERATION",
+                                    "content_checked": False,
+                                },
+                            )
+                    except Exception as error:
+                        # One beat's registration failure must not throw away the other
+                        # beats' finished generations.
+                        failures.append(
+                            {
+                                "beat_id": beat_id,
+                                "stage": "keyframe-registration",
+                                "reason": str(getattr(error, "code", type(error).__name__)),
+                                "detail": _last_frames(error),
+                            }
+                        )
                 clip_path = Path(str(attempt["clip_path"]))
                 registered = media_service.import_file(
                     project_id,
@@ -1991,42 +2059,62 @@ def make_visual_generation_handler(
                     media_kind="VIDEO",
                     stage="VISUAL_GENERATION",
                     actor="explainer-worker",
+                    # Step 4/5 renders a card per candidate.  Every other media
+                    # producer in this codebase queues the default thumbnail (and
+                    # proxy) at registration time; without it the read-only
+                    # thumbnail endpoint answers ``MEDIA_DERIVATIVE_NOT_READY`` and
+                    # the candidate grid can only show a placeholder.
+                    schedule_derivatives=True,
                 )
                 with repo_factory() as repo:
-                    candidate = repo.insert(
-                        "explainer_media_candidates",
-                        {
-                            "video_id": video_id,
-                            "beat_id": beat_id,
-                            "variant_no": 1,
-                            "candidate_kind": "CREATIVE",
-                            "purpose": "VISUAL",
-                            "media_asset_id": registered.get("media_asset_id"),
-                            "media_version_id": registered.get("media_version_id"),
-                            "media_sha256": registered.get("sha256"),
-                            "status": "READY",
-                            "render_type_planned": str(beat.get("render_type") or "STILL_MOTION"),
-                            "render_type_actual": str(attempt["actual_type"]),
-                            "fallback_reason": attempt.get("fallback_reason"),
-                            "lineage_json": attempt["lineage"],
-                            "execution_snapshot_json": attempt["execution_snapshot"],
-                            "adopted": False,
+                    # Design §D2.1: candidate registration has exactly one entry point.
+                    # This stage used to insert the row itself, which meant the worker
+                    # path skipped the budget ledger and the variant numbering every
+                    # other producer honours, so two producers could both claim
+                    # ``variant_no = 1`` for one beat.
+                    # The clip is a real model output, so its render type is ``I2V``.
+                    registered_actual = str(attempt["actual_type"])
+                    render_type_actual = registered_actual
+                    try:
+                        candidate = build_storyboard_service(repo).register_candidate(
+                            project_id=str(video["project_id"]),
+                            video_id=video_id,
+                            beat_id=beat_id,
+                            candidate_kind="CREATIVE",
+                            media_version_id=str(registered.get("media_version_id")),
+                            render_type_actual=render_type_actual,
+                            fallback_reason=attempt.get("fallback_reason"),
+                            purpose="VISUAL",
+                            lineage=dict(attempt["lineage"]),
+                            execution_snapshot=dict(attempt["execution_snapshot"]),
                             # Only the facts this stage really measured: the media was
                             # produced and registered with a hash, so the file exists.
-                            # Content, identity and readability need a picture check
-                            # and stay absent — an absent check is UNKNOWN, never a
-                            # pass, which is what keeps this candidate out of machine
-                            # adoption until the checks run (design §6.2).
-                            "qc_summary_json": {
+                            # Content, identity and readability need a picture check and
+                            # stay absent — an absent check is UNKNOWN, never a pass,
+                            # which is what keeps this candidate out of machine adoption
+                            # until the checks run (design §6.2).
+                            qc_summary={
                                 "file_valid": True,
                                 "duration_ms": int(round(duration_seconds * 1000)),
-                                "render_type_actual": str(attempt["actual_type"]),
+                                "render_type_actual": registered_actual,
                                 "measured_by": "VISUAL_GENERATION",
                                 "content_checked": False,
                             },
-                        },
-                        actor="explainer-worker",
-                    )
+                        )
+                    except Exception as error:
+                        # A finished GPU generation must never be lost to a bookkeeping
+                        # refusal: the media version is already registered, so the clip
+                        # is recoverable, and the remaining beats keep generating.
+                        failures.append(
+                            {
+                                "beat_id": beat_id,
+                                "stage": "clip-registration",
+                                "reason": str(getattr(error, "code", type(error).__name__)),
+                                "media_version_id": str(registered.get("media_version_id")),
+                                "detail": _last_frames(error),
+                            }
+                        )
+                        continue
                     # Adoption is NOT this stage's job: ``EXPLAINER_VISUAL_QC`` adopts
                     # after the checks have run.  Inserting the selection here made the
                     # candidate active before anything had examined it, and the beat
@@ -2045,7 +2133,7 @@ def make_visual_generation_handler(
                 generated.append(
                     {
                         "beat_id": beat_id,
-                        "candidate_id": str(candidate["id"]),
+                        "candidate_id": str(candidate.get("candidate_id") or candidate.get("id") or (candidate.get("candidate") or {}).get("id")),
                         "media_version_id": registered.get("media_version_id"),
                         "frames": frames,
                         "source": str(attempt["lineage"].get("source") or ""),
@@ -2072,29 +2160,31 @@ def make_visual_generation_handler(
                 _run_beats()
         if not generated:
             return _blocked(
-                "没有任何画面段生成可用的画面候选",
+                "没有任何画面段生成可用的 AI 图生视频片段",
                 "MEDIA_CANDIDATES_MISSING",
-                {"failures": failures[:5], "beat_count": len(needed)},
+                {
+                    "failures": failures[:5],
+                    "beat_count": len(needed),
+                    "picture_probe": {key: value for key, value in picture_probe.items() if key != "detail"},
+                    "motion_probe": {key: value for key, value in motion_probe.items() if key != "detail"},
+                },
             )
         fresh = [item for item in generated if not item.get("reused")]
-        generated_count = sum(1 for item in fresh if item.get("source") == "LOCAL_GENERATED_IMAGE")
-        card_count = len(fresh) - generated_count
+        clip_count = sum(1 for item in fresh if item.get("actual_type") == "I2V")
         return _passed(
-            f"已为 {len(generated)} 个画面段准备画面（新生成 {len(fresh)} 个：本机模型生成 {generated_count} 个、确定性排版卡 {card_count} 个）。",
+            f"已为 {len(generated)} 个画面段准备 AI 图生视频片段（本次新生成 {clip_count} 段）。",
             {
                 "candidates": generated,
                 "failures": failures,
                 "beat_count": len(needed),
                 "planned_types": sorted({str(item.get("render_type")) for item in needed.values()}),
-                "picture_source": picture_source,
                 "generation_probe": {key: value for key, value in picture_probe.items() if key != "detail"},
-                "generation_model_used": generated_count > 0,
-                "generated_beat_count": generated_count,
-                "typeset_card_beat_count": card_count,
+                "motion_probe": {key: value for key, value in motion_probe.items() if key != "detail"},
+                "generated_beat_count": clip_count,
+                "typeset_card_beat_count": 0,
                 "disclosure": (
-                    "画面由本机图像生成模型产出，运动为确定性推镜；生成失败或不可用的画面段已降级为排版卡并记录原因。"
-                    if generated_count
-                    else "本次没有调用图像生成模型，画面为确定性排版卡静帧动效。"
+                    "画面首帧由本机图像生成模型产出，动态由本机图生视频模型真实生成；"
+                    "生成失败或不可用的画面段不会用静图顶替，已记录为缺口。"
                 ),
             },
         )
@@ -2105,10 +2195,93 @@ def make_visual_generation_handler(
 # --------------------------------------------------------------------------- #
 # SUBTITLE_BUILD
 # --------------------------------------------------------------------------- #
+#: Sentence enders.  A cue may always end right after one of these.
+_CUE_SENTENCE_END = "。！？；!?;"
+#: Clause enders.  Preferred boundaries when one sentence does not fit one cue:
+#: Chinese subtitles break at a comma, never at an arbitrary character.
+_CUE_CLAUSE_END = "，、：,:"
+#: Punctuation that must never end a cue, and must never start one.  Ambiguous
+#: quote characters are deliberately absent from both sets: a straight quote is
+#: as likely to open as to close, and guessing wrongly would move a boundary.
+_CUE_OPENING = "（(《〈【[“‘"
+_CUE_CLOSING = "）)》〉】]”’"
+#: A cue boundary never falls inside a run of ASCII letters or digits, so "50件"
+#: stays readable instead of being cut into "5" and "0件".
+_CUE_ASCII_WORD_CHAR = re.compile(r"[0-9A-Za-z]")
+#: Shortest tail a split may leave behind.  Below this the viewer sees a two or
+#: three character flicker — the delivered 1962 film had cues reading "铁网。",
+#: "0件偷来的雨衣…" and "闯必死无疑。" because the splitter cut on a character
+#: count alone.
+MIN_CUE_FRAGMENT_CHARS = 6
+
+_CUE_SENTENCE_RE = re.compile(rf"[^{_CUE_SENTENCE_END}]*[{_CUE_SENTENCE_END}]?")
+
+#: A mapped alignment clock is used for cue boundaries only when it really explains
+#: the take: it must reach this fraction of the narration clip, and the pace it
+#: implies must be human.  The delivered 1962 film's clock covered a third of each
+#: clip at ~19 characters per second, which the builder trusted.
+MIN_ALIGNMENT_CLOCK_COVERAGE = 0.5
+MIN_MS_PER_DISPLAY_CHARACTER = 60.0
+MAX_MS_PER_DISPLAY_CHARACTER = 500.0
+
+
 def _split_cue_text(text: str, *, max_chars: int) -> list[str]:
     """Deterministic sentence split, then a hard wrap for an over-long clause."""
 
     return [chunk for chunk, _start, _end in _split_cue_chunks(text, max_chars=max_chars)]
+
+
+def _choose_cue_break(piece: str, *, cursor: int, max_chars: int) -> int:
+    """The offset inside ``piece`` where the next cue should end.
+
+    Order of preference, all inside the ``max_chars`` window: a clause boundary, a
+    Latin word boundary, and only then a hard break — which still refuses to cut an
+    ASCII word or to leave a closing bracket or a fragment of punctuation alone.
+    The returned offset is always in ``(cursor, cursor + max_chars]``.
+    """
+
+    length = len(piece)
+    upper = min(length - 1, cursor + max_chars)
+    if upper <= cursor:
+        return length
+    # A tail shorter than ``MIN_CUE_FRAGMENT_CHARS`` is only acceptable when the
+    # remaining text cannot fill it (a genuinely short last sentence).
+    minimum_tail = min(MIN_CUE_FRAGMENT_CHARS, max(1, length - cursor - MIN_CUE_FRAGMENT_CHARS))
+    for end in range(upper, cursor, -1):
+        if piece[end - 1] in _CUE_CLAUSE_END and length - end >= minimum_tail:
+            return end
+    for end in range(upper, cursor, -1):
+        if piece[end - 1].isspace() and length - end >= minimum_tail:
+            return end
+    end = upper
+    # The walk-backs are bounded: a window that is entirely one ASCII run (a long
+    # URL, a serial number) has no legal boundary inside it at all, and walking to
+    # the window start would emit one-character cues instead of an honest mid-token
+    # break.  A third of the window is the shortest cue this splitter will create.
+    floor = cursor + max(1, max_chars // 3)
+    while end > floor and (
+        _CUE_ASCII_WORD_CHAR.match(piece[end - 1]) and _CUE_ASCII_WORD_CHAR.match(piece[end])
+    ):
+        end -= 1
+    while end > floor and piece[end] in _CUE_CLOSING:
+        end -= 1
+    while end > floor and piece[end - 1] in _CUE_OPENING:
+        end -= 1
+    if end == floor and piece[cursor:upper] and all(
+        _CUE_ASCII_WORD_CHAR.match(character) for character in piece[cursor:upper]
+    ):
+        # The whole window is a single unbroken token; an honest break at the window
+        # edge keeps the chunk sizes even instead of leaving the tail of the run to
+        # be re-split with a different floor.  The tail floor still wins, so a short
+        # run is not split into a long head and a two-character tail.
+        end = min(upper, max(floor, length - minimum_tail))
+    if length - end < minimum_tail:
+        candidate = max(floor, length - minimum_tail)
+        if candidate < end and not (
+            _CUE_ASCII_WORD_CHAR.match(piece[candidate - 1]) and _CUE_ASCII_WORD_CHAR.match(piece[candidate])
+        ):
+            end = candidate
+    return max(cursor + 1, min(end, cursor + max_chars))
 
 
 def _split_cue_chunks(text: str, *, max_chars: int) -> list[tuple[str, int, int]]:
@@ -2118,12 +2291,15 @@ def _split_cue_chunks(text: str, *, max_chars: int) -> list[tuple[str, int, int]
     from an assumed reading speed.  The previous builder consumed only the chunk
     *strings*, so a subtitle revision recorded alignment revision ids while its
     cue times were still an even character-proportional split of the segment.
+
+    A chunk is never a raw character slice of a clause: the boundary is chosen by
+    :func:`_choose_cue_break`, which prefers punctuation and protects words, so a
+    cue reads as a phrase instead of a severed fragment.
     """
 
-    import re
-
+    max_chars = max(1, int(max_chars))
     pieces: list[tuple[str, int, int]] = []
-    for match in re.finditer(r"[^。！？；!?;]*[。！？；!?;]?", text):
+    for match in _CUE_SENTENCE_RE.finditer(text):
         piece = match.group(0)
         if piece:
             pieces.append((piece, match.start(), match.end()))
@@ -2135,13 +2311,13 @@ def _split_cue_chunks(text: str, *, max_chars: int) -> list[tuple[str, int, int]
         stripped = piece.strip()
         if not stripped:
             continue
-        offset = stripped_start
-        while len(stripped) > max_chars:
-            chunks.append((stripped[:max_chars], offset, offset + max_chars))
-            stripped = stripped[max_chars:]
-            offset += max_chars
-        if stripped:
-            chunks.append((stripped, offset, offset + len(stripped)))
+        cursor = 0
+        while len(stripped) - cursor > max_chars:
+            end = _choose_cue_break(stripped, cursor=cursor, max_chars=max_chars)
+            chunks.append((stripped[cursor:end], stripped_start + cursor, stripped_start + end))
+            cursor = end
+        if stripped[cursor:]:
+            chunks.append((stripped[cursor:], stripped_start + cursor, stripped_start + len(stripped)))
     if not chunks:
         return [(text[:max_chars], 0, min(len(text), max_chars))]
     return chunks
@@ -2187,6 +2363,60 @@ def _display_map_span(alignment: Mapping[str, Any]) -> list[tuple[int, int, int,
     return spans
 
 
+def _alignment_clock_verdict(
+    spans: Sequence[tuple[int, int, int, int]],
+    *,
+    sample_rate_hz: int,
+    clip_start_ms: int,
+    clip_end_ms: int,
+) -> dict[str, Any]:
+    """Whether a mapped clock may be used for cue boundaries at all.
+
+    An aligner clock is only a clock when it explains the take: the mapped spans
+    must reach a real part of the clip, and the pace they imply must be human.  The
+    1962 film's alignment declared the take's 48 kHz rate over 16 kHz positions, so
+    the map covered a third of each clip and implied ~19 characters per second; the
+    subtitle builder trusted it and cut each sentence into one very short cue and one
+    very long one.  A clock that fails either test is refused, and every cue of that
+    take is timed by the deterministic character-proportional fallback instead.
+    """
+
+    clip_ms = max(1, int(clip_end_ms) - int(clip_start_ms))
+    if not spans or sample_rate_hz <= 0:
+        return {
+            "trusted": False,
+            "reason": "NO_MAPPED_SPANS",
+            "coverage": 0.0,
+            "ms_per_character": None,
+            "mapped_span_count": len(spans),
+        }
+    last_end_ms = max(int(span[3]) for span in spans) * 1000.0 / float(sample_rate_hz)
+    first_start_ms = min(int(span[2]) for span in spans) * 1000.0 / float(sample_rate_hz)
+    first_display = min(int(span[0]) for span in spans)
+    last_display = max(int(span[1]) for span in spans)
+    characters = max(1, last_display - first_display)
+    coverage = last_end_ms / float(clip_ms)
+    pace_ms = (last_end_ms - first_start_ms) / characters
+    verdict: dict[str, Any] = {
+        "trusted": True,
+        "reason": None,
+        "coverage": round(coverage, 4),
+        "ms_per_character": round(pace_ms, 2),
+        "mapped_span_count": len(spans),
+        "last_mapped_end_ms": round(last_end_ms, 2),
+    }
+    if coverage < MIN_ALIGNMENT_CLOCK_COVERAGE:
+        verdict["trusted"] = False
+        verdict["reason"] = "ALIGNMENT_CLOCK_COVERS_TOO_LITTLE_OF_THE_CLIP"
+    elif pace_ms < MIN_MS_PER_DISPLAY_CHARACTER:
+        verdict["trusted"] = False
+        verdict["reason"] = "ALIGNMENT_CLOCK_PACE_IMPLAUSIBLY_FAST"
+    elif pace_ms > MAX_MS_PER_DISPLAY_CHARACTER:
+        verdict["trusted"] = False
+        verdict["reason"] = "ALIGNMENT_CLOCK_PACE_IMPLAUSIBLY_SLOW"
+    return verdict
+
+
 def _aligned_cue_times(
     chunks: Sequence[tuple[str, int, int]],
     *,
@@ -2199,10 +2429,15 @@ def _aligned_cue_times(
 
     A cue that overlaps a mapped display span takes that span's time, converted
     from the take's samples to milliseconds and clipped to the narration clip it
-    belongs to.  Cues the alignment could not place — and a take with no
+    belongs to.  Cues the alignment could not place — and a take with no usable
     alignment at all — fall back to the deterministic character-proportional split
     inside the *remaining* clip window, in order, so the track stays monotonic and
     still ends exactly at the clip boundary.
+
+    The whole take's clock is validated first by :func:`_alignment_clock_verdict`:
+    a map that covers a fraction of the clip, or implies an impossible speaking
+    pace, is not a clock, and using it produced cues of 773 ms for thirteen
+    characters in the delivered film.
 
     The fallback is kept because a cue with no time at all would be worse than an
     estimated one, but it is never applied silently: ``_subtitle_alignment_facts``
@@ -2213,7 +2448,11 @@ def _aligned_cue_times(
         clip_end_ms = clip_start_ms + 1
     spans: list[tuple[int, int, int, int]] = []
     if alignment is not None and sample_rate_hz > 0:
-        spans = _display_map_span(alignment)
+        mapped = _display_map_span(alignment)
+        if _alignment_clock_verdict(
+            mapped, sample_rate_hz=sample_rate_hz, clip_start_ms=clip_start_ms, clip_end_ms=clip_end_ms
+        )["trusted"]:
+            spans = mapped
     resolved: list[tuple[int, int] | None] = []
     for _chunk, start_offset, end_offset in chunks:
         best: tuple[int, int] | None = None
@@ -2283,25 +2522,49 @@ def _aligned_cue_times(
     return ordered
 
 
-def _subtitle_alignment_facts(alignment: Mapping[str, Any] | None) -> dict[str, Any]:
-    """What the alignment revision actually provides for cue timing."""
+def _subtitle_alignment_facts(
+    alignment: Mapping[str, Any] | None,
+    *,
+    sample_rate_hz: int = 0,
+    clip_start_ms: int | None = None,
+    clip_end_ms: int | None = None,
+) -> dict[str, Any]:
+    """What the alignment revision actually provides for cue timing.
+
+    With the clip's own bounds the report also states whether that take's clock was
+    trusted (:func:`_alignment_clock_verdict`), so a subtitle revision whose cues
+    came from the character-proportional fallback says why instead of looking like an
+    aligned one.
+    """
 
     if alignment is None:
-        return {"alignment_revision_id": None, "word_timing_count": 0, "mapped_span_count": 0}
+        return {
+            "alignment_revision_id": None,
+            "word_timing_count": 0,
+            "mapped_span_count": 0,
+            "clock": {"trusted": False, "reason": "NO_ALIGNMENT_REVISION", "coverage": 0.0},
+        }
     raw = alignment.get("word_timings_json")
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
         except ValueError:
             raw = []
+    spans = _display_map_span(alignment)
+    clock: dict[str, Any] = {"trusted": False, "reason": "CLIP_BOUNDS_UNKNOWN", "coverage": 0.0}
+    if clip_start_ms is not None and clip_end_ms is not None and sample_rate_hz > 0:
+        clock = _alignment_clock_verdict(
+            spans, sample_rate_hz=int(sample_rate_hz), clip_start_ms=int(clip_start_ms), clip_end_ms=int(clip_end_ms)
+        )
     return {
         "alignment_revision_id": str(alignment.get("id") or ""),
         "alignment_status": str(alignment.get("alignment_status") or ""),
         "word_timing_count": len(raw) if isinstance(raw, Sequence) else 0,
-        "mapped_span_count": len(_display_map_span(alignment)),
+        "mapped_span_count": len(spans),
         # The aligner's own grid: a cue boundary is quantised to it, so this can
         # never be presented as sample-accurate subtitle timing.
         "aligner_timestamp_grid_ms": 80,
+        "clock": clock,
     }
 
 
@@ -2385,12 +2648,19 @@ def make_subtitle_build_handler(
                         alignment = repo.latest_alignment_for_take(str(clip["take_id"]))
                         if alignment is not None:
                             alignment_ids.append(str(alignment["id"]))
-                        alignment_facts.append(_subtitle_alignment_facts(alignment))
                         # ``Ratio`` exposes seconds; convert with the same integer
                         # arithmetic the timeline uses so a cue boundary is the
                         # frame the manifest actually places.
                         start_ms = int(round(fps.seconds_for_frames(int(clip["start_frame"])) * 1000))
                         end_ms = int(round(fps.seconds_for_frames(int(clip["end_frame_exclusive"])) * 1000))
+                        alignment_facts.append(
+                            _subtitle_alignment_facts(
+                                alignment,
+                                sample_rate_hz=int(edition["audio_sample_rate_hz"] or 0),
+                                clip_start_ms=start_ms,
+                                clip_end_ms=end_ms,
+                            )
+                        )
                         chunks = _split_cue_chunks(
                             str(segment.get("display_text") or ""), max_chars=max_chars
                         )
@@ -2438,8 +2708,13 @@ def make_subtitle_build_handler(
                         {"frozen_subtitle_revision_id": str(revision["id"])},
                         actor="explainer-worker",
                     )
+                    # Only a *trusted* clock times a cue.  Counting a map that
+                    # covered a third of the clip as "from alignment" is exactly how
+                    # a revision full of estimated cues was presented as aligned.
                     mapped_cues = sum(
-                        1 for fact in alignment_facts if int(fact.get("mapped_span_count") or 0) > 0
+                        1
+                        for fact in alignment_facts
+                        if bool((fact.get("clock") or {}).get("trusted"))
                     )
                     built.append(
                         {
@@ -2448,12 +2723,19 @@ def make_subtitle_build_handler(
                             "subtitle_revision_id": str(revision["id"]),
                             "cue_count": len(created["cues"]),
                             "alignment_revision_count": len(alignment_ids),
-                            # How much of the cue timing came from a real
-                            # alignment: a revision whose cues are all estimated
-                            # is still a legal revision, but it must be legible
-                            # as estimated rather than presented as aligned.
+                            # How much of the cue timing came from a *trusted*
+                            # alignment clock: a revision whose cues are all
+                            # estimated is still a legal revision, but it must be
+                            # legible as estimated rather than presented as aligned.
                             "cues_from_alignment_segments": mapped_cues,
                             "narration_segment_count": len(alignment_facts),
+                            "cue_clock_rejections": sorted(
+                                {
+                                    str((fact.get("clock") or {}).get("reason"))
+                                    for fact in alignment_facts
+                                    if not bool((fact.get("clock") or {}).get("trusted"))
+                                }
+                            ),
                             "cue_timing_source": (
                                 "ALIGNMENT_CLOCK" if mapped_cues == len(alignment_facts) and mapped_cues
                                 else "CHARACTER_PROPORTIONAL"
@@ -2533,6 +2815,34 @@ def _apply_target_padding(timeline: dict[str, Any], *, edition: Mapping[str, Any
     }
 
 
+def _render_canvas(
+    *,
+    edition_width: int,
+    edition_height: int,
+    aspect_ratio: str,
+    source_heights: Sequence[int | None],
+) -> tuple[int, int]:
+    """Pick the render canvas: the edition's size, capped by the real sources.
+
+    The renderer must not invent detail (upscaling a 480p source to 1080p adds no
+    picture information) and must not discard it either — the motion-card clips this
+    pipeline produces are already at the edition canvas.  When the sources cannot
+    fill the edition canvas the platform's own proxy geometry for that aspect is
+    used at the tallest real source height, so the film keeps the edition's aspect
+    ratio and stays aligned with the subtitle geometry laid out for the edition.
+    """
+
+    height = max(2, int(edition_height) - (int(edition_height) % 2))
+    width = max(2, int(edition_width) - (int(edition_width) % 2))
+    heights = [int(item) for item in source_heights if item is not None and int(item) > 0]
+    cap = max(heights) if heights else 0
+    if cap and cap < height:
+        from local_drama.domain.explainers.contracts import aspect_pixels_for_height
+
+        return aspect_pixels_for_height(aspect_ratio, cap)
+    return width, height
+
+
 def make_composition_render_handler(
     repo_factory: Callable[[], Any],
     *,
@@ -2550,7 +2860,7 @@ def make_composition_render_handler(
     (per-chunk encode, exact frame checks, full decode, hash, atomic publish).
     """
 
-    from local_drama.application.composition.manifest import ManifestClip, build_manifest, plan_chunks
+    from local_drama.application.composition.manifest import build_manifest, plan_chunks
     from local_drama.application.composition.validation import validate_manifest
     from local_drama.application.explainers.subtitles import default_safe_area
     from local_drama.infrastructure.composition.ffmpeg_renderer import FfmpegRunner, atomic_render
@@ -2597,6 +2907,8 @@ def make_composition_render_handler(
                 video_items: list[dict[str, Any]] = []
                 missing_media: list[str] = []
                 has_audio: dict[str, bool] = {}
+                #: Heights of the real source clips, used to pick the render canvas.
+                source_heights: list[int] = []
                 for placement in placements:
                     beat_id = placement.get("beat_id")
                     selection = repo.active_beat_selection(str(beat_id), str(edition["id"])) if beat_id else None
@@ -2618,7 +2930,10 @@ def make_composition_render_handler(
                                 "sample_end_exclusive": None,
                                 "beat_id": beat_id,
                                 "render_type_planned": placement.get("render_type"),
-                                "render_type_actual": "MOTION_STILL",
+                                # No adopted clip means there is no actual render type.
+                                # The retired ``MOTION_STILL`` label asserted a real
+                                # still-plus-camera-move clip that does not exist here.
+                                "render_type_actual": None,
                                 "transition": {"kind": "CUT"},
                             }
                         )
@@ -2632,9 +2947,14 @@ def make_composition_render_handler(
                     # silently ran out of frames and failed the chunk frame check
                     # instead of cloning the last frame the way the design says.
                     media_row = repo.query_one(
-                        "SELECT duration_ms FROM media_versions WHERE id=?", (media_version_id,)
+                        "SELECT duration_ms, "
+                        "json_extract(probe_json,'$.streams[0].height') AS source_height "
+                        "FROM media_versions WHERE id=?",
+                        (media_version_id,),
                     )
                     media_span_us = int(media_row["duration_ms"]) * 1000 if media_row and media_row["duration_ms"] else None
+                    if media_row is not None and media_row["source_height"]:
+                        source_heights.append(int(media_row["source_height"]))
                     if media_span_us is None or media_span_us <= 0:
                         media_span_us = int(
                             round(span * 1_000_000 * timeline["fps"].den / timeline["fps"].num)
@@ -2655,7 +2975,7 @@ def make_composition_render_handler(
                         "beat_id": beat_id,
                         "narration_segment_id": str(placement["segment_id"]),
                         "render_type_planned": placement.get("render_type"),
-                        "render_type_actual": str(selection.get("render_type_actual") or "MOTION_STILL"),
+                        "render_type_actual": selection.get("render_type_actual"),
                         "transition": {"kind": "CUT"},
                     }
                     clips.append(clip)
@@ -2695,9 +3015,9 @@ def make_composition_render_handler(
                         "missing_media": missing_media,
                         "has_audio": has_audio,
                         "subtitle_revision": subtitle_revision,
+                        "source_heights": tuple(source_heights),
                     }
                 )
-            primary = plans[0]
         for plan in plans:
             edition = plan["edition"]
             timeline = plan["timeline"]
@@ -2731,6 +3051,12 @@ def make_composition_render_handler(
                     )
             work_dir = Path(work_root) / "explainer_renders" / str(edition["id"]) / revision_id
             work_dir.mkdir(parents=True, exist_ok=True)
+            render_canvas = _render_canvas(
+                edition_width=int(edition["width"]),
+                edition_height=int(edition["height"]),
+                aspect_ratio=str(edition["aspect_ratio"]),
+                source_heights=plan.get("source_heights") or (),
+            )
             if plan["subtitle_revision"] is not None:
                 with repo_factory() as repo:
                     service = make_subtitle_service(repo)
@@ -2756,6 +3082,19 @@ def make_composition_render_handler(
                 duration_policy=str(edition["duration_policy"]),
                 clips=plan["clips"],
                 chunks=plan_chunks(total_frames=int(timeline["total_frames"]), fps=timeline["fps"]),
+                # The edition is the delivery contract this render is produced for,
+                # and the card clips this pipeline generates already use the edition
+                # canvas — but the manifest used to omit the size and fall back to
+                # ``AspectRatio.pixels``, a module-level 854x480 proxy that ignores
+                # both the edition and the configured generation height.  A 1080p
+                # edition therefore delivered a 480p film and relied on a "later
+                # super-resolution" step that cannot run on a machine without the
+                # ncnn model, so the detail the sources really carry was thrown away
+                # at the very last step.  The canvas is now the edition size capped
+                # by the tallest real source, so nothing is invented and nothing is
+                # discarded.
+                width=render_canvas[0],
+                height=render_canvas[1],
                 subtitle_tracks=subtitle_tracks if str(edition.get("subtitle_mode")) == "SOFT" else (),
                 mix={
                     # ``segments`` / ``expected_segment_ids`` are the keys the shared
@@ -2783,8 +3122,13 @@ def make_composition_render_handler(
                     "locale": timeline["locale"],
                     "content_kind": str(plan["edition"].get("voice_locale") or ""),
                     "renderer": "localdrama.explainer.ffmpeg",
-                    "picture_path": "DETERMINISTIC_TYPESET_CARD_MOTION",
-                    "generation_model_used": False,
+                    # The picture path is read off the manifest's own clip records: the
+                    # previous constant claimed a deterministic typeset card even when
+                    # every clip was a real model-generated video.
+                    "picture_path": _manifest_picture_path(plan["clips"]),
+                    "generation_model_used": any(
+                        str(item.get("render_type_actual") or "") == "I2V" for item in plan["clips"]
+                    ),
                     "timing_authority": "MEASURED_TTS",
                     # The picture track may hold its last card to reach the declared
                     # target.  The hold is an explicit, declared ending, and the
@@ -2858,6 +3202,9 @@ def make_composition_render_handler(
                 subtitle_paths=[] if subtitle_artifact is None else [subtitle_artifact],
                 audio_sources=audio_sources,
                 has_audio_lookup=plan["has_audio"],
+                # The delivered loudness must satisfy the declared -16 +/-1 LUFS
+                # band; one dynamic ``loudnorm`` pass does not land there.
+                loudness_normaliser=runner.normalise_loudness,
             )
             if str(outcome.get("status")) != "SUCCEEDED":
                 failures.append(
@@ -2877,7 +3224,7 @@ def make_composition_render_handler(
             # the work is idempotent, so it is retried instead of losing a finished
             # render.
             registered = _retry_on_locked(
-                lambda: media_service.import_file(
+                lambda master_path=master_path, edition=edition: media_service.import_file(
                     project_id,
                     master_path,
                     purpose="EXPLAINER_RENDER",
@@ -2886,6 +3233,7 @@ def make_composition_render_handler(
                     media_kind="VIDEO",
                     stage="COMPOSITION_RENDER",
                     actor="explainer-worker",
+                    schedule_derivatives=True,
                 )
             )
             with repo_factory() as repo:
@@ -2898,7 +3246,7 @@ def make_composition_render_handler(
                         or {"current": 0}
                     )["current"]
                 )
-                composition = repo.insert(
+                repo.insert(
                     "composition_revisions",
                     {
                         "id": revision_id,
@@ -2918,7 +3266,12 @@ def make_composition_render_handler(
                         "target_frames": manifest.target_frames,
                         "frozen_at": _now(),
                         "frozen_by": "explainer-worker",
-                        "validation_json": {"status": "PASS", "source": "build_manifest"},
+                        "validation_json": {
+                            "status": "PASS",
+                            "source": "build_manifest",
+                            "canvas": {"width": int(manifest.width), "height": int(manifest.height)},
+                            "canvas_source": "EDITION_CAPPED_BY_SOURCE",
+                        },
                     },
                     actor="explainer-worker",
                 )
@@ -3014,11 +3367,15 @@ def make_composition_render_handler(
                     subtitle_paths=[],
                     audio_sources=audio_sources,
                     has_audio_lookup=plan["has_audio"],
+                    # The clean master is the same mix as the burned one with the
+                    # captions omitted, so it must carry the same loudness pass;
+                    # otherwise the two delivered masters differ by several LU.
+                    loudness_normaliser=runner.normalise_loudness,
                 )
                 if str(clean_outcome.get("status")) == "SUCCEEDED":
                     clean_path = Path(str(clean_outcome["final_path"]))
                     clean_registered = _retry_on_locked(
-                        lambda: media_service.import_file(
+                        lambda clean_path=clean_path, edition=edition: media_service.import_file(
                             project_id,
                             clean_path,
                             purpose="EXPLAINER_CLEAN_MASTER",
@@ -3027,6 +3384,7 @@ def make_composition_render_handler(
                             media_kind="VIDEO",
                             stage="COMPOSITION_RENDER",
                             actor="explainer-worker",
+                            schedule_derivatives=True,
                         )
                     )
                     with repo_factory() as repo:
@@ -3184,6 +3542,9 @@ def make_explainer_export_handler(
                     media_version_id: str | None = None,
                     required: bool = True,
                     content: str | None = None,
+                    package_dir: Path = package_dir,
+                    items: list[Any] = items,
+                    files: list[dict[str, Any]] = files,
                 ) -> None:
                     target = package_dir / rel_path
                     target.parent.mkdir(parents=True, exist_ok=True)
@@ -3327,6 +3688,7 @@ def make_explainer_export_handler(
                                     media_kind="IMAGE",
                                     stage="EXPLAINER_EXPORT",
                                     actor="explainer-worker",
+                                    schedule_derivatives=True,
                                 )
                                 cover_media_version_id = str(registered.get("media_version_id") or "") or None
                                 add_file(
@@ -3416,16 +3778,50 @@ def make_explainer_export_handler(
                         indent=2,
                     ),
                 )
+                # QC is one report per layer, and the package used to ship whichever
+                # layer wrote last.  After the 1962 film's semantic layer reported
+                # NOT_RUN (the local multimodal call failed inside the worker) the
+                # bundle's ``qc_report.json`` was that NOT_RUN row even though the
+                # technical layer had PASSED the same render with 3132/3132 decoded
+                # frames and a measured -16.1 LUFS.  The file now carries the newest
+                # report *plus* every layer's own verdict and the worst-of aggregate,
+                # so a reader can see what was really checked.
+                subject_hash = str(root_render.get("sha256") or "")
                 qc_report = repo.latest_qc_report(
                     subject_kind="COMPOSITION_RENDER",
                     subject_revision_id=str(root_render["id"]),
-                    subject_hash=str(root_render.get("sha256") or "") or None,
+                    subject_hash=subject_hash or None,
+                )
+                layer_reports = [
+                    {
+                        "report_id": str(item["id"]),
+                        "detector": str(
+                            (item.get("detectors_json") or [{}])[0].get("detector")
+                            if isinstance(item.get("detectors_json"), list) and item.get("detectors_json")
+                            else ""
+                        ),
+                        "status": str(item.get("status") or ""),
+                        "created_at": str(item.get("created_at") or ""),
+                    }
+                    for item in repo.qc_reports_for_subject(
+                        subject_kind="COMPOSITION_RENDER",
+                        subject_revision_id=str(root_render["id"]),
+                        subject_hash=subject_hash or None,
+                    )
+                ]
+                packaged_qc: dict[str, Any] = dict(qc_report or {"status": "NOT_RUN"})
+                packaged_qc["layer_reports"] = layer_reports
+                packaged_qc["aggregate_status"] = _aggregate_qc_status(
+                    [str(item["status"]) for item in layer_reports]
+                )
+                packaged_qc["aggregate_note"] = (
+                    "每一层各自出报告；aggregate_status 取最严结论（FAIL > BLOCKED > PARTIAL > NOT_RUN > PASS）。"
                 )
                 add_file(
                     role=QC_REPORT,
                     rel_path="qc_report.json",
                     path=None,
-                    content=json.dumps(qc_report or {"status": "NOT_RUN"}, ensure_ascii=False, indent=2, default=str),
+                    content=json.dumps(packaged_qc, ensure_ascii=False, indent=2, default=str),
                 )
                 add_file(
                     role=LICENSE_LIST,
@@ -3556,6 +3952,7 @@ def build_explainer_pipeline_handlers(
     work_root: Path | None = None,
     repo_factory_read: Callable[[], Any] | None = None,
     picture_runtime: Any = None,
+    motion_runtime: Any = None,
 ) -> dict[str, Callable[[dict[str, Any], Mapping[str, Any]], dict[str, Any]]]:
     """The seven production stages this module owns, keyed by stage code.
 
@@ -3594,6 +3991,7 @@ def build_explainer_pipeline_handlers(
             media_service=media_service,
             work_root=resolved_work_root,
             picture_runtime=picture_runtime,
+            motion_runtime=motion_runtime,
         )
         handlers["COMPOSITION_RENDER"] = make_composition_render_handler(
             repo_factory, settings=settings, media_service=media_service, work_root=resolved_work_root

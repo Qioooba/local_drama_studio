@@ -217,7 +217,6 @@ class TimelineExportService:
         fps_den = int(revision.get("fps_den") or 0)
         if fps_num <= 0 or fps_den <= 0 or not video_items:
             return {}
-        fps = fps_num / fps_den
         starts = [int(item["start_us"]) for item in video_items]
         transitions, _frames = TimelineService._transition_plan(
             video_items, fps_num=fps_num, fps_den=fps_den, leading_blank_us=max(0, min(starts))

@@ -1237,15 +1237,7 @@ class JobService:
         row = self._require_job_for_mutation(connection, job_id)
         if row["state"] not in {FAILED, NEEDS_ATTENTION, ORPHANED}:
             raise DomainRuleError("JOB_NOT_RETRYABLE", "只有失败、孤儿或需人工关注的 Job 可以 retry")
-        if str(row["last_error_code"] or "") in {
-            "COMFY_PROVIDER_ACCEPTANCE_UNKNOWN",
-            "PROVIDER_ACCEPTANCE_UNKNOWN",
-        }:
-            raise DomainRuleError(
-                "PROVIDER_ACCEPTANCE_RECONCILIATION_REQUIRED",
-                "外部受理状态未知；完成对账或明确新建任务前不能直接重试",
-                {"job_id": job_id},
-            )
+        self._reject_unknown_provider_acceptance(row, job_id)
         connection.execute(
             "UPDATE jobs SET state='QUEUED', next_run_at=?, cancel_requested_at=NULL, progress_json='{}', progress_updated_at=NULL, last_error_code=NULL, last_error_detail_redacted=NULL, finished_at=NULL, updated_at=?, revision=revision+1 WHERE id=? AND deleted_at IS NULL",
             (now, now, job_id),
@@ -1255,6 +1247,65 @@ class JobService:
         updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
         return self._job_response(updated)
 
+    @staticmethod
+    def _reject_unknown_provider_acceptance(row: Any, job_id: str) -> None:
+        """Refuse a re-queue while the provider may already own the side effect.
+
+        Shared by ``retry``/``resume`` and by the explicit CANCELLED re-queue so
+        one recovery path cannot bypass the quarantine another one enforces.
+        """
+
+        if str(row["last_error_code"] or "") in {
+            "COMFY_PROVIDER_ACCEPTANCE_UNKNOWN",
+            "PROVIDER_ACCEPTANCE_UNKNOWN",
+        }:
+            raise DomainRuleError(
+                "PROVIDER_ACCEPTANCE_RECONCILIATION_REQUIRED",
+                "外部受理状态未知；完成对账或明确新建任务前不能直接重试",
+                {"job_id": job_id},
+            )
+
+    def requeue_cancelled(self, job_id: str, actor: str = "local-user") -> dict[str, Any]:
+        """Return a ``CANCELLED`` Job to the durable queue as an explicit instruction.
+
+        ``retry``/``resume`` deliberately refuse ``CANCELLED``: reviving a Job
+        nobody re-authorised would silently undo the user's own cancellation.
+        Recovery of a stalled workflow run needs exactly that transition, but it
+        must still happen through the Job state authority rather than by writing
+        SQL from the automation layer.  ``cancel_requested_at`` is cleared in the
+        same write — the cooperative stop flag would otherwise make the next
+        attempt settle as CANCELLED even after it really succeeded — and
+        ``finished_at`` is reset because the Job becomes claimable again.
+        """
+
+        with self.database.transaction() as connection:
+            return self.requeue_cancelled_in_transaction(connection, job_id, actor=actor)
+
+    def requeue_cancelled_in_transaction(self, connection: Any, job_id: str, *, actor: str) -> dict[str, Any]:
+        """``CANCELLED`` → ``QUEUED`` inside a caller-owned transaction.
+
+        The workflow recovery path must re-queue the Job and append its run
+        event in the *same* transaction, or the two rows can disagree about who
+        owns the task.
+        """
+
+        now = _iso(_utc_now())
+        row = self._require_job_for_mutation(connection, job_id)
+        if str(row["state"]) != CANCELLED:
+            raise DomainRuleError(
+                "JOB_NOT_CANCELLED",
+                "只有 CANCELLED 的 Job 可以通过 requeue_cancelled 重新入队",
+                {"job_id": job_id, "state": str(row["state"])},
+            )
+        self._reject_unknown_provider_acceptance(row, job_id)
+        connection.execute(
+            "UPDATE jobs SET state='QUEUED', next_run_at=?, cancel_requested_at=NULL, progress_json='{}', progress_updated_at=NULL, last_error_code=NULL, last_error_detail_redacted=NULL, finished_at=NULL, updated_at=?, revision=revision+1 WHERE id=? AND deleted_at IS NULL",
+            (now, now, job_id),
+        )
+        self._sync_experiment_cell_status(connection, job_id, QUEUED, now)
+        self._emit(connection, "JOB_REQUEUED", row["project_id"], "JOB", job_id, {"reason": "cancelled_requeue", "actor": actor})
+        updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+        return self._job_response(updated)
 
     def pause(self, job_id: str, actor: str = "local-user") -> dict[str, Any]:
         now = _iso(_utc_now())

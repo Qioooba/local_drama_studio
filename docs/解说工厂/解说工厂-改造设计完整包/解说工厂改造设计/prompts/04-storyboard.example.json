@@ -1,0 +1,40 @@
+{
+  "schema_version": "localdrama.explainer.storyboard.v2",
+  "beats": [
+    {
+      "segment_ids": [
+        "provided-segment-id"
+      ],
+      "entity_ids": [
+        "provided-entity-id"
+      ],
+      "state_revision_ids": [
+        "provided-state-revision-id"
+      ],
+      "claim_ids": [
+        "provided-claim-id"
+      ],
+      "render_type": "I2V",
+      "visual_factuality": "RECONSTRUCTION",
+      "visual_intent": "人物位于场景中的什么位置，执行一个明确动作。",
+      "visible_entity_ids": [
+        "provided-entity-id"
+      ],
+      "key_action": "单一动作描述",
+      "must_be_motion": true,
+      "image_prompt": "画面主体、空间关系、构图、光线；不写人物台词和字幕。",
+      "video_prompt": "基于采用首帧，人物执行该动作，镜头进行一种清晰运动。",
+      "negative_prompt": "额外人物、重复肢体、未经要求的文字。",
+      "camera_movement": "STATIC",
+      "reference_roles_required": [
+        "CHARACTER_FRONT",
+        "SCENE_REFERENCE"
+      ],
+      "on_screen_text": [],
+      "creative_assumptions": [],
+      "continuity_note": "人物服装和场景沿用指定版本。"
+    }
+  ],
+  "uncovered_segment_ids": [],
+  "blocking_requirements": []
+}

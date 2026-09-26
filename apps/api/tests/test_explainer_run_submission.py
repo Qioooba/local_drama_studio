@@ -255,10 +255,9 @@ def test_missing_fallback_field_gets_the_documented_default(database: Database) 
     service = ExplainerProductionService(database, capability_probe=_probe_all_available)
     report = service.preflight(project_id=PROJECT_ID, outputs=_outputs(), fallback_policy={})
     policy = report["policy_snapshot"]["fallback_policy"]
-    assert set(policy["allowed_visual_fallbacks"]) == {
-        "I2V_TO_MOTION_STILL",
-        "I2V_TO_INFORMATION_GRAPHIC",
-    }
+    # The retired ``I2V_TO_MOTION_STILL`` fallback is gone: the only documented
+    # degradation is the information graphic, and it is the whole default policy.
+    assert tuple(policy["allowed_visual_fallbacks"]) == ("I2V_TO_INFORMATION_GRAPHIC",)
 
 
 def test_zero_budget_and_empty_fallback_change_the_plan_hash(database: Database) -> None:

@@ -25,12 +25,17 @@ from pathlib import Path
 import pytest
 
 from local_drama.application.explainers.aligner_timestamps import (
+    declared_aligner_sample_rate,
     normalize_aligner_timestamps,
+    rescale_word_timings,
     timestamp_samples,
 )
 from local_drama.application.explainers.production_pipeline import (
     _aligned_cue_times,
+    _alignment_clock_verdict,
+    _display_map_span,
     _split_cue_chunks,
+    _split_cue_text,
     _subtitle_alignment_facts,
 )
 from local_drama.application.explainers.runtime_adapters import (
@@ -110,6 +115,37 @@ def test_single_take_aligner_adapter_uses_the_shared_conversion() -> None:
     assert result["alignment_status"] == "ALIGNED"
     assert result["word_timings"][0]["token"] == "解"
     assert result["word_timings"][0]["start_sample"] == 0
+    # The rate the positions are in must travel with them: the revision declares the
+    # take's rate, and a 16 kHz clock stored under it is 3x too short.
+    assert result["aligner_sample_rate_hz"] == 16000
+
+
+def test_word_timings_are_rescaled_into_the_takes_time_base() -> None:
+    """The aligner's 16 kHz clock becomes the take's 48 kHz clock, once."""
+
+    timings = [
+        {"token": "年", "start_sample": 16000, "end_sample": 32000, "text_match": True},
+        {"token": "月", "start_sample": 32000, "end_sample": 48000, "text_match": True},
+    ]
+    rescaled = rescale_word_timings(timings, from_rate=16000, to_rate=48000)
+    assert [item["start_sample"] for item in rescaled] == [48000, 96000]
+    assert [item["end_sample"] for item in rescaled] == [96000, 144000]
+    # The source list is not mutated: a caller may still need the raw aligner output.
+    assert timings[0]["start_sample"] == 16000
+    # A same-rate conversion is a copy, never a silent rescale.
+    assert rescale_word_timings(timings, from_rate=48000, to_rate=48000)[0]["start_sample"] == 16000
+
+
+def test_the_aligner_sample_rate_is_read_from_its_own_timestamps() -> None:
+    assert declared_aligner_sample_rate([{"start_time": 0.0, "end_time": 1.0}]) == 16000
+    assert declared_aligner_sample_rate([{"start_time": 0, "end_time": 1, "sample_rate_hz": 24000}]) == 24000
+    assert (
+        declared_aligner_sample_rate(
+            [{"start_sample": 0, "end_sample": 10, "sample_rate_hz": 16000}]
+        )
+        == 16000
+    )
+    assert declared_aligner_sample_rate(None) == 16000
 
 
 # --------------------------------------------------------------------------- #
@@ -270,6 +306,43 @@ def test_cue_chunks_carry_display_offsets() -> None:
     assert [(chunk[1], chunk[2]) for chunk in chunks] == [(0, 5), (5, 10)]
 
 
+def test_cue_chunks_break_at_a_clause_boundary_not_at_a_character_count() -> None:
+    """The delivered film cut sentences mid-phrase; a cue must read as a phrase."""
+
+    text = "1962年6月11日深夜，旧金山湾的风暴正撕扯着恶魔岛联邦监狱的铁网。"
+    chunks = _split_cue_text(text, max_chars=32)
+    assert chunks == ["1962年6月11日深夜，", "旧金山湾的风暴正撕扯着恶魔岛联邦监狱的铁网。"]
+    # No cue may open with the tail of a sentence the previous cue already started
+    # mid-word: the second cue is a whole clause, not the word "铁网。".
+    assert all(len(chunk) >= 6 for chunk in chunks)
+
+
+def test_cue_chunks_never_cut_inside_a_number() -> None:
+    text = "逃亡当晚，三名囚犯钻出凿通的狭窄通风井，爬上未加锁的屋顶，利用50件偷来的雨衣和接触胶水拼接成一艘充气救生筏和救生衣。"
+    chunks = _split_cue_text(text, max_chars=32)
+    assert all(len(chunk) <= 32 for chunk in chunks)
+    assert not any(chunk.endswith("5") for chunk in chunks), chunks
+    assert "".join(chunks) == text
+
+
+def test_cue_chunks_prefer_the_latest_clause_and_keep_a_readable_tail() -> None:
+    text = "为了应付狱警夜间每小时一次的巡逻，他们用肥皂、卫生纸、石膏粉和理发室扫来的真人头发，逼真地雕刻出三个假人头。"
+    chunks = _split_cue_text(text, max_chars=32)
+    # The boundary is the latest clause mark inside the window, and the tail is a
+    # whole clause — never the "石膏粉" / "和理发室…" pair a character cut produced.
+    assert chunks == [
+        "为了应付狱警夜间每小时一次的巡逻，他们用肥皂、卫生纸、",
+        "石膏粉和理发室扫来的真人头发，逼真地雕刻出三个假人头。",
+    ]
+
+
+def test_cue_chunks_of_a_punctuation_free_clause_stay_readable() -> None:
+    text = "这是一段完全没有标点符号的很长的中文句子用来检查硬切分的行为是否正确处理"
+    chunks = _split_cue_text(text, max_chars=32)
+    assert all(6 <= len(chunk) <= 32 for chunk in chunks)
+    assert "".join(chunks) == text
+
+
 def test_cue_times_prefer_the_alignment_clock_over_character_proportion() -> None:
     """A cue whose span the aligner placed must use the aligner's time."""
 
@@ -280,14 +353,65 @@ def test_cue_times_prefer_the_alignment_clock_over_character_proportion() -> Non
             # even 2.5 s an equal character split would produce.
             {"token": "第", "display_start": 0, "display_end": 1, "start_sample": 0, "end_sample": 16000},
             {"token": "句", "display_start": 3, "display_end": 4, "start_sample": 16000, "end_sample": 32000},
+            # The map must reach a real part of the clip to count as a clock at all
+            # (see the rejection test below), so the second sentence is mapped too.
+            {"token": "第", "display_start": 5, "display_end": 6, "start_sample": 32000, "end_sample": 48000},
+            {"token": "句", "display_start": 8, "display_end": 9, "start_sample": 48000, "end_sample": 64000},
         ]
     )
     times = _aligned_cue_times(
-        chunks, alignment=alignment, sample_rate_hz=16000, clip_start_ms=0, clip_end_ms=5000
+        chunks, alignment=alignment, sample_rate_hz=16000, clip_start_ms=0, clip_end_ms=4000
     )
     assert times[0] == (0, 2000)
-    # The second sentence has no mapped span, so it is filled to the clip end.
-    assert times[1] == (2000, 5000)
+    assert times[1] == (2000, 4000)
+
+
+def test_a_clock_that_covers_a_fraction_of_the_clip_is_refused() -> None:
+    """The delivered film's map stopped at 2.2 s of a 7 s clip.
+
+    Trusting it gave the first thirteen characters 773 ms and the remaining
+    twenty-two 5.97 s.  A map that explains a third of the take is not a clock, so
+    every cue of that take is timed by the character-proportional fallback instead.
+    """
+
+    chunks = _split_cue_chunks("第一句话。第二句话。", max_chars=100)
+    alignment = _alignment(
+        [
+            {"token": "第", "display_start": 0, "display_end": 1, "start_sample": 0, "end_sample": 16000},
+            {"token": "句", "display_start": 3, "display_end": 4, "start_sample": 16000, "end_sample": 32000},
+        ]
+    )
+    verdict = _alignment_clock_verdict(
+        _display_map_span(alignment), sample_rate_hz=16000, clip_start_ms=0, clip_end_ms=7000
+    )
+    assert verdict["trusted"] is False
+    assert verdict["reason"] == "ALIGNMENT_CLOCK_COVERS_TOO_LITTLE_OF_THE_CLIP"
+    assert verdict["coverage"] == pytest.approx(0.2857, abs=0.001)
+    times = _aligned_cue_times(
+        chunks, alignment=alignment, sample_rate_hz=16000, clip_start_ms=0, clip_end_ms=7000
+    )
+    # Ten characters over seven seconds: five and five, not 0.77 s and 6.23 s.
+    assert times == [(0, 3500), (3500, 7000)]
+
+
+def test_a_clock_with_an_impossible_pace_is_refused() -> None:
+    """A map covering the clip but implying 19 characters per second is not usable."""
+
+    chunks = _split_cue_chunks("第一句话。第二句话。", max_chars=100)
+    alignment = _alignment(
+        [
+            # Ten characters inside 0.5 s of a 4 s clip: it covers the clip only if we
+            # pretend it runs to the end, and the pace is impossible for speech.
+            {"token": "第", "display_start": 0, "display_end": 5, "start_sample": 0, "end_sample": 4000},
+            {"token": "句", "display_start": 5, "display_end": 10, "start_sample": 4000, "end_sample": 8000},
+        ]
+    )
+    verdict = _alignment_clock_verdict(
+        _display_map_span(alignment), sample_rate_hz=16000, clip_start_ms=0, clip_end_ms=1000
+    )
+    assert verdict["trusted"] is False
+    assert verdict["reason"] == "ALIGNMENT_CLOCK_PACE_IMPLAUSIBLY_FAST"
+    assert verdict["ms_per_character"] == pytest.approx(50.0)
 
 
 def test_cue_times_fall_back_to_proportional_without_an_alignment() -> None:

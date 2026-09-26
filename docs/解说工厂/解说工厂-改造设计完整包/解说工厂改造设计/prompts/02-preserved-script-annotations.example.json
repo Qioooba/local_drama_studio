@@ -1,0 +1,21 @@
+{
+  "schema_version": "localdrama.explainer.preserved-script-annotations.v1",
+  "annotations": [
+    {
+      "canonical_segment_id": "provided-segment-id",
+      "claim_ids": [
+        "provided-claim-id"
+      ],
+      "entity_ids": [
+        "provided-entity-id"
+      ],
+      "statement_type": "FACT",
+      "pronunciation_suggestions": [],
+      "pause_after_ms": 250,
+      "unverified_phrases": []
+    }
+  ],
+  "chapter_break_before_segment_ids": [
+    "provided-segment-id"
+  ]
+}

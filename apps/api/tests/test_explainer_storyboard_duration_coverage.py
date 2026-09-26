@@ -100,7 +100,7 @@ def _seed(database: Database, *, link_second_segment: bool = False) -> dict[str,
                 "video_id": VIDEO_ID,
                 "code": "B001",
                 "ordinal": 0,
-                "render_type": "STILL_MOTION",
+                "render_type": "I2V",
                 "visual_intent": "第一段画面",
             },
         )

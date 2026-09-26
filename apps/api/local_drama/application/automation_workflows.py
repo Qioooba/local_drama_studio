@@ -45,6 +45,26 @@ MAX_CONDITIONS = 50
 MAX_ITERATIONS = 100_000
 MAX_TASKS = 100_000
 MAX_DISK_BYTES = 1 << 50
+#: Job states in which a RUNNING workflow run is still making progress: the
+#: linked task Job is claimable or is already being executed, so the run is
+#: waiting on real work rather than on a decision nobody will make.
+ACTIVE_TASK_JOB_STATES = frozenset({"QUEUED", "CLAIMED", "RUNNING"})
+#: Terminal Job states that can never move a run forward.  ``step_run`` only
+#: advances on ``SUCCEEDED`` (and raises ``AUTOMATION_COMPLETED_JOB_NOT_SUCCEEDED``
+#: otherwise), so a run whose cursor-owning task Job ended here stays ``RUNNING``
+#: forever until a human recovers or fails it explicitly.
+STALLED_TASK_JOB_STATES = frozenset({"FAILED", "CANCELLED", "NEEDS_ATTENTION", "ORPHANED"})
+#: The one task-query shape every run projection uses.  It carries the Job's
+#: state and attempt budget so ``stall`` can answer "can this Job simply run
+#: again?" without a second round-trip.  ``job_attempt_no`` is the highest
+#: attempt number already recorded, i.e. exactly the ``attempt_no`` the Job
+#: state authority compares against ``max_attempts``.
+_RUN_TASKS_SQL = (
+    "SELECT t.*, j.state AS job_state, j.max_attempts AS job_max_attempts,"
+    " (SELECT MAX(a.attempt_no) FROM job_attempts a WHERE a.job_id=t.job_id) AS job_attempt_no"
+    " FROM automation_workflow_run_tasks t LEFT JOIN jobs j ON j.id=t.job_id"
+    " WHERE t.run_id=? ORDER BY t.ordinal"
+)
 
 # Built-in workflow templates. Each expansion is an immutable version. A
 # source fingerprint makes an unchanged re-expansion idempotent while a changed
@@ -479,6 +499,9 @@ class AutomationWorkflowService:
             "machine_context": _decode(row["machine_context_json"], {}),
             "ai_scores": _decode(row["ai_scores_json"], {}),
             "human_approval_status": str(row["human_approval_status"]),
+            # A run that cannot move is reported honestly instead of being shown
+            # as a live RUNNING run forever; see ``describe_stall``.
+            "stall": AutomationWorkflowService._stall_view(row, tasks),
             "started_at": row["started_at"],
             "completed_at": row["completed_at"],
             "created_at": row["created_at"],
@@ -516,15 +539,65 @@ class AutomationWorkflowService:
             "ai_scores_can_approve": False,
         }
 
+    @staticmethod
+    def _stall_view(run: Any, tasks: list[Any]) -> dict[str, Any]:
+        """Read-only answer to "why is this workflow run not progressing?".
+
+        ``stalled`` is true only for a ``RUNNING`` run whose cursor-owning task
+        (the highest ordinal, i.e. the task ``step_run`` is waiting on) is linked
+        to a Job in a terminal non-success state.  ``step_run`` can only advance
+        a task after its Job reaches ``SUCCEEDED``, so nothing in the product can
+        ever move such a run again.  A run that is not ``RUNNING``, or whose Job
+        is claimable/executing, is reported as not stalled: this view never
+        infers a fault from elapsed time alone.
+
+        ``next_step`` uses the vocabulary ``recover_run`` implements —
+        ``REQUEUE_TASK_JOB`` while the Job still has automatic attempt budget,
+        ``FAIL_RUN`` when it does not — so the browser can label the action
+        without re-deriving the budget rule.
+        """
+
+        status = str(run["status"])
+        current = tasks[-1] if tasks else None
+        keys = current.keys() if current is not None else ()
+        job_state = str(current["job_state"] or "") if current is not None else ""
+        if status != "RUNNING" or current is None or job_state in ACTIVE_TASK_JOB_STATES:
+            stalled = False
+        else:
+            stalled = job_state in STALLED_TASK_JOB_STATES
+        attempts_used = int(current["job_attempt_no"] or 0) if "job_attempt_no" in keys else 0
+        max_attempts = int(current["job_max_attempts"] or 1) if "job_max_attempts" in keys else 1
+        recoverable = bool(stalled and attempts_used < max_attempts)
+        return {
+            "stalled": stalled,
+            "reason": f"TASK_JOB_{job_state}" if stalled else None,
+            "run_status": status,
+            "task_id": str(current["id"]) if current is not None else None,
+            "task_key": str(current["item_key"]) if current is not None else None,
+            "job_id": str(current["job_id"]) if current is not None and current["job_id"] else None,
+            "job_state": job_state or None,
+            "next_step": ("REQUEUE_TASK_JOB" if recoverable else "FAIL_RUN") if stalled else None,
+            "attempts_used": attempts_used,
+            "max_attempts": max_attempts,
+            "recoverable": recoverable,
+        }
+
+    def describe_stall(self, run_id: str) -> dict[str, Any]:
+        """Report, honestly, why one workflow run is not progressing (read-only)."""
+
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM automation_workflow_runs WHERE id=?", (run_id,)).fetchone()
+            if row is None:
+                raise DomainRuleError("AUTOMATION_RUN_NOT_FOUND", "workflow run 不存在", {"run_id": run_id})
+            tasks = connection.execute(_RUN_TASKS_SQL, (run_id,)).fetchall()
+        return self._stall_view(row, tasks)
+
     def get_run(self, run_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             row = connection.execute("SELECT * FROM automation_workflow_runs WHERE id=?", (run_id,)).fetchone()
             if row is None:
                 raise DomainRuleError("AUTOMATION_RUN_NOT_FOUND", "workflow run 不存在", {"run_id": run_id})
-            tasks = connection.execute(
-                "SELECT t.*, j.state AS job_state FROM automation_workflow_run_tasks t LEFT JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? ORDER BY t.ordinal",
-                (run_id,),
-            ).fetchall()
+            tasks = connection.execute(_RUN_TASKS_SQL, (run_id,)).fetchall()
             events = connection.execute("SELECT * FROM automation_workflow_run_events WHERE run_id=? ORDER BY created_at,id", (run_id,)).fetchall()
         return self._run_view(row, tasks, events)
 
@@ -542,10 +615,7 @@ class AutomationWorkflowService:
                 ).fetchall()
             views = []
             for row in rows:
-                tasks = connection.execute(
-                    "SELECT t.*, j.state AS job_state FROM automation_workflow_run_tasks t LEFT JOIN jobs j ON j.id=t.job_id WHERE t.run_id=? ORDER BY t.ordinal",
-                    (row["id"],),
-                ).fetchall()
+                tasks = connection.execute(_RUN_TASKS_SQL, (row["id"],)).fetchall()
                 events = connection.execute("SELECT * FROM automation_workflow_run_events WHERE run_id=? ORDER BY created_at,id", (row["id"],)).fetchall()
                 views.append(self._run_view(row, tasks, events))
         return {"items": views, "limit": limit, "local_only": True, "network_contacted": False}
@@ -929,6 +999,117 @@ class AutomationWorkflowService:
                     if next_status == "PAUSED_HITL":
                         self._event(connection, run_id, "HITL_REQUIRED", pending_gate, actor)
         return self.get_run(run_id)
+
+    def recover_run(self, run_id: str, *, actor: str = "local-user", idempotency_key: str | None = None) -> dict[str, Any]:
+        """Recover one RUNNING run whose cursor task Job ended without success.
+
+        Recovery is deliberately literal and bounded:
+
+        * a run that is not stalled is refused with ``AUTOMATION_RUN_NOT_STALLED``,
+          so a healthy ``RUNNING`` run cannot be reset by a stray click, and a
+          replay of a successful recovery is refused for the same reason (the
+          re-queued Job is ``QUEUED`` again, which is not a stall);
+        * while the linked Job still has automatic attempt budget it re-queues
+          that *same* Job through the Job authority — ``CANCELLED`` uses the
+          explicit ``requeue_cancelled`` transition, every other terminal state
+          the ordinary ``retry`` — and appends a ``RECOVERED`` run event naming
+          the previous Job state;
+        * when no attempt budget remains it marks the task and the run
+          ``FAILED``, records the real Job state as the run's ``last_error``, and
+          appends a ``FAILED`` event.
+
+        It never fabricates a ``SUCCEEDED`` step: the only outcomes are "the same
+        Job runs again" and an honest failure that names the real Job state.
+        """
+
+        if idempotency_key is not None and (not idempotency_key.strip() or len(idempotency_key) > 200):
+            raise DomainRuleError("IDEMPOTENCY_KEY_REQUIRED", "workflow run 恢复必须提供有效 Idempotency-Key")
+        trace = {"idempotency_key": idempotency_key} if idempotency_key else {}
+        with self.database.transaction() as connection:
+            row = connection.execute("SELECT * FROM automation_workflow_runs WHERE id=?", (run_id,)).fetchone()
+            if row is None:
+                raise DomainRuleError("AUTOMATION_RUN_NOT_FOUND", "workflow run 不存在", {"run_id": run_id})
+            stall = self._stall_view(row, connection.execute(_RUN_TASKS_SQL, (run_id,)).fetchall())
+            if not stall["stalled"]:
+                raise DomainRuleError(
+                    "AUTOMATION_RUN_NOT_STALLED",
+                    "workflow run 当前没有停滞，无需恢复",
+                    {"run_id": run_id, "status": str(row["status"]), "job_state": stall["job_state"]},
+                )
+            now = _now()
+            task_id = str(stall["task_id"])
+            job_id = str(stall["job_id"])
+            job_state = str(stall["job_state"])
+            if stall["recoverable"]:
+                if job_state == "CANCELLED":
+                    self.jobs.requeue_cancelled_in_transaction(connection, job_id, actor=actor)
+                else:
+                    self.jobs.retry_in_transaction(connection, job_id, actor=actor)
+                outcome = "JOB_REQUEUED"
+                # The run itself changed state (it is progressing again), so its
+                # revision/updated_at must move with it; a stale timestamp would
+                # keep it in every "stale active run" scan.
+                connection.execute(
+                    "UPDATE automation_workflow_runs SET updated_at=?,revision=revision+1 WHERE id=?",
+                    (now, run_id),
+                )
+                self._event(
+                    connection,
+                    run_id,
+                    "RECOVERED",
+                    {
+                        "task_id": task_id,
+                        "task_key": stall["task_key"],
+                        "job_id": job_id,
+                        "previous_job_state": job_state,
+                        "job_state": "QUEUED",
+                        "attempts_used": stall["attempts_used"],
+                        "max_attempts": stall["max_attempts"],
+                        "reason": "TASK_JOB_REQUEUED",
+                        "ai_score_ignored": True,
+                        **trace,
+                    },
+                    actor,
+                )
+            else:
+                failure = {
+                    "code": f"AUTOMATION_TASK_JOB_{job_state}",
+                    "detail": f"task Job 已处于终态 {job_state}，且自动重试预算已用尽",
+                    "task_id": task_id,
+                    "task_key": stall["task_key"],
+                    "job_id": job_id,
+                    "job_state": job_state,
+                    "attempts_used": stall["attempts_used"],
+                    "max_attempts": stall["max_attempts"],
+                    "ai_score_ignored": True,
+                    **trace,
+                }
+                machine = cast(dict[str, Any], _decode(row["machine_context_json"], {}))
+                machine["last_error"] = failure
+                connection.execute(
+                    "UPDATE automation_workflow_run_tasks SET status='FAILED',updated_at=?,revision=revision+1 WHERE run_id=? AND id=?",
+                    (now, run_id, task_id),
+                )
+                connection.execute(
+                    "UPDATE automation_workflow_runs SET status='FAILED',pending_gate_json='{}',machine_context_json=?,completed_at=?,updated_at=?,revision=revision+1 WHERE id=?",
+                    (_json(machine), now, now, run_id),
+                )
+                outcome = "RUN_FAILED"
+                self._event(connection, run_id, "FAILED", failure, actor)
+        result = self.get_run(run_id)
+        result["recovery"] = {
+            "outcome": outcome,
+            "run_id": run_id,
+            "task_id": task_id,
+            "task_key": stall["task_key"],
+            "job_id": job_id,
+            "previous_job_state": job_state,
+            "job_state": "QUEUED" if outcome == "JOB_REQUEUED" else job_state,
+            "attempts_used": stall["attempts_used"],
+            "max_attempts": stall["max_attempts"],
+            "actor": actor,
+        }
+        return result
 
     def resume_run(self, run_id: str, *, decision: str, note: str, actor: str = "local-user") -> dict[str, Any]:
         normalized = decision.strip().upper()

@@ -1,0 +1,24 @@
+{
+  "status": "passed",
+  "steps": 6,
+  "buttonActions": 52,
+  "checks": [
+    "all 6 page render functions execute",
+    "image candidate appends",
+    "preview does not adopt",
+    "adoption marks video stale",
+    "lock prevents changing chosen image",
+    "video reroll preserves image",
+    "two primary input modes",
+    "source input submodes",
+    "original-script mode has no target duration",
+    "all action identifiers have event cases",
+    "asset lock prevents replacement and survives one-click",
+    "step 5 pauses on locked stale video",
+    "one-click pauses on locked stale video",
+    "explicit keep-old retains stale provenance and source",
+    "explicit unlock rebuilds and appends history",
+    "conflict introduced during run pauses before completion"
+  ],
+  "limitation": "VM DOM stub only; not a browser layout or end-to-end test"
+}

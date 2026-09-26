@@ -50,7 +50,16 @@ class _OllamaRuntime:
 
 
 class _FailingOllamaRuntime(_OllamaRuntime):
+    """Unload succeeds while the lease is prepared and fails during cleanup.
+
+    ``prepare`` releases the target runtime's own cached weights as well, so a
+    runtime that failed on its *first* unload would fail the lease instead of
+    exercising the post-success cleanup path this double exists for.
+    """
+
     def unload_all(self) -> list[str]:
+        if self.unload_calls == 0:
+            return super().unload_all()
         raise DomainRuleError("OLLAMA_CLEANUP_FAILED", "cleanup failed")
 
 
@@ -76,9 +85,19 @@ class _LlamaManager:
         self.stop_calls = 0
         self.running = False
         self.start_error = start_error
+        #: No PID file is written by this double, so there is never a recorded
+        #: child to adopt or stop by PID.
+        self.recorded_process = False
 
     def is_running(self) -> bool:
         return self.running
+
+    def has_owned_process_record(self) -> bool:
+        return self.recorded_process
+
+    def stop_recorded_process(self) -> bool:
+        self.recorded_process = False
+        return self.stop()
 
     def start(self, spec: object) -> str:
         self.start_calls.append(spec)
@@ -246,6 +265,50 @@ def test_prepare_waits_for_vram_only_after_all_old_runtimes_are_evicted(
     assert events == ["comfy-free", "ollama-unload", "vram-gate", "llama-start"]
 
 
+def test_prepare_releases_the_target_runtimes_own_cached_weights_before_the_gate(
+    workspace,
+    database,
+) -> None:
+    """A stale residency record must not wedge the device-wide VRAM gate.
+
+    The target runtime can itself still hold VRAM from an earlier session (a
+    failed job deliberately keeps its weights warm for the retry), so when the
+    recorded residency does not name it the coordinator must release that cache
+    before judging device-wide free memory.  Measured without this step: every
+    ComfyUI job failed with ``GPU_VRAM_NOT_RELEASED`` after the full 30 s window
+    while its own previously loaded Qwen-Image weights were still resident.
+    """
+
+    events: list[str] = []
+
+    class _RecordingComfy(_ComfyRuntime):
+        def free_memory(self, **kwargs: object) -> dict[str, object]:
+            events.append("comfy-free")
+            return super().free_memory(**kwargs)
+
+        def system_stats(self) -> dict[str, object]:
+            events.append("vram-gate")
+            return super().system_stats()
+
+    coordinator = GpuRuntimeCoordinator(
+        database,
+        workspace,
+        comfy=_RecordingComfy(),
+        ollama=_OllamaRuntime(),
+        llama_manager=_LlamaManager(),
+        system_probe=_UnavailableSystemProbe(),
+        sleep=lambda _seconds: None,
+    )
+
+    # Nothing has ever recorded ComfyUI as resident here, which is exactly the
+    # stale state that used to make the gate unsatisfiable.  The fake reports
+    # 5% free until its models are released, so the gate can only pass if the
+    # release ran first.
+    coordinator.prepare(GpuRuntime.COMFY, owner_ref="comfy-fresh")
+
+    assert events == ["comfy-free", "vram-gate"]
+
+
 def test_llama_cpp_cleanup_retains_server_for_queued_same_runtime_job(workspace, database, tmp_path_factory) -> None:
     project = ProjectService(database, workspace.projects_root).create_project(
         code="llama_retain",
@@ -341,12 +404,15 @@ def test_coordinator_serializes_processes_and_evicts_owner_runtime(workspace, da
             second.acquire(GpuRuntime.COMFY, owner_kind="TEST", owner_ref="video-1")
         assert captured.value.code == "GPU_RUNTIME_BUSY"
 
-    assert ollama.unload_calls == 1
+    # Ollama is unloaded twice per lease: once while the lease is prepared (its
+    # own cached weights would otherwise fail the device-wide VRAM gate) and
+    # once by the post-lease release.
+    assert ollama.unload_calls == 2
     assert first.status()["active_lease"] is None
 
     with second.session(GpuRuntime.COMFY, owner_kind="TEST", owner_ref="video-1"):
-        assert ollama.unload_calls == 2
-    assert comfy.free_calls == 2
+        assert ollama.unload_calls == 3
+    assert comfy.free_calls == 3
     assert second.status()["state"]["resident_runtime"] is None
 
 

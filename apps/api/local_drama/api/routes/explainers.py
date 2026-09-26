@@ -23,20 +23,28 @@ import hmac
 import json
 import re
 import secrets
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TypeVar, cast
 
 from fastapi import APIRouter, Header, Query, Request, Response
 
 from local_drama.api.schemas.explainers import (
     ExplainerBatchAdoptionRequest,
+    ExplainerBeatPatchRequest,
     ExplainerBreakdownStoryRequest,
+    ExplainerCandidateArchiveRequest,
+    ExplainerCandidateRegistrationRequest,
     ExplainerClaimPatchRequest,
+    ExplainerCollectionContinueRequest,
     ExplainerCreateRequest,
     ExplainerDecisionRequest,
     ExplainerEditionRequest,
     ExplainerExportRequest,
+    ExplainerGenerationRequest,
+    ExplainerNarrationTakeAdoptionRequest,
     ExplainerPreflightRequest,
+    ExplainerReferenceAdoptionRequest,
+    ExplainerReferenceUnlockRequest,
     ExplainerRenderRequest,
     ExplainerRepairRequest,
     ExplainerResearchRunRequest,
@@ -47,6 +55,10 @@ from local_drama.api.schemas.explainers import (
     ExplainerScriptRevisionRequest,
     ExplainerSegmentPatchRequest,
     ExplainerSelectionRequest,
+    ExplainerSelectionUnlockRequest,
+    ExplainerStorySeedRequest,
+    ExplainerVisualGenerationSubmitRequest,
+    ExplainerVisualPreferencesRequest,
     PublicationAttemptRequest,
 )
 from local_drama.api.uploading import receive_bounded_upload
@@ -68,10 +80,13 @@ router = APIRouter(tags=["explainers"])
 
 T = TypeVar("T")
 
-#: Document formats the explainer source importer accepts.  Mirrors the existing
-#: document importer's suffix set so the product has one story about what can be
-#: read (design §5.2, TC-013).
-_SOURCE_SUFFIXES = frozenset({".txt", ".md", ".markdown", ".docx", ".pdf", ".epub", ".json", ".csv", ".srt", ".vtt"})
+#: Document formats the explainer source importer accepts.  This set must equal
+#: the shared extractor's real product support set (TXT / MD / Markdown / DOCX /
+#: PDF / EPUB): JSON, CSV, SRT and VTT were advertised here and then rejected
+#: inside ``extract_document_text``, which told the user "upload supported" and
+#: then "format unsupported" for the same file (spec §C2 item 1).  Structured
+#: subtitle/markup files are deliberately *not* accepted as narration prose.
+_SOURCE_SUFFIXES = frozenset({".txt", ".md", ".markdown", ".docx", ".pdf", ".epub"})
 _MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 
 
@@ -91,6 +106,25 @@ def _query(request: Request, fn: Callable[[ExplainerRepository], T]) -> T:
 
 def _command(request: Request, fn: Callable[[ExplainerRepository], T]) -> T:
     with _database(request).transaction() as connection:
+        return fn(ExplainerRepository(connection))
+
+
+def _command_owning_service(request: Request, fn: Callable[[ExplainerRepository], T]) -> T:
+    """Run a command whose service opens its *own* write transactions.
+
+    ``_command`` starts ``BEGIN IMMEDIATE`` for the whole route body.  A service
+    that then queues work through ``Database.transaction()`` opens a second
+    connection, and SQLite has a single writer: the nested ``BEGIN IMMEDIATE``
+    waits out the 10 s busy timeout and the route answers HTTP 500
+    ``sqlite3.OperationalError: database is locked`` — measured on the real
+    explainer generation submit, whose plan passed and whose submit could never
+    reach ``ExecutionSubmissionService``.  These services already persist each
+    command in its own transaction (that is what makes the receipt replayable
+    after a crash), so the route must hand them a read connection and stay out
+    of the write lock rather than wrap them in one.
+    """
+
+    with _database(request).connect() as connection:
         return fn(ExplainerRepository(connection))
 
 
@@ -383,6 +417,7 @@ async def create_explainer(
             content_kind=payload.content_kind,
             project_code=payload.project_code,
             input_kind=payload.input_kind,
+            script_policy=payload.script_policy,
             source_refs=tuple(item.model_dump(mode="json") for item in payload.source_refs),
             reference_urls=tuple(payload.reference_urls),
             pasted_text=payload.pasted_text,
@@ -412,6 +447,7 @@ async def create_explainer(
             response.headers["Idempotency-Replayed"] = "true" if result.get("idempotent_replay") else "false"
         project = result["project"]
         video = result["video"]
+        input_payload = video.get("input_payload_json") if isinstance(video.get("input_payload_json"), dict) else {}
         return {
             "project": project,
             "video": video,
@@ -420,6 +456,17 @@ async def create_explainer(
             "operation_id": result.get("operation_id"),
             "request_digest": result.get("request_digest"),
             "idempotent_replay": bool(result.get("idempotent_replay")),
+            "script_policy": command.resolved_script_policy(),
+            "preserved_script": (
+                {
+                    "script_revision_id": result.get("preserved_script_revision_id"),
+                    "script_source_hash": result.get("preserved_script_source_hash"),
+                    "registered_at_create": True,
+                }
+                if result.get("preserved_script_revision_id")
+                else None
+            ),
+            "input_payload": input_payload,
             "next_step": {
                 "action": "PREFLIGHT",
                 "hint": "导入资料或直接点击“检查并一键生成”；预检只冻结计划，不排队 GPU。",
@@ -466,7 +513,12 @@ def _input_payload(payload: ExplainerCreateRequest) -> dict[str, Any]:
 @router.get("/explainers/{project_id}", operation_id="getExplainerOverview", response_model=None)
 async def get_explainer_overview(project_id: str, request: Request) -> dict[str, Any]:
     try:
-        return production_service(request).overview(project_id=project_id)
+        overview = production_service(request).overview(project_id=project_id)
+        # ``latest_run`` is the same projection ``GET /explainer-runs/{run_id}``
+        # serves, so it must carry the same honest stall report.
+        if isinstance(overview.get("latest_run"), dict):
+            overview["latest_run"] = _with_stall(request, overview["latest_run"])
+        return overview
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
     except ExplainerContractError as error:
@@ -483,6 +535,7 @@ async def import_explainer_source(
     title: str = Query(default="", max_length=300),
     language: str | None = Query(default=None, max_length=32),
     source_kind: str = Query(default="DOCUMENT_IMPORT", max_length=32),
+    encoding_override: str | None = Query(default=None, max_length=32),
 ) -> dict[str, Any]:
     """Import one source document through the shared bounded upload path.
 
@@ -491,12 +544,20 @@ async def import_explainer_source(
     the suffix is checked against an allowlist, and the byte budget is enforced
     while streaming.  The decoded text becomes an immutable source with its own
     hash and spans — an "uploaded" badge never means "fact-checked" (design §5.2).
+
+    ``encoding_override`` is honoured for plain text only (spec §C2 item 3).  The
+    raw uploaded bytes are kept in the project's own
+    ``01_story/source_documents`` space so the same file can be re-decoded with a
+    different encoding without asking the user to upload it again, and the full
+    extraction metadata (including ``confidence``) is returned instead of being
+    dropped on the way out.
     """
 
     try:
         from local_drama.application.documents import extract_document_text
 
         extracted: dict[str, Any] | None = None
+        stored_upload: dict[str, Any] | None = None
         # ``receive_bounded_upload`` is an async context manager that yields the one
         # staged temporary file; it is not an async iterator.  Iterating it raised
         # ``TypeError: 'async for' requires an object with __aiter__`` on every
@@ -517,9 +578,15 @@ async def import_explainer_source(
             extracted = extract_document_text(
                 temporary_path,
                 maximum_bytes=_MAX_UPLOAD_BYTES,
+                encoding_override=encoding_override,
             )
             if not title:
                 title = upload_name
+            # The temporary upload is deleted when this block exits, so the raw
+            # bytes are copied into the project's source space *here*.
+            stored_upload = _store_raw_upload(
+                request, project_id, temporary_path=temporary_path, upload_name=upload_name
+            )
 
         if extracted is None:  # pragma: no cover - the generator always yields once
             raise ExplainerContractError("SCHEMA_INVALID", "上传没有产生可用文件")
@@ -530,7 +597,10 @@ async def import_explainer_source(
                 {
                     "format": extracted.get("format"),
                     "encoding": extracted.get("encoding"),
+                    "confidence": extracted.get("confidence"),
+                    "replacement_char_count": extracted.get("replacement_char_count"),
                     "warnings": extracted.get("warnings"),
+                    "next_step": "改用明确编码重新导入，或先修复文本中的替换字符。",
                 },
             )
         service_factory = _service_with_repo(
@@ -546,20 +616,75 @@ async def import_explainer_source(
                 language,
                 source_kind,
                 service_factory,
+                encoding_override=encoding_override,
                 extraction={
+                    # Full metadata (spec §C2 item 2): ``confidence`` used to be
+                    # dropped here, so the UI could not tell an exact UTF-8 decode
+                    # from a GB18030 compatibility guess.
                     "format": extracted.get("format"),
                     "encoding": extracted.get("encoding"),
+                    "confidence": extracted.get("confidence"),
+                    "encoding_source": extracted.get("encoding_source"),
                     "had_bom": extracted.get("had_bom"),
                     "byte_size": extracted.get("byte_size"),
                     "character_count": extracted.get("character_count"),
                     "paragraph_count": extracted.get("paragraph_count"),
+                    "replacement_char_count": extracted.get("replacement_char_count"),
+                    "quality": extracted.get("quality"),
+                    "warnings": extracted.get("warnings"),
+                    "read_notes": extracted.get("read_notes"),
+                    "raw_sha256": extracted.get("raw_sha256"),
+                    "body_sha256": extracted.get("body_sha256"),
+                    "span_hash_rule": extracted.get("span_hash_rule"),
+                    "credibility_derived_from_quality": False,
                 },
+                stored_upload=stored_upload,
             ),
         )
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
     except ExplainerContractError as error:
         raise api_error_from_explainers(error) from error
+
+
+def _store_raw_upload(
+    request: Request,
+    project_id: str,
+    *,
+    temporary_path: Any,
+    upload_name: str,
+) -> dict[str, Any]:
+    """Keep the uploaded bytes in the project's existing source space.
+
+    Re-decoding with another encoding must be possible without a second upload
+    (spec §C2 item 3), so the file is stored under its own content hash in
+    ``01_story/source_documents`` — the directory the project template already
+    owns.  A file that is already there is never rewritten.
+    """
+
+    import shutil
+    from pathlib import Path as _Path
+
+    settings = request.app.state.settings
+    digest = hashlib.sha256()
+    with _Path(temporary_path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    raw_sha256 = digest.hexdigest()
+    with _database(request).connect() as connection:
+        project = ExplainerRepository(connection).get("projects", project_id)
+    suffix = _Path(upload_name).suffix.lower()
+    directory = _Path(settings.projects_root) / str(project["code"]) / "01_story" / "source_documents"
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"{raw_sha256}{suffix}"
+    if not target.is_file():
+        shutil.copyfile(temporary_path, target)
+    return {
+        "raw_sha256": raw_sha256,
+        "absolute_path": str(target),
+        "rel_path": target.relative_to(_Path(settings.projects_root) / str(project["code"])).as_posix(),
+        "reusable_for_other_encodings": True,
+    }
 
 
 def _import_source_command(
@@ -571,6 +696,8 @@ def _import_source_command(
     source_kind: str,
     service_factory: Callable[[ExplainerRepository], Any],
     extraction: Mapping[str, Any] | None = None,
+    stored_upload: Mapping[str, Any] | None = None,
+    encoding_override: str | None = None,
 ) -> dict[str, Any]:
     repo.require_explainer_project(project_id)
     video = repo.require_video_for_project(project_id)
@@ -584,15 +711,122 @@ def _import_source_command(
         title=title or "未命名来源",
         source_kind=source_kind,
         language=language,
+        rel_path=(stored_upload or {}).get("rel_path"),
+    )
+    # Preserved mode: an imported manuscript is the finished script.  Register it
+    # through the ordinary script-revision authority so the plan preflight finds
+    # the revision it requires instead of leaving the user stuck at the start
+    # (§B2.1/A4).  The exact extracted text is used (newlines already unified,
+    # nothing stripped) and the same manuscript is never registered twice.
+    preserved = _register_preserved_source_if_needed(
+        repo,
+        project_id=project_id,
+        video=video,
+        text=text,
+        title=title or "未命名来源",
+        language=language,
+        stored_upload=stored_upload,
     )
     return {
         "packet": repo.get("explainer_research_packets", str(packet["id"])),
         "source": source,
         "extraction": dict(extraction or {}),
+        "stored_upload": dict(stored_upload or {}),
+        "encoding_override": encoding_override,
+        "preserved_script": preserved,
         "status": "IMPORTED_NOT_FACT_CHECKED",
-        "note": "导入成功只表示文本已按文件真实格式解析并留存哈希，不代表事实已核验。",
+        "note": (
+            "导入成功只表示文本已按文件真实格式解析并留存哈希，不代表事实已核验；"
+            "读取质量不会转换为事实可信度。"
+        ),
         "review_required": True,
     }
+
+
+def _register_preserved_source_if_needed(
+    repo: ExplainerRepository,
+    *,
+    project_id: str,
+    video: Mapping[str, Any],
+    text: str,
+    title: str,
+    language: str | None,
+    stored_upload: Mapping[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Register an imported manuscript as the preserved script when policy says so."""
+
+    from local_drama.application.explainers.contracts_v2 import resolve_script_policy
+    from local_drama.application.explainers.narration import build_narration_service
+    from local_drama.application.explainers.sources import (
+        canonical_script_source_text,
+        script_source_hash,
+    )
+
+    payload = video.get("input_payload_json")
+    policy = resolve_script_policy(payload.get("script_policy") if isinstance(payload, Mapping) else None)
+    if policy != "PRESERVE_ORIGINAL":
+        return None
+    video_id = str(video["id"])
+    exact = canonical_script_source_text(text)
+    digest = script_source_hash(exact)
+    script_source_file = _write_preserved_source_file(stored_upload, exact, digest=digest)
+    existing = repo.preserved_script_revision(video_id, script_source_hash=digest)
+    if existing is not None:
+        return {
+            "script_revision_id": str(existing["id"]),
+            "script_source_hash": digest,
+            "script_source_file": script_source_file,
+            "reused": True,
+        }
+    registered = build_narration_service(repo).register_preserved_script(
+        project_id=project_id,
+        video_id=video_id,
+        locale=str(video.get("source_locale") or "zh-CN"),
+        title=title,
+        script_source_text=exact,
+        actor="local-user",
+        freeze=True,
+        extra_provenance={
+            "registered_at": "SOURCE_IMPORT",
+            "source_language": language,
+            "normalisation": "newlines_lf_only",
+            "script_source_file": script_source_file,
+        },
+    )
+    return {
+        "script_revision_id": str(registered["script_revision"]["id"]),
+        "script_source_hash": digest,
+        "script_source_file": script_source_file,
+        "reused": False,
+        "segment_count": len(registered["segments"]),
+    }
+
+
+def _write_preserved_source_file(
+    stored_upload: Mapping[str, Any] | None, source_text: str, *, digest: str
+) -> str | None:
+    """Store the exact preserved manuscript as a UTF-8 file (§C2 item 5).
+
+    It is written next to the raw upload, under its content hash, byte-for-byte
+    (no BOM, no added newline).  A filesystem failure is reported as ``None``
+    rather than failing the import: the same exact text is durable in the
+    revision provenance and in the input projection.
+    """
+
+    from pathlib import Path as _Path
+
+    absolute = (stored_upload or {}).get("absolute_path")
+    if not absolute:
+        return None
+    try:
+        target = _Path(str(absolute)).parent / f"{digest}.script-source.txt"
+        if not target.is_file():
+            target.write_text(source_text, encoding="utf-8", newline="")
+        rel_path = str((stored_upload or {}).get("rel_path") or "")
+        directory = rel_path.rsplit("/", 1)[0] if "/" in rel_path else "01_story/source_documents"
+        return f"{directory}/{target.name}"
+    except OSError:
+        return None
 
 
 def _ensure_packet(repo: ExplainerRepository, *, project_id: str, video_id: str) -> dict[str, Any]:
@@ -904,6 +1138,7 @@ async def breakdown_explainer_story(
 ) -> dict[str, Any]:
     try:
         import asyncio
+
         from local_drama.application.explainers.story_breakdown import ExplainerStoryBreakdownService
         database = _database(request)
         settings = request.app.state.settings
@@ -1131,7 +1366,83 @@ async def start_explainer_run(
 @router.get("/explainer-runs/{run_id}", operation_id="getExplainerRun", response_model=None)
 async def get_explainer_run(run_id: str, request: Request) -> dict[str, Any]:
     try:
-        return {"run": production_service(request).get_run(run_id=run_id)}
+        return {"run": _with_stall(request, production_service(request).get_run(run_id=run_id))}
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+#: The "nothing to report" stall shape, so a browser never has to branch on a
+#: missing key: ``stalled`` is the only flag it has to read.
+_NO_STALL: dict[str, Any] = {
+    "stalled": False,
+    "reason": None,
+    "run_status": None,
+    "task_id": None,
+    "task_key": None,
+    "job_id": None,
+    "job_state": None,
+    "next_step": None,
+    "attempts_used": 0,
+    "max_attempts": 0,
+    "recoverable": False,
+}
+
+
+def _workflow_run_id_of(run: dict[str, Any]) -> str:
+    return str(run.get("automation_workflow_run_id") or (run.get("workflow_run") or {}).get("id") or "")
+
+
+def _with_stall(request: Request, run: dict[str, Any]) -> dict[str, Any]:
+    """Attach the workflow-run ``stall`` report to an explainer run projection.
+
+    The explainer run is a projection over ``automation_workflow_runs``; when its
+    linked workflow run can never advance, the projection must say so instead of
+    showing ``运行中`` forever.  A run with no linked workflow run, or one whose
+    workflow row disappeared, is reported as not stalled rather than breaking the
+    read: the stall report is an addition to an existing projection.
+    """
+
+    workflow_run_id = _workflow_run_id_of(run)
+    if not workflow_run_id:
+        run["stall"] = dict(_NO_STALL)
+        return run
+    try:
+        run["stall"] = _workflow_service(request).describe_stall(workflow_run_id)
+    except Exception:
+        # A missing workflow row must not turn a readable run into a 4xx/5xx.
+        run["stall"] = dict(_NO_STALL)
+    return run
+
+
+@router.post("/explainer-runs/{run_id}:recover", operation_id="recoverExplainerRun", response_model=None)
+async def recover_explainer_run(
+    run_id: str,
+    payload: ExplainerRunControlRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    """Recover a stalled run: re-queue its task Job, or fail the run honestly.
+
+    ``{run_id}`` is the explainer run, exactly like ``:pause``/``:resume``/
+    ``:cancel``; the linked ``automation_workflow_run_id`` is the authority the
+    recovery acts on.  The service result (the workflow run view plus its
+    ``recovery`` receipt) is returned verbatim.
+    """
+
+    try:
+        run = production_service(request).get_run(run_id=run_id)
+        workflow_run_id = _workflow_run_id_of(run)
+        if not workflow_run_id:
+            raise DomainRuleError(
+                "AUTOMATION_RUN_NOT_FOUND",
+                "该解说运行没有关联的 workflow run，无法恢复",
+                {"run_id": run_id},
+            )
+        return _workflow_service(request).recover_run(
+            workflow_run_id, actor=payload.actor, idempotency_key=idempotency_key
+        )
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
     except ExplainerContractError as error:
@@ -1280,23 +1591,204 @@ async def list_explainer_assets(project_id: str, request: Request) -> dict[str, 
         raise api_error_from_explainers(error) from error
 
 
+def _entity_refs_of_beat(beat: Mapping[str, Any]) -> list[str]:
+    """The entity ids a beat really references (``entity_refs_json``)."""
+
+    raw = beat.get("entity_refs_json")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw or "[]")
+        except (TypeError, ValueError):
+            return []
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        return []
+    return [str(item) for item in raw if str(item or "").strip()]
+
+
+#: Step-2 category per entity type (design §B3.1).  Organisation and concept
+#: entities stay in the semantic record but are not mandatory fixed-appearance
+#: tasks, so they are reported as ``OTHER`` and never counted as a missing
+#: reference.  A group of creatures is people-like and keeps a fixed look.
+_ENTITY_TYPE_TO_CATEGORY = {
+    "REAL_PERSON": "CHARACTER",
+    "FICTIONAL_CHARACTER": "CHARACTER",
+    "GROUP": "CHARACTER",
+    "LOCATION": "SCENE",
+    "PROP": "PROP",
+    "ORGANIZATION": "OTHER",
+    "CONCEPT": "OTHER",
+}
+
+
+def _json_object(value: Any) -> dict[str, Any]:
+    """Decode a possibly text-encoded JSON object column into a mapping."""
+
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, (str, bytes)):
+        try:
+            decoded = json.loads(value or "{}")
+        except (TypeError, ValueError):
+            return {}
+        return dict(decoded) if isinstance(decoded, Mapping) else {}
+    return {}
+
+
+def _entity_asset_kind(entity_type: str) -> str:
+    """The step-2 category of an entity type (design §B3.1: 人物 / 场景 / 道具)."""
+
+    return _ENTITY_TYPE_TO_CATEGORY.get(str(entity_type or "").strip().upper(), "OTHER")
+
+
 def _assets_view(repo: ExplainerRepository, project_id: str) -> dict[str, Any]:
+    """Step 2's read model (design §B3.1, §B3.2).
+
+    The card must show two independent facts per object — ``appearance_beat_count``
+    ("出场 N 镜") and ``reference_binding_status`` — and the right pane needs the
+    entity's real current state, candidate totals and the reason a reference is
+    missing.  Everything here is read from rows that already exist; nothing is
+    inferred from an identity-binding count and no placeholder is invented.
+    """
+
+    from local_drama.application.explainers.contracts_v2 import (
+        visual_preferences_from_input_payload,
+    )
+    from local_drama.application.explainers.visual_generation import resolve_explainer_style
+
     repo.require_explainer_project(project_id)
     video = repo.require_video_for_project(project_id)
-    entities = repo.list_where("explainer_entities", {"video_id": str(video["id"])}, order_by="code", descending=False)
+    video_id = str(video["id"])
+    entities = repo.list_where("explainer_entities", {"video_id": video_id}, order_by="code", descending=False)
+
+    # Real appearance counts: how many current beats reference this entity.  An
+    # identity binding is a different fact and never stands in for this number.
+    appearance: dict[str, int] = {}
+    for beat in repo.list_where("explainer_visual_beats", {"video_id": video_id}):
+        for entity_id in _entity_refs_of_beat(beat):
+            appearance[entity_id] = appearance.get(entity_id, 0) + 1
+
+    candidate_totals: dict[str, dict[str, int]] = {}
+    for row in repo.query_all(
+        """SELECT entity_id, purpose, COUNT(*) AS total
+             FROM explainer_media_candidates
+            WHERE entity_id IS NOT NULL
+            GROUP BY entity_id, purpose"""
+    ):
+        bucket = candidate_totals.setdefault(str(row["entity_id"]), {"REFERENCE": 0, "KEYFRAME": 0, "VISUAL": 0})
+        purpose = str(row["purpose"] or "")
+        if purpose in bucket:
+            bucket[purpose] = int(row["total"] or 0)
+
     items: list[dict[str, Any]] = []
+    missing_reference_count = 0
     for entity in entities:
+        entity_id = str(entity["id"])
+        story_asset_id = str(entity.get("story_asset_id") or "")
+        asset_kind = _entity_asset_kind(str(entity.get("entity_type") or ""))
+        # Design §B3.1: organisation/concept entities are not mandatory
+        # fixed-appearance tasks, so a film is never held back by an object that does
+        # not need a reference.
+        needs_reference = asset_kind != "OTHER"
         states = repo.list_where(
-            "entity_state_revisions", {"entity_id": str(entity["id"])}, order_by="revision_no", descending=True
+            "entity_state_revisions", {"entity_id": entity_id}, order_by="revision_no", descending=True
         )
         bindings = repo.list_where(
-            "entity_identity_bindings", {"entity_id": str(entity["id"]), "status": "ACTIVE"}
+            "entity_identity_bindings", {"entity_id": entity_id, "status": "ACTIVE"}
         )
+        references = (
+            repo.query_all(
+                # priority ASC mirrors the adoption order: the row an adoption would
+                # supersede first is the one the camera would actually use.
+                "SELECT * FROM story_asset_references WHERE story_asset_id = ? AND status = 'ACTIVE' "
+                "ORDER BY priority ASC, created_at DESC",
+                (story_asset_id,),
+            )
+            if story_asset_id
+            else []
+        )
+        current = dict(references[0]) if references else None
+        reference_metadata = _json_object(current.get("metadata_json")) if current is not None else {}
+        reference = (
+            {
+                "id": str(current["id"]),
+                "media_version_id": str(current["media_version_id"] or ""),
+                "reference_kind": str(current.get("reference_kind") or "HERO"),
+                "label": str(current.get("label") or ""),
+                "asset_state_id": str(current["asset_state_id"]) if current.get("asset_state_id") else None,
+                "entity_state_revision_id": reference_metadata.get("explainer_entity_state_revision_id"),
+                "is_locked": bool(current.get("is_locked")),
+                "created_at": current.get("created_at"),
+            }
+            if current is not None
+            else None
+        )
+        canonical_state_id = str(entity["canonical_state_revision_id"]) if entity.get("canonical_state_revision_id") else None
+        if current is None:
+            binding_status = "NO_REFERENCE"
+        else:
+            # The picture was adopted against a recorded state of the object.  Only a
+            # recorded, different state makes it 待更新; a reference with no state
+            # binding carries no evidence of drift, so it keeps reading as 已采用.
+            adopted_state_id = str(reference_metadata.get("explainer_entity_state_revision_id") or "")
+            binding_status = (
+                "NEEDS_UPDATE"
+                if adopted_state_id and adopted_state_id != (canonical_state_id or "")
+                else "ADOPTED_REFERENCE"
+            )
+        if needs_reference and binding_status in {"NO_REFERENCE", "NEEDS_UPDATE"}:
+            missing_reference_count += 1
+        if not story_asset_id:
+            # Adoption establishes the shared asset (reusing a same-name one), so this
+            # is a note about where the reference will be bound, not a blocker.
+            missing_reason = "还没有共享资产；采用第一张参考图时会自动建立或复用同名资产"
+        elif current is None:
+            missing_reason = "还没有采用参考图"
+        elif binding_status == "NEEDS_UPDATE":
+            missing_reason = "对象状态已更新，当前参考图待确认"
+        else:
+            missing_reason = None
+        asset_kind = _entity_asset_kind(str(entity.get("entity_type") or ""))
+        canonical_state = next(
+            (state for state in states if str(state.get("id")) == canonical_state_id), None
+        )
+        primary_state = canonical_state or (states[0] if states else None)
+        # The appearance sentence the extraction actually recorded for the object's
+        # current state — never a description invented at read time.
+        visual_description = None
+        if primary_state is not None:
+            visual_description = next(
+                (
+                    str(primary_state.get(field)).strip()
+                    for field in ("condition", "wardrobe", "label")
+                    if str(primary_state.get(field) or "").strip()
+                ),
+                None,
+            )
         items.append(
             {
                 **entity,
-                "states": states,
+                "entity_id": entity_id,
+                "asset_kind": asset_kind,
+                "fictional": bool(entity.get("fictional")),
+                "descriptive_only": bool(entity.get("descriptive_only")),
+                "appearance_beat_count": appearance.get(entity_id, 0),
+                "requires_reference": needs_reference,
+                "reference_binding_status": binding_status,
+                "reference": reference,
+                "identity_input_status": (
+                    "已建立身份输入" if bindings else ("该对象不是人物，不需要身份包" if asset_kind != "CHARACTER" else "尚未建立身份输入")
+                ),
                 "identity_bindings": bindings,
+                "state_revisions": states,
+                "canonical_state_revision_id": canonical_state_id,
+                "visual_description": visual_description,
+                "states": states,
+                "missing_reason": missing_reason,
+                "candidate_counts": candidate_totals.get(
+                    entity_id, {"REFERENCE": 0, "KEYFRAME": 0, "VISUAL": 0}
+                ),
+                # The retired identity-binding count stays available for the advanced
+                # detail, but it is never presented as an appearance count.
                 "beat_reference_count": len(bindings),
             }
         )
@@ -1305,13 +1797,19 @@ def _assets_view(repo: ExplainerRepository, project_id: str) -> dict[str, Any]:
         profile_version = repo.find(
             "channel_profile_versions", str(video["current_channel_profile_version_id"])
         )
+    preferences = visual_preferences_from_input_payload(video.get("input_payload_json"))
     return {
-        "video_id": str(video["id"]),
+        "video_id": video_id,
+        "project_id": project_id,
         "entities": items,
-        "entity_counts": _counts(items, "entity_type"),
+        "entity_counts": _counts(items, "asset_kind"),
+        "missing_reference_count": missing_reference_count,
         "channel_profile_version": profile_version,
         "channel_profile_is_frozen_snapshot": True,
         "three_view_is_display_only": True,
+        "visual_preferences": preferences,
+        "resolved_style": resolve_explainer_style(repo, video),
+        "unresolved_constraints": [],
     }
 
 
@@ -1769,6 +2267,99 @@ def _narration_view(repo: ExplainerRepository, edition_id: str, locale: str | No
 
 
 @router.post(
+    "/explainer-editions/{edition_id}/narration/{take_id}:adopt",
+    operation_id="adoptExplainerNarrationTake",
+    response_model=None,
+)
+async def adopt_explainer_narration_take(
+    edition_id: str, take_id: str, payload: ExplainerNarrationTakeAdoptionRequest, request: Request
+) -> dict[str, Any]:
+    """Adopt an already generated narration take for one paragraph (design §B4).
+
+    Choosing between existing takes is a real, recorded human adoption: the take must
+    belong to this edition's clock locale, must carry a measured duration, and the
+    selection is written with ``HUMAN`` authority so it is never presented as a
+    machine decision.  No new audio is generated and no text changes.
+    """
+
+    try:
+        return _command(request, lambda repo: _adopt_narration_take(repo, edition_id, take_id, payload))
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+def _adopt_narration_take(
+    repo: ExplainerRepository,
+    edition_id: str,
+    take_id: str,
+    payload: ExplainerNarrationTakeAdoptionRequest,
+) -> dict[str, Any]:
+    from local_drama.application.explainers.narration import build_narration_service
+
+    edition = repo.get("explainer_editions", edition_id)
+    video = repo.get("explainer_videos", str(edition["video_id"]))
+    take = repo.get("narration_takes", take_id)
+    if str(take.get("video_id") or "") != str(video["id"]):
+        raise ExplainerContractError(
+            "INVALID_REQUEST", "该配音不属于此解说作品", {"take_id": take_id, "edition_id": edition_id}
+        )
+    voice_locale = normalize_locale(str(edition["voice_locale"]))
+    take_locale = normalize_locale(str(take.get("locale") or voice_locale))
+    if take_locale != voice_locale:
+        raise ExplainerContractError(
+            "INVALID_REQUEST",
+            "该配音不属于本输出版本的配音语言时钟",
+            {"take_locale": take_locale, "voice_locale": voice_locale},
+        )
+    if str(take.get("status") or "") not in {"VERIFIED", "READY"}:
+        raise ExplainerContractError(
+            "QC_BLOCKED",
+            "只有已生成并通过完整性校验的配音才能采用",
+            {"take_id": take_id, "status": str(take.get("status") or "")},
+        )
+    measured = take.get("measured_duration_ms")
+    if measured in (None, ""):
+        raise ExplainerContractError(
+            "QC_BLOCKED",
+            "该配音没有实测时长，无法作为时钟依据",
+            {"take_id": take_id},
+        )
+    if str(take.get("media_version_id") or ""):
+        repo.require_same_project_media(
+            project_id=str(video["project_id"]), media_version_id=str(take["media_version_id"])
+        )
+    service = build_narration_service(repo)
+    previous = [
+        item
+        for item in repo.list_where("narration_takes", {"segment_id": str(take["segment_id"])})
+        if item.get("selected") and str(item["id"]) != take_id
+    ]
+    adopted = service.adopt_take(
+        segment_id=str(take["segment_id"]),
+        take_id=take_id,
+        actor=str(payload.actor or "local-user"),
+        adoption_authority="HUMAN",
+        record={"adoption_reason": str(payload.reason or "用户选择已生成版本")},
+    )
+    return {
+        "edition_id": edition_id,
+        "video_id": str(video["id"]),
+        "segment_id": str(take["segment_id"]),
+        "canonical_segment_id": str(take.get("canonical_segment_id") or ""),
+        "take_id": take_id,
+        "adoption_authority": "HUMAN",
+        "human_approval_written": False,
+        "measured_duration_ms": int(measured),
+        "superseded_take_ids": [str(item["id"]) for item in previous],
+        "take": adopted,
+        "requires_alignment_refresh": True,
+        "next_step": "运行或重新读取对齐，使字幕时码与新的实测时长一致。",
+    }
+
+
+@router.post(
     "/explainer-editions/{edition_id}/narration:resynthesize",
     status_code=202,
     operation_id="resynthesizeExplainerNarration", response_model=None)
@@ -1893,6 +2484,114 @@ def _subtitles_view(
 # render / qc / decisions / export
 # --------------------------------------------------------------------------- #
 @router.post(
+    "/explainer-editions/{edition_id}/subtitles:build",
+    status_code=202,
+    operation_id="buildExplainerSubtitles",
+    response_model=None,
+)
+async def build_explainer_subtitles(
+    edition_id: str,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    """Build the subtitle revision this edition's declared locales need.
+
+    A delivery package must contain a subtitle file for every locale the edition
+    declares, so this stage is a prerequisite of a complete export.  It used to be
+    reachable only from a whole production-graph run, which left an edition driven
+    page by page unable to produce a complete package.
+    """
+
+    try:
+        from local_drama.application.explainers.stage_commands import (
+            build_explainers_command_service,
+        )
+
+        service = build_explainers_command_service(_database(request), request.app.state.settings)
+        return service.submit_subtitle_build(
+            edition_id=edition_id,
+            idempotency_key=str(idempotency_key),
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+@router.post(
+    "/explainer-editions/{edition_id}/narration:align",
+    status_code=202,
+    operation_id="rerunExplainerNarrationAlign",
+    response_model=None,
+)
+async def rerun_explainer_narration_align(
+    edition_id: str,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    """Re-measure the alignment clock for every selected take of this edition.
+
+    Alignment revisions are append-only and the align stage skips takes that already
+    have one, so a take whose stored clock is unusable — the delivered 1962 film's
+    aligner rates were 16 kHz positions declared as 48 kHz — could otherwise only be
+    re-measured by re-synthesising the audio.
+    """
+
+    try:
+        from local_drama.application.explainers.stage_commands import (
+            build_explainers_command_service,
+        )
+
+        service = build_explainers_command_service(_database(request), request.app.state.settings)
+        return service.submit_alignment_rerun(
+            edition_id=edition_id,
+            idempotency_key=str(idempotency_key),
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+@router.post(
+    "/explainer-editions/{edition_id}/qc:run",
+    status_code=202,
+    operation_id="runExplainerCompositionQc",
+    response_model=None,
+)
+async def run_explainer_composition_qc(
+    edition_id: str,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+    render_id: str = Query(default="", alias="render_id"),
+) -> dict[str, Any]:
+    """Run the technical/session QC layer for this edition's rendered film.
+
+    The delivery package ships the QC report for the render it was built from.  When
+    the film was driven stage by stage the report was written as ``NOT_RUN``, because
+    ``COMPOSITION_QC`` was only reachable from a whole production-graph run; the
+    command closes that gap with the same "real job or an honest blocker" rule the
+    other stage commands follow.
+    """
+
+    try:
+        from local_drama.application.explainers.stage_commands import (
+            build_explainers_command_service,
+        )
+
+        service = build_explainers_command_service(_database(request), request.app.state.settings)
+        return service.submit_composition_qc(
+            edition_id=edition_id,
+            render_id=str(render_id or ""),
+            idempotency_key=str(idempotency_key),
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+@router.post(
     "/explainer-editions/{edition_id}/renders", status_code=202, operation_id="startExplainerRender", response_model=None)
 async def start_explainer_render(
     edition_id: str,
@@ -1953,20 +2652,38 @@ def _plan_or_submit_render(
     nothing.
     """
 
-    if composition is None:
+    if composition is None and not payload.confirm:
+        # A film with no composition revision yet is not a failure: the render stage
+        # is what builds and freezes that revision from the adopted clips.  The plan
+        # branch therefore says exactly that instead of refusing, which previously
+        # made the very first render of an edition unreachable from this page.
         return {
             "edition_id": edition_id,
-            "status": "BLOCKED",
-            "blockers": [
-                {
-                    "code": "OUTPUT_VALIDATION_FAILED",
-                    "message": "尚无可渲染的 composition revision",
-                    "next_step": "先完成分镜选择、旁白与字幕，再冻结 composition。",
-                }
-            ],
-            "would_create_jobs": False,
+            "status": "READY_TO_START",
+            "requires_confirmation": True,
+            "composition_revision_id": None,
+            "manifest_hash": None,
+            "would_create_jobs": True,
             "idempotency_key": idempotency_key,
+            "note": "该输出版本还没有 composition：确认后由渲染阶段按已采用的片段与旁白冻结清单并渲染。",
         }
+    if composition is None:
+        # Confirmed first render: schedule the stage with the edition scope only.  The
+        # stage freezes the manifest itself, so there is nothing to attach here.
+        from local_drama.application.explainers.stage_commands import build_explainers_command_service
+
+        service = build_explainers_command_service(database, settings)
+        result = service.submit_composition_render(
+            edition_id=edition_id,
+            composition=None,
+            idempotency_key=idempotency_key,
+            confirm=True,
+        )
+        result["edition_id"] = edition_id
+        result["composition_revision_id"] = None
+        result["manifest_hash"] = None
+        result["note"] = "已提交渲染阶段；composition 清单由该阶段冻结后再渲染。"
+        return result
     if str(composition["status"]) != "FROZEN":
         if not payload.freeze:
             raise ExplainerContractError(
@@ -2589,6 +3306,9 @@ def _select_candidate(
         beat_id=beat_id,
         candidate_id=payload.candidate_id,
         edition_id=payload.edition_id,
+        purpose=payload.purpose,
+        expected_selection_id=payload.expected_selection_id,
+        expected_revision=payload.expected_revision,
         authority=authority,
         actor=payload.actor,
     )
@@ -2625,33 +3345,248 @@ def _select_candidate(
 
 @router.get("/explainers/{project_id}/beats/{beat_id}/candidates", operation_id="listExplainerBeatCandidates", response_model=None)
 async def list_explainer_beat_candidates(
-    project_id: str, beat_id: str, request: Request
+    project_id: str,
+    beat_id: str,
+    request: Request,
+    purpose: str | None = None,
+    edition_id: str | None = None,
 ) -> dict[str, Any]:
+    """Candidates for one beat, scoped by purpose and edition (design §D7).
+
+    ``purpose`` and ``edition_id`` are real query scopes, not display filters: step 5
+    needs the adopted first frame (``KEYFRAME``) while step 4 shows the keyframes it
+    can adopt, and neither should receive the other layer's rows.  The response also
+    carries the neutral candidate DTO the shared grid renders, the ACTIVE selection
+    for the same scope, and whether that scope is human-locked.
+    """
+
     try:
-        return _query(request, lambda repo: _beat_candidates_view(repo, project_id, beat_id))
+        return _query(
+            request,
+            lambda repo: _candidates_for_owner(
+                repo,
+                project_id=project_id,
+                owner_kind="BEAT",
+                owner_id=beat_id,
+                purpose=purpose,
+                edition_id=edition_id,
+            ),
+        )
     except DomainRuleError as error:
         raise api_error_from_domain(error) from error
     except ExplainerContractError as error:
         raise api_error_from_explainers(error) from error
 
 
-def _beat_candidates_view(repo: ExplainerRepository, project_id: str, beat_id: str) -> dict[str, Any]:
+def _beat_candidates_view(
+    repo: ExplainerRepository,
+    project_id: str,
+    beat_id: str,
+    purpose: str | None = None,
+    edition_id: str | None = None,
+) -> dict[str, Any]:
+    """Beat-scoped candidate view kept for callers that expect the legacy keys.
+
+    It delegates to the single owner-scoped projection so the two shapes cannot
+    drift apart, and it no longer silently ignores ``purpose``/``edition_id``.
+    """
+
     repo.require_explainer_project(project_id)
     video = repo.require_video_for_project(project_id)
     beat = repo.get("explainer_visual_beats", beat_id)
     if str(beat["video_id"]) != str(video["id"]):
         raise ExplainerContractError("INVALID_REQUEST", "画面段不属于该解说作品", {"beat_id": beat_id})
-    candidates = repo.list_where(
-        "explainer_media_candidates", {"beat_id": beat_id}, order_by="variant_no", descending=False
+    view = _candidates_for_owner(
+        repo,
+        project_id=project_id,
+        owner_kind="BEAT",
+        owner_id=beat_id,
+        purpose=purpose,
+        edition_id=edition_id,
     )
     return {
+        **view,
         "beat": beat,
-        "candidates": candidates,
-        "active_selection": repo.active_beat_selection(beat_id),
-        "locked_by_human": repo.has_human_lock(beat_id),
+        "locked_by_human": repo.has_human_lock(beat_id, purpose=purpose or "VISUAL"),
         "technical_and_creative_counted_separately": True,
         "adoption_rule": "TECHNICAL_THEN_CONTENT_THEN_CONSTRAINT_THEN_READABILITY_THEN_STYLE",
     }
+
+
+@router.post(
+    "/explainers/{project_id}/beats/{beat_id}/candidates/{candidate_id}:archive",
+    operation_id="archiveExplainerCandidate",
+    response_model=None,
+)
+async def archive_explainer_candidate(
+    project_id: str,
+    beat_id: str,
+    candidate_id: str,
+    payload: ExplainerCandidateArchiveRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """「不采用」: stop offering a candidate while keeping its media (design §B5.3)."""
+
+    try:
+        def run(repo: ExplainerRepository) -> dict[str, Any]:
+            repo.require_explainer_project(project_id)
+            video = repo.require_video_for_project(project_id)
+            from local_drama.application.explainers.storyboard import build_storyboard_service
+
+            return build_storyboard_service(repo).archive_candidate(
+                project_id=project_id,
+                video_id=str(video["id"]),
+                candidate_id=candidate_id,
+                actor=str(payload.actor or "local-user"),
+                reason=str(payload.reason or ""),
+            )
+
+        return _command(request, run)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+@router.patch(
+    "/explainers/{project_id}/beats/{beat_id}",
+    operation_id="patchExplainerBeat",
+    response_model=None,
+)
+async def patch_explainer_beat(
+    project_id: str, beat_id: str, payload: ExplainerBeatPatchRequest, request: Request
+) -> dict[str, Any]:
+    """保存镜头描述 / 呈现方式（design §B5.2、§B5.3、§B6.1）."""
+
+    try:
+        def run(repo: ExplainerRepository) -> dict[str, Any]:
+            repo.require_explainer_project(project_id)
+            video = repo.require_video_for_project(project_id)
+            from local_drama.application.explainers.storyboard import build_storyboard_service
+
+            changes = payload.model_dump(exclude_none=True)
+            actor = str(changes.pop("actor", "local-user"))
+            expected_revision = changes.pop("expected_revision", None)
+            return build_storyboard_service(repo).update_beat(
+                project_id=project_id,
+                video_id=str(video["id"]),
+                beat_id=beat_id,
+                changes=changes,
+                actor=actor,
+                expected_revision=expected_revision,
+            )
+
+        return _command(request, run)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+@router.post(
+    "/explainers/{project_id}/beats/{beat_id}/candidates:register",
+    status_code=201,
+    operation_id="registerExplainerCandidateFromMedia",
+    response_model=None,
+)
+async def register_explainer_candidate_from_media(
+    project_id: str,
+    beat_id: str,
+    payload: ExplainerCandidateRegistrationRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Register an uploaded / media-library image or video as a candidate (design §B5.3).
+
+    The media becomes a *candidate*, never the adopted choice: adoption stays an
+    explicit click.  The rule the design keeps is that a person may not declare checks
+    that were never run, so the registration records only the facts that can be
+    measured here (the file is registered and readable) and leaves content, identity
+    and readability absent — an absent check is UNKNOWN, never a pass.
+    """
+
+    try:
+        def run(repo: ExplainerRepository) -> dict[str, Any]:
+            repo.require_explainer_project(project_id)
+            video = repo.require_video_for_project(project_id)
+            beat = repo.get("explainer_visual_beats", beat_id)
+            if str(beat["video_id"]) != str(video["id"]):
+                raise ExplainerContractError("INVALID_REQUEST", "画面段不属于该解说作品", {"beat_id": beat_id})
+            media = repo.require_same_project_media(
+                project_id=project_id, media_version_id=str(payload.media_version_id)
+            )
+            asset = repo.find("media_assets", str(media.get("media_asset_id") or ""))
+            media_kind = str((asset or {}).get("media_kind") or "").upper()
+            if media_kind not in {"IMAGE", "VIDEO"}:
+                raise ExplainerContractError(
+                    "INVALID_REQUEST",
+                    "画面候选只能是图片或视频",
+                    {"media_version_id": str(payload.media_version_id), "media_kind": media_kind},
+                )
+            if payload.purpose in {"KEYFRAME", "REFERENCE"} and media_kind != "IMAGE":
+                raise ExplainerContractError(
+                    "INVALID_REQUEST",
+                    "首帧/参考候选必须是图片",
+                    {"purpose": payload.purpose, "media_kind": media_kind},
+                )
+            if payload.purpose == "VISUAL" and media_kind != "VIDEO":
+                raise ExplainerContractError(
+                    "QC_BLOCKED",
+                    "最终片段必须是真实的 AI 图生视频；静图（含静图推拉）不能作为最终片段，"
+                    "请先登记为首帧候选并生成图生视频片段",
+                    {"beat_id": beat_id, "purpose": payload.purpose, "media_kind": media_kind},
+                )
+            from local_drama.application.explainers.storyboard import build_storyboard_service
+
+            service = build_storyboard_service(repo)
+            # The render type records *how* the picture was really produced.  An
+            # uploaded still is never a moving clip, so only a video may declare one
+            # of the three surviving render types.
+            render_type_actual = None
+            if media_kind == "VIDEO":
+                render_type_actual = {
+                    "VISUAL": "I2V",
+                    "LICENSED_MEDIA": "LICENSED_MEDIA",
+                    "INFOGRAPHIC_LAYER": "INFOGRAPHIC",
+                }.get(str(payload.purpose))
+            result = service.register_candidate(
+                project_id=project_id,
+                video_id=str(video["id"]),
+                beat_id=beat_id,
+                candidate_kind="CREATIVE",
+                media_version_id=str(payload.media_version_id),
+                purpose=str(payload.purpose),
+                render_type_actual=render_type_actual,
+                fallback_reason="USER_UPLOADED_MEDIA" if render_type_actual else None,
+                lineage={
+                    "source": "USER_UPLOADED_MEDIA",
+                    "actor": str(payload.actor or "local-user"),
+                    "note": str(payload.note or ""),
+                },
+                execution_snapshot={
+                    "source": "USER_UPLOADED_MEDIA",
+                    "media_version_id": str(payload.media_version_id),
+                    "measured_by": "MEDIA_REGISTRATION",
+                },
+                qc_summary={
+                    "file_valid": True,
+                    "uploaded_by_user": True,
+                    "content_checked": False,
+                    "measured_by": "MEDIA_REGISTRATION",
+                },
+            )
+            return {
+                **result,
+                "adopted_by_this_action": False,
+                "becomes_candidate_only": True,
+                "requires_explicit_adoption": True,
+                "media_kind": media_kind,
+            }
+
+        return _command(request, run)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
 
 
 @router.get("/explainers/{project_id}/beats/{beat_id}/impact", operation_id="getExplainerBeatImpact", response_model=None)
@@ -2692,6 +3627,1091 @@ def _beat_impact_view(repo: ExplainerRepository, project_id: str, beat_id: str) 
 # --------------------------------------------------------------------------- #
 # schedules
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# per-object generation commands (spec D4/D7)
+# --------------------------------------------------------------------------- #
+def _visual_generation_service(request: Request, repo: ExplainerRepository) -> Any:
+    """Build the explainer generation adapter on the request's connection.
+
+    The adapter owns no platform scope beyond ``project_id``: beats and entities are
+    resolved locally, so no episode/shot/beat is ever fabricated to borrow another
+    product's endpoint (design §D1.2).
+    """
+
+    from local_drama.application.explainers.visual_generation import build_explainer_visual_generation_service
+
+    return build_explainer_visual_generation_service(
+        repo,
+        database=_database(request),
+        settings=request.app.state.settings,
+    )
+
+
+def _candidate_view(repo: ExplainerRepository, candidate: Mapping[str, Any]) -> dict[str, Any]:
+    """Neutral candidate DTO for the shared grid (design §B10).
+
+    Preview/playback URLs are produced only when a media version is actually
+    registered; a missing or unreadable thumbnail must not remove the card, so the
+    row is always returned with ``preview_url=None`` rather than filtered out.
+    """
+
+    media_version_id = str(candidate.get("media_version_id") or "") or None
+    media = repo.find("media_versions", media_version_id) if media_version_id else None
+    media_kind = "IMAGE"
+    duration_ms: int | None = None
+    if media is not None:
+        asset = repo.find("media_assets", str(media.get("media_asset_id") or ""))
+        media_kind = str((asset or {}).get("media_kind") or "IMAGE").upper()
+        try:
+            duration_ms = int(media["duration_ms"]) if media.get("duration_ms") is not None else None
+        except (TypeError, ValueError):
+            duration_ms = None
+    content_url = f"/api/v1/media-versions/{media_version_id}/content" if media_version_id else None
+    proxy_url = f"/api/v1/media-versions/{media_version_id}/proxy" if media_version_id else None
+    # The media endpoint refuses to serve an image original on purpose
+    # (``IMAGE_CONTENT_REQUIRES_THUMBNAIL``), so a candidate card that points its
+    # <img> at ``/content`` renders "待生成" for an image that exists.  The only
+    # visual read surface is the derived cache: the small variant is the card
+    # thumbnail and the medium variant is the preview, while videos keep the
+    # proxied playback stream.  Measured on a real generated candidate: the
+    # candidate was READY with a registered PNG, yet ``/content`` answered 409.
+    thumbnail_url = (
+        f"/api/v1/media-versions/{media_version_id}/thumbnail?size=small&frame=poster"
+        if media_version_id
+        else None
+    )
+    preview_url = (
+        None
+        if media_version_id is None
+        else proxy_url
+        if media_kind == "VIDEO"
+        else f"/api/v1/media-versions/{media_version_id}/thumbnail?size=medium&frame=poster"
+    )
+    playback_url = preview_url if media_kind == "VIDEO" else None
+    snapshot = candidate.get("execution_snapshot_json")
+    snapshot = snapshot if isinstance(snapshot, Mapping) else {}
+    lineage = candidate.get("lineage_json")
+    lineage = lineage if isinstance(lineage, Mapping) else {}
+    qc = candidate.get("qc_summary_json")
+    qc = qc if isinstance(qc, Mapping) else {}
+    error_code = str(candidate.get("fallback_reason") or "") or None
+    status = str(candidate.get("status") or "PENDING")
+    return {
+        "id": str(candidate["id"]),
+        "candidate_kind": str(candidate.get("candidate_kind") or "CREATIVE"),
+        "purpose": str(candidate.get("purpose") or "VISUAL"),
+        "owner_kind": "ENTITY" if candidate.get("entity_id") else "BEAT",
+        "owner_id": str(candidate.get("entity_id") or candidate.get("beat_id") or ""),
+        "beat_id": str(candidate["beat_id"]) if candidate.get("beat_id") else None,
+        "entity_id": str(candidate["entity_id"]) if candidate.get("entity_id") else None,
+        "edition_id": str(candidate["edition_id"]) if candidate.get("edition_id") else None,
+        "variant_no": int(candidate.get("variant_no") or 0),
+        "media_kind": media_kind if media_version_id else None,
+        "media_version_id": media_version_id,
+        "media_sha256": str(candidate.get("media_sha256") or "") or None,
+        "thumbnail_url": thumbnail_url,
+        "preview_url": preview_url,
+        "playback_url": playback_url,
+        "content_url": content_url,
+        "duration_ms": duration_ms,
+        "width": None,
+        "height": None,
+        "status": status,
+        "render_type_planned": candidate.get("render_type_planned"),
+        "render_type_actual": candidate.get("render_type_actual"),
+        "fallback_reason": candidate.get("fallback_reason"),
+        "selected": bool(candidate.get("adopted")),
+        "locked": False,
+        "stale": bool(qc.get("stale")),
+        "adopted": bool(candidate.get("adopted")),
+        "job_id": str(candidate["job_id"]) if candidate.get("job_id") else None,
+        "job_state": None,
+        "seed": snapshot.get("seed", lineage.get("seed")),
+        "parent_candidate_id": lineage.get("parent_candidate_id"),
+        "prompt": snapshot.get("prompt") or (snapshot.get("prompt_bundle") or {}).get("prompt")
+        if isinstance(snapshot.get("prompt_bundle"), Mapping)
+        else snapshot.get("prompt"),
+        "negative_prompt": (snapshot.get("prompt_bundle") or {}).get("negative_prompt")
+        if isinstance(snapshot.get("prompt_bundle"), Mapping)
+        else None,
+        "reference_media_version_ids": list(snapshot.get("reference_media_version_ids") or []),
+        "short_label": None,
+        "error_code": error_code,
+        "error_message": str(candidate.get("fallback_reason") or "") or None,
+        "retryable": status == "FAILED",
+        "created_at": candidate.get("created_at"),
+    }
+
+
+def _candidates_for_owner(
+    repo: ExplainerRepository,
+    *,
+    project_id: str,
+    owner_kind: str,
+    owner_id: str,
+    purpose: str | None,
+    edition_id: str | None,
+) -> dict[str, Any]:
+    repo.require_explainer_project(project_id)
+    video = repo.require_video_for_project(project_id)
+    if owner_kind == "ENTITY":
+        entity = repo.get("explainer_entities", owner_id)
+        if str(entity["video_id"]) != str(video["id"]):
+            raise ExplainerContractError("INVALID_REQUEST", "实体不属于该解说作品", {"entity_id": owner_id})
+        rows = repo.media_candidates(entity_id=owner_id, purpose=purpose or "REFERENCE", edition_id=edition_id)
+        active = None
+    else:
+        beat = repo.get("explainer_visual_beats", owner_id)
+        if str(beat["video_id"]) != str(video["id"]):
+            raise ExplainerContractError("INVALID_REQUEST", "画面段不属于该解说作品", {"beat_id": owner_id})
+        rows = repo.media_candidates(beat_id=owner_id, purpose=purpose, edition_id=edition_id)
+        if not rows and purpose == "KEYFRAME":
+            # A film produced before the layers were split has only ``VISUAL`` candidates:
+            # its stills were stored as the final clip.  Returning nothing told step 4
+            # "还没有候选" while the picture existed and step 5 already listed it, so the
+            # keyframe view falls back to those candidates.  Each row keeps its own
+            # ``purpose``, which is what the adopt command must use.
+            rows = repo.media_candidates(beat_id=owner_id, purpose="VISUAL", edition_id=edition_id)
+        active = repo.active_beat_selection(owner_id, edition_id, purpose=purpose or "VISUAL")
+
+    for row in rows:
+        row["_view"] = _candidate_view(repo, row)
+
+    selected_ids: set[str] = set()
+    for purpose_value in {str(row.get("purpose") or "VISUAL") for row in rows}:
+        if owner_kind == "ENTITY":
+            break
+        selection = repo.active_beat_selection(owner_id, edition_id, purpose=purpose_value)
+        if selection:
+            selected_ids.add(str(selection.get("candidate_id") or ""))
+    locked_purposes = {
+        str(row.get("purpose") or "VISUAL")
+        for row in rows
+        if owner_kind == "BEAT" and repo.has_human_lock(owner_id, purpose=str(row.get("purpose") or "VISUAL"))
+    }
+
+    views: list[dict[str, Any]] = []
+    for row in rows:
+        view = dict(row.pop("_view"))
+        view["selected"] = str(row["id"]) in selected_ids
+        view["locked"] = str(row.get("purpose") or "VISUAL") in locked_purposes
+        views.append(view)
+
+    counts: dict[str, int] = {"REFERENCE": 0, "KEYFRAME": 0, "VISUAL": 0}
+    for view in views:
+        purpose_value = str(view.get("purpose") or "VISUAL")
+        counts[purpose_value] = counts.get(purpose_value, 0) + 1
+
+    return {
+        "project_id": project_id,
+        "video_id": str(video["id"]),
+        "owner_kind": owner_kind,
+        "owner_id": owner_id,
+        "purpose": purpose,
+        "edition_id": edition_id,
+        "candidates": views,
+        "counts": counts,
+        "active_selection": active,
+        "empty_state": "NO_CANDIDATES_YET" if not views else None,
+        "candidates_newest_first": True,
+        "read_error_keeps_known_selection": True,
+    }
+
+
+@router.post(
+    "/explainers/{project_id}/beats/{beat_id}/generations:plan",
+    operation_id="planExplainerBeatGeneration",
+    response_model=None,
+)
+async def plan_explainer_beat_generation(
+    project_id: str, beat_id: str, payload: ExplainerGenerationRequest, request: Request
+) -> dict[str, Any]:
+    """Read-only generation plan: freezes prompt, style, references, seeds, budget.
+
+    It never creates media, candidates or jobs, so it needs no Idempotency-Key.
+    """
+
+    try:
+        def run(repo: ExplainerRepository) -> dict[str, Any]:
+            service = _visual_generation_service(request, repo)
+            plan = service.plan(
+                project_id, {"kind": "BEAT", "id": beat_id}, payload.model_dump(exclude_none=True)
+            )
+            return plan.as_response()
+
+        return _query(request, run)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+@router.post(
+    "/explainers/{project_id}/beats/{beat_id}/generations",
+    status_code=202,
+    operation_id="submitExplainerBeatGeneration",
+    response_model=None,
+)
+async def submit_explainer_beat_generation(
+    project_id: str,
+    beat_id: str,
+    payload: ExplainerGenerationRequest,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    """Submit real candidate jobs for one beat; the receipt names every accepted item."""
+
+    try:
+        def run(repo: ExplainerRepository) -> dict[str, Any]:
+            service = _visual_generation_service(request, repo)
+            return service.submit(
+                project_id,
+                {"kind": "BEAT", "id": beat_id},
+                payload.model_dump(exclude_none=True),
+                idempotency_key=str(idempotency_key),
+            )
+
+        return _command_owning_service(request, run)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+@router.post(
+    "/explainers/{project_id}/assets/{entity_id}/reference-generations:plan",
+    operation_id="planExplainerReferenceGeneration",
+    response_model=None,
+)
+async def plan_explainer_reference_generation(
+    project_id: str, entity_id: str, payload: ExplainerGenerationRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        def run(repo: ExplainerRepository) -> dict[str, Any]:
+            service = _visual_generation_service(request, repo)
+            command = payload.model_dump(exclude_none=True)
+            command["purpose"] = "REFERENCE"
+            plan = service.plan(project_id, {"kind": "ENTITY", "id": entity_id}, command)
+            return plan.as_response()
+
+        return _query(request, run)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+@router.post(
+    "/explainers/{project_id}/assets/{entity_id}/reference-generations",
+    status_code=202,
+    operation_id="submitExplainerReferenceGeneration",
+    response_model=None,
+)
+async def submit_explainer_reference_generation(
+    project_id: str,
+    entity_id: str,
+    payload: ExplainerGenerationRequest,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    try:
+        def run(repo: ExplainerRepository) -> dict[str, Any]:
+            service = _visual_generation_service(request, repo)
+            command = payload.model_dump(exclude_none=True)
+            command["purpose"] = "REFERENCE"
+            return service.submit(
+                project_id,
+                {"kind": "ENTITY", "id": entity_id},
+                command,
+                idempotency_key=str(idempotency_key),
+            )
+
+        return _command_owning_service(request, run)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+@router.get(
+    "/explainers/{project_id}/assets/{entity_id}/candidates",
+    operation_id="listExplainerEntityCandidates",
+    response_model=None,
+)
+async def list_explainer_entity_candidates(
+    project_id: str, entity_id: str, request: Request, edition_id: str | None = None
+) -> dict[str, Any]:
+    try:
+        return _query(
+            request,
+            lambda repo: _candidates_for_owner(
+                repo,
+                project_id=project_id,
+                owner_kind="ENTITY",
+                owner_id=entity_id,
+                purpose="REFERENCE",
+                edition_id=edition_id,
+            ),
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+@router.post(
+    "/explainers/{project_id}/assets/{entity_id}/references",
+    status_code=201,
+    operation_id="adoptExplainerEntityReference",
+    response_model=None,
+)
+async def adopt_explainer_entity_reference(
+    project_id: str, entity_id: str, payload: ExplainerReferenceAdoptionRequest, request: Request
+) -> dict[str, Any]:
+    """Adopt one reference candidate (or a同项目 image) as the entity's reference.
+
+    ``lock=false`` only changes the current choice; ``lock=true`` records the
+    explicit human lock.  Either way the effective image becomes a real
+    ``story_asset_references`` row, which is what the generation input bridge reads.
+    """
+
+    try:
+        return _command(
+            request, lambda repo: _adopt_entity_reference(repo, project_id, entity_id, payload)
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+def _adopt_entity_reference(
+    repo: ExplainerRepository, project_id: str, entity_id: str, payload: ExplainerReferenceAdoptionRequest
+) -> dict[str, Any]:
+    repo.require_explainer_project(project_id)
+    video = repo.require_video_for_project(project_id)
+    entity = repo.get("explainer_entities", entity_id)
+    if str(entity["video_id"]) != str(video["id"]):
+        raise ExplainerContractError("INVALID_REQUEST", "实体不属于该解说作品", {"entity_id": entity_id})
+    if not payload.candidate_id and not payload.media_version_id:
+        raise ExplainerContractError(
+            "SCHEMA_INVALID", "必须提供 candidate_id 或 media_version_id 之一", {"entity_id": entity_id}
+        )
+    if payload.candidate_id and payload.media_version_id:
+        raise ExplainerContractError(
+            "SCHEMA_INVALID", "candidate_id 与 media_version_id 只能提供一个", {"entity_id": entity_id}
+        )
+    if payload.expected_entity_revision is not None:
+        if int(payload.expected_entity_revision) != int(entity.get("revision") or 0):
+            raise ExplainerContractError(
+                "STALE_REVISION",
+                "该人物/场景已更新，请刷新后重试。",
+                {
+                    "expected_revision": int(payload.expected_entity_revision),
+                    "actual_revision": int(entity.get("revision") or 0),
+                },
+            )
+
+    from local_drama.application.explainers.identities import ExplainerIdentityService
+
+    identities = ExplainerIdentityService(repo)
+    if payload.candidate_id:
+        candidate = repo.get("explainer_media_candidates", str(payload.candidate_id))
+        if str(candidate.get("entity_id") or "") != entity_id:
+            raise ExplainerContractError(
+                "INVALID_REQUEST",
+                "候选不属于该人物/场景",
+                {"candidate_id": str(payload.candidate_id), "entity_id": entity_id},
+            )
+        if str(candidate.get("status") or "") != "READY":
+            raise ExplainerContractError(
+                "QC_BLOCKED",
+                "只有已生成并登记媒体的候选才能采用",
+                {"candidate_id": str(payload.candidate_id), "status": str(candidate.get("status") or "")},
+            )
+        media = repo.require_same_project_media(
+            project_id=project_id, media_version_id=str(candidate["media_version_id"])
+        )
+        media_version_id = str(candidate["media_version_id"])
+        media_sha256 = str(candidate.get("media_sha256") or media["sha256"])
+    else:
+        media = repo.require_same_project_media(
+            project_id=project_id, media_version_id=str(payload.media_version_id)
+        )
+        # ``require_same_project_media`` aliases the id as ``media_version_id``; the
+        # validated request value is the version being adopted.
+        media_version_id = str(media["media_version_id"])
+        media_sha256 = str(media["sha256"])
+        asset = repo.find("media_assets", str(media.get("media_asset_id") or ""))
+        if str((asset or {}).get("media_kind") or "").upper() != "IMAGE":
+            raise ExplainerContractError(
+                "INVALID_REQUEST", "定妆参考只能是图片媒体", {"media_version_id": media_version_id}
+            )
+
+    if not str(entity.get("story_asset_id") or ""):
+        # Design §B3.3 sends "从讲稿识别人物与场景" through the reuse-or-create rule, but an
+        # object extracted by an older build has no shared asset yet.  Adoption is the
+        # moment the picture must be bound, so the asset is established here instead of
+        # refusing a step the user can complete: reuse an ACTIVE asset of this project
+        # with the same kind and name, otherwise create one.
+        from local_drama.application.explainers.entity_assets import ensure_entity_story_asset
+
+        link = ensure_entity_story_asset(
+            repo,
+            project_id=project_id,
+            entity=repo.get("explainer_entities", entity_id),
+            actor=str(payload.actor or "local-user"),
+        )
+        entity = repo.get("explainer_entities", entity_id)
+        if not str(entity.get("story_asset_id") or ""):
+            raise ExplainerContractError(
+                "INVALID_REQUEST",
+                "该对象还没有建立共享资产，无法绑定参考图；请先在人物与风格中建立资产。",
+                {"entity_id": entity_id, "link": link},
+            )
+    story_asset_id = str(entity["story_asset_id"])
+
+    previous = repo.query_all(
+        "SELECT * FROM story_asset_references WHERE story_asset_id = ? AND status = 'ACTIVE' ORDER BY priority ASC, created_at DESC",
+        (story_asset_id,),
+    )
+    if payload.expected_reference_id is not None:
+        current_ids = {str(row["id"]) for row in previous}
+        if current_ids != {str(payload.expected_reference_id)}:
+            raise ExplainerContractError(
+                "STALE_REVISION",
+                "该参考图已更新，请刷新后重试。",
+                {
+                    "expected_reference_id": str(payload.expected_reference_id),
+                    "current_reference_ids": sorted(current_ids),
+                },
+            )
+    for row in previous:
+        repo.update("story_asset_references", str(row["id"]), {"status": "SUPERSEDED"})
+
+    # ``story_asset_references.asset_state_id`` is a foreign key into the shared
+    # ``story_asset_states`` table, and an explainer entity's state lives in
+    # ``entity_state_revisions``: writing the explainer id there would violate the
+    # constraint (and claim a state binding that does not exist).  The explainer's own
+    # state revision is therefore recorded in metadata, where the read model can compare
+    # it against the entity's canonical state.
+    state_revision_id = str(payload.entity_state_revision_id or "").strip() or None
+    if state_revision_id:
+        owned = repo.query_one(
+            "SELECT id FROM entity_state_revisions WHERE id = ? AND entity_id = ?",
+            (state_revision_id, entity_id),
+        )
+        if owned is None:
+            raise ExplainerContractError(
+                "INVALID_REQUEST",
+                "该状态版本不属于此人物/场景",
+                {"entity_id": entity_id, "entity_state_revision_id": state_revision_id},
+            )
+
+    reference = repo.insert(
+        "story_asset_references",
+        {
+            "project_id": project_id,
+            "story_asset_id": story_asset_id,
+            # No shared story-asset state exists for an explainer entity.
+            "asset_state_id": None,
+            "media_version_id": media_version_id,
+            "reference_kind": "HERO",
+            "label": f"{entity.get('name') or entity.get('code')} 主参考",
+            "priority": 100,
+            "is_locked": 1 if payload.lock else 0,
+            "metadata_json": {
+                "source": "EXPLAINER_ENTITY_REFERENCE_ADOPTION",
+                "candidate_id": str(payload.candidate_id) if payload.candidate_id else None,
+                "media_sha256": media_sha256,
+                "actor": str(payload.actor or "local-user"),
+                "lock": bool(payload.lock),
+                "explainer_entity_state_revision_id": state_revision_id,
+            },
+            "status": "ACTIVE",
+        },
+    )
+    if payload.candidate_id:
+        repo.update("explainer_media_candidates", str(payload.candidate_id), {"adopted": True})
+
+    impacts = identities.impact_of_reference_change(
+        video_id=str(video["id"]),
+        identity_pack_version_id=str(reference["id"]),
+        actor=str(payload.actor or "local-user"),
+    )
+    return {
+        "entity_id": entity_id,
+        "reference": reference,
+        "reference_id": str(reference["id"]),
+        "reference_kind": str(reference["reference_kind"]),
+        "media_version_id": media_version_id,
+        "media_sha256": media_sha256,
+        "locked": bool(payload.lock),
+        "locked_by_human": bool(payload.lock),
+        "actor": str(payload.actor or "local-user"),
+        "superseded_reference_ids": [str(row["id"]) for row in previous],
+        "requires_reference_input": True,
+        "impact": impacts,
+        "machine_adoption_does_not_lock": not bool(payload.lock),
+    }
+
+
+@router.post(
+    "/explainers/{project_id}/assets/{entity_id}/references:unlock",
+    operation_id="unlockExplainerEntityReference",
+    response_model=None,
+)
+async def unlock_explainer_entity_reference(
+    project_id: str, entity_id: str, payload: ExplainerReferenceUnlockRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        def run(repo: ExplainerRepository) -> dict[str, Any]:
+            repo.require_explainer_project(project_id)
+            video = repo.require_video_for_project(project_id)
+            entity = repo.get("explainer_entities", entity_id)
+            if str(entity["video_id"]) != str(video["id"]):
+                raise ExplainerContractError("INVALID_REQUEST", "实体不属于该解说作品", {"entity_id": entity_id})
+            actor = str(payload.actor or "").strip()
+            if not actor:
+                raise ExplainerContractError("SCHEMA_INVALID", "解锁必须记录真实操作者")
+            reference = repo.find("story_asset_references", str(payload.reference_id or ""))
+            if reference is None or str(reference.get("story_asset_id") or "") != str(entity.get("story_asset_id") or ""):
+                raise ExplainerContractError(
+                    "INVALID_REQUEST",
+                    "该参考图不属于此人物/场景",
+                    {"reference_id": payload.reference_id, "entity_id": entity_id},
+                )
+            repo.update(
+                "story_asset_references",
+                str(reference["id"]),
+                {"is_locked": 0, "metadata_json": {**(reference.get("metadata_json") or {}), "unlocked_by": actor}},
+            )
+            return {
+                "entity_id": entity_id,
+                "reference_id": str(reference["id"]),
+                "was_locked": bool(reference.get("is_locked")),
+                "locked": False,
+                "current_media_kept": True,
+                "actor": actor,
+            }
+
+        return _command(request, run)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+@router.patch(
+    "/explainers/{project_id}/visual-preferences",
+    operation_id="patchExplainerVisualPreferences",
+    response_model=None,
+)
+async def patch_explainer_visual_preferences(
+    project_id: str, payload: ExplainerVisualPreferencesRequest, request: Request
+) -> dict[str, Any]:
+    """Merge this film's style and candidate-count preferences without accepting render types.
+
+    The per-beat render type stays program-derived from each beat's declared action
+    requirement, so a client can never write an actual render type (spec §D3.1).  The
+    retired ``visual_strategy`` route choice is no longer part of this request: the only
+    moving-picture route is a real AI image-to-video generation.
+    """
+
+    try:
+        def run(repo: ExplainerRepository) -> dict[str, Any]:
+            repo.require_explainer_project(project_id)
+            video = repo.require_video_for_project(project_id)
+            if int(payload.expected_revision) != int(video.get("revision") or 0):
+                raise ExplainerContractError(
+                    "STALE_REVISION",
+                    "作品设置已更新，请刷新后重试。",
+                    {
+                        "expected_revision": int(payload.expected_revision),
+                        "actual_revision": int(video.get("revision") or 0),
+                    },
+                )
+            from local_drama.application.explainers.contracts_v2 import (
+                DEFAULT_VISUAL_PREFERENCES,
+                merge_visual_preferences,
+            )
+
+            payload_json = dict(video.get("input_payload_json") or {})
+            current = payload_json.get("visual_preferences")
+            merged = merge_visual_preferences(
+                current if isinstance(current, Mapping) else DEFAULT_VISUAL_PREFERENCES,
+                payload.visual_preferences,
+            )
+            payload_json["visual_preferences"] = merged
+            update: dict[str, Any] = {"input_payload_json": payload_json}
+            if payload.channel_profile_version_id is not None:
+                if payload.channel_profile_version_id:
+                    profile = repo.find("channel_profile_versions", str(payload.channel_profile_version_id))
+                    if profile is None or str(profile.get("video_id") or video["id"]) != str(video["id"]):
+                        raise ExplainerContractError(
+                            "INVALID_REQUEST",
+                            "所选栏目风格版本不存在或不属于本作品",
+                            {"channel_profile_version_id": str(payload.channel_profile_version_id)},
+                        )
+                update["current_channel_profile_version_id"] = str(payload.channel_profile_version_id) or None
+            updated = repo.update("explainer_videos", str(video["id"]), update)
+            return {
+                "video_id": str(video["id"]),
+                "revision": int(updated.get("revision") or 0),
+                "visual_preferences": merged,
+                "channel_profile_version_id": updated.get("current_channel_profile_version_id"),
+                "plan_invalidated": True,
+                "requires_new_preflight": True,
+                "client_cannot_set_render_type": True,
+            }
+
+        return _command(request, run)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+@router.post(
+    "/explainers/{project_id}/story-seed",
+    status_code=201,
+    operation_id="createExplainerStorySeed",
+    response_model=None,
+)
+async def create_explainer_story_seed(
+    project_id: str, payload: ExplainerStorySeedRequest, request: Request
+) -> dict[str, Any]:
+    """从主题创作原创虚构：生成有边界的设定资料（design §C4.5).
+
+    Only ``CREATE_FROM_TOPIC`` + ``ORIGINAL_FICTION`` may call this.  A factual topic
+    keeps using the research path, which records real sources and never invents one.
+    The seed is registered as an authored-fiction source, so it enters the ordinary
+    extraction/writing flow with the correct (non-historical) credibility kind.
+    """
+
+    try:
+        return _command(request, lambda repo: _create_story_seed(request, repo, project_id, payload))
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+def _create_story_seed(
+    request: Request,
+    repo: ExplainerRepository,
+    project_id: str,
+    payload: ExplainerStorySeedRequest,
+) -> dict[str, Any]:
+    from local_drama.application.explainers.runtime_adapters import build_planner_factory
+
+    repo.require_explainer_project(project_id)
+    video = repo.require_video_for_project(project_id)
+    planner = build_planner_factory(_database(request), request.app.state.settings)()
+    result = planner.plan_story_seed(
+        repo=repo,
+        project_id=project_id,
+        video_id=str(video["id"]),
+        revision_request=str(payload.revision_request or ""),
+        creative_scope=payload.creative_scope or None,
+    )
+    return {
+        **result,
+        "registered_as_fiction": True,
+        "verified_as_history": False,
+        "next_step": "运行资料提取，把该设定拆成实体与事实（FICTION 标记），再生成讲稿草稿。",
+    }
+
+
+@router.get(
+    "/explainers/{project_id}/assets/{entity_id}/reference-design",
+    operation_id="getExplainerReferenceDesign",
+    response_model=None,
+)
+async def get_explainer_reference_design(
+    project_id: str,
+    entity_id: str,
+    request: Request,
+    reference_kind: str = Query(default="HERO", max_length=32),
+    allow_creative_choices: bool = Query(default=False),
+) -> dict[str, Any]:
+    """Compile the frozen setting prompt for one entity's reference image (design §C4.4).
+
+    Deterministic and read-only: with the known attributes, user settings, adopted
+    reference invariants and style already present, no model call is made.  The result
+    is the prompt a generation command should use, with the hard view/identity
+    requirements appended by the program so they can never be truncated away.
+    """
+
+    try:
+        return _query(
+            request,
+            lambda repo: _reference_design_view(
+                request, repo, project_id, entity_id, reference_kind, allow_creative_choices
+            ),
+        )
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+def _reference_design_view(
+    request: Request,
+    repo: ExplainerRepository,
+    project_id: str,
+    entity_id: str,
+    reference_kind: str,
+    allow_creative_choices: bool,
+) -> dict[str, Any]:
+    from local_drama.application.explainers.runtime_adapters import build_planner_factory
+
+    repo.require_explainer_project(project_id)
+    video = repo.require_video_for_project(project_id)
+    entity = repo.get("explainer_entities", entity_id)
+    if str(entity["video_id"]) != str(video["id"]):
+        raise ExplainerContractError("INVALID_REQUEST", "实体不属于该解说作品", {"entity_id": entity_id})
+    planner = build_planner_factory(_database(request), request.app.state.settings)()
+    adopted: list[dict[str, Any]] = []
+    story_asset_id = str(entity.get("story_asset_id") or "")
+    if story_asset_id:
+        adopted = [
+            {
+                "reference_kind": str(row["reference_kind"] or "HERO"),
+                "media_version_id": str(row["media_version_id"] or ""),
+                "label": str(row["label"] or ""),
+            }
+            for row in repo.query_all(
+                "SELECT * FROM story_asset_references WHERE story_asset_id = ? AND status = 'ACTIVE'",
+                (story_asset_id,),
+            )
+        ]
+    result = planner.plan_reference_design(
+        repo=repo,
+        project_id=project_id,
+        video_id=str(video["id"]),
+        requested=[{"entity_id": entity_id, "reference_kind": reference_kind}],
+        adopted_references=adopted,
+        allow_creative_choices=allow_creative_choices,
+    )
+    items = list(result.get("items") or [])
+    primary = dict(items[0]) if items else {}
+    return {
+        **result,
+        "entity_id": entity_id,
+        "reference_kind": reference_kind,
+        # The single requested item is also surfaced flat: a caller showing one entity's
+        # setting prompt should not have to know the batch envelope.
+        "description_prompt": str(primary.get("description_prompt") or ""),
+        "negative_prompt": str(primary.get("negative_prompt") or ""),
+        "compile_order": list(primary.get("compile_order") or result.get("deterministic_compile_order") or []),
+        "unresolved_constraints": list(primary.get("unresolved_constraints") or []),
+        "creative_choices": list(primary.get("creative_choices") or []),
+        "over_budget_fields": list(primary.get("over_budget_fields") or []),
+        "prompt_hash": primary.get("prompt_hash"),
+        "adopted_reference_count": len(adopted),
+        "requires_real_image_consumption": True,
+        "model_calls_on_this_read": int(result.get("model_calls") or 0),
+    }
+
+
+@router.get(
+    "/explainers/{project_id}/readiness",
+    operation_id="getExplainerWorkspaceReadiness",
+    response_model=None,
+)
+async def get_explainer_workspace_readiness(project_id: str, request: Request) -> dict[str, Any]:
+    """Six-step readiness projection used by the numeric step bar (spec §F2.1)."""
+
+    try:
+        return _query(request, lambda repo: _readiness_view(request, repo, project_id))
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+def _readiness_view(request: Request, repo: ExplainerRepository, project_id: str) -> dict[str, Any]:
+    repo.require_explainer_project(project_id)
+    video = repo.require_video_for_project(project_id)
+    video_id = str(video["id"])
+    run = None
+    runs = repo.list_where("explainer_runs", {"video_id": video_id}, order_by="created_at", descending=True)
+    if runs:
+        run = runs[0]
+    steps = repo.steps(str(run["id"])) if run else []
+    status_by_code = {str(step.get("step_code")): str(step.get("status") or "") for step in steps}
+    locked_segment_count = len(repo.text_locked_segments(video_id)) if hasattr(repo, "text_locked_segments") else 0
+    script_revisions = repo.list_where("explainer_script_revisions", {"video_id": video_id})
+    entities = repo.list_where("explainer_entities", {"video_id": video_id})
+    beats = repo.beats(video_id) if run else []
+    # Design §B3.1: only objects that need a fixed appearance are required to hold a
+    # reference.  An organisation or concept stays in the semantic record and must never
+    # hold step 2 back from reading 已完成.
+    required_entities = [
+        entity for entity in entities if _entity_asset_kind(str(entity.get("entity_type") or "")) != "OTHER"
+    ]
+    reference_ready = 0
+    for entity in required_entities:
+        story_asset_id = str(entity.get("story_asset_id") or "")
+        if story_asset_id and repo.query_one(
+            "SELECT 1 FROM story_asset_references WHERE story_asset_id = ? AND status = 'ACTIVE' LIMIT 1",
+            (story_asset_id,),
+        ):
+            reference_ready += 1
+    editions = repo.editions(video_id)
+    render = None
+    if editions:
+        render = repo.current_root_render(str(editions[0]["id"]))
+
+    # A beat counts as adopted when *any* edition holds an ACTIVE selection for it, not
+    # only when the video-wide (edition_id IS NULL) tier does.  A film that produced its
+    # pictures per edition has all of them adopted at that scope, and reporting 0 there
+    # told the user "还没有画面" while every beat already had a usable clip.
+    beat_ids = [str(beat["id"]) for beat in beats]
+    adopted_by_purpose: dict[str, set[str]] = {"KEYFRAME": set(), "VISUAL": set()}
+    if beat_ids:
+        placeholders = ",".join("?" for _ in beat_ids)
+        for purpose in ("KEYFRAME", "VISUAL"):
+            rows = repo.query_all(
+                f"""SELECT DISTINCT beat_id FROM explainer_beat_selections
+                     WHERE beat_id IN ({placeholders}) AND purpose = ? AND status = 'ACTIVE'""",
+                tuple(beat_ids) + (purpose,),
+            )
+            adopted_by_purpose[purpose] = {str(row["beat_id"]) for row in rows}
+    beats_with_selection = len(adopted_by_purpose["KEYFRAME"])
+    beats_with_visual = len(adopted_by_purpose["VISUAL"])
+    # Step 4 counts a beat as having a picture when either layer holds an ACTIVE
+    # selection.  A film produced before the keyframe/clip layers were split stores its
+    # stills as VISUAL candidates, and the step-4 page already reads them that way
+    # ("共 52 个画面段，52 个已就绪"); counting only KEYFRAME here made the numeric step
+    # bar say "还有画面段没有采用画面 0/52" for the same workspace.
+    beats_with_picture = len(adopted_by_purpose["KEYFRAME"] | adopted_by_purpose["VISUAL"])
+
+    from local_drama.application.explainers.contracts_v2 import (
+        DEFAULT_VISUAL_PREFERENCES,
+        script_policy_from_input_payload,
+    )
+
+    payload_json = video.get("input_payload_json") or {}
+    preferences = payload_json.get("visual_preferences") if isinstance(payload_json, Mapping) else None
+    preferences = preferences if isinstance(preferences, Mapping) else DEFAULT_VISUAL_PREFERENCES
+    policy = script_policy_from_input_payload(payload_json)
+
+    def step(code: str, page: str, label: str, status: str, produced: int, required: int, reason: str | None, action: str | None) -> dict[str, Any]:
+        run_status = status_by_code.get(code)
+        if run_status in {"RUNNING", "CLAIMED", "PENDING"} and status in {"NOT_STARTED", "DONE"}:
+            status = "RUNNING"
+        elif run_status in {"BLOCKED", "TERMINAL_FAILED", "RETRYABLE_FAILED"} and status == "NOT_STARTED":
+            status = "FAILED"
+        return {
+            "step_code": code,
+            "page": page,
+            "label": label,
+            "status": status,
+            "produced": produced,
+            "required": required,
+            "blocked_reason": reason,
+            "next_action": action,
+            "step_binding_id": next(
+                (str(item["id"]) for item in steps if str(item.get("step_code")) == code), None
+            ),
+            "run_status": run_status,
+        }
+
+    script_status = "DONE" if script_revisions else "NOT_STARTED"
+    assets_status = "DONE" if required_entities and reference_ready >= len(required_entities) else ("NEEDS_SELECTION" if entities else "NOT_STARTED")
+    # "缺少参考图" and "不需要参考图" are different states, and a film that already
+    # produced every picture without a reference must not read as if it were stuck.
+    # The wording is derived from the observed counts only: the second clause is added
+    # exactly when every beat already has a usable clip.
+    assets_reason: str | None = None
+    if assets_status == "NEEDS_SELECTION":
+        assets_reason = f"{len(required_entities) - reference_ready} 个人物/场景还没有采用的参考图"
+        if beats and beats_with_visual >= len(beats):
+            assets_reason += "；现有画面段已全部就绪，参考图不影响已出片段，仅用于之后重绘时保持人物一致"
+    elif assets_status == "NOT_STARTED":
+        assets_reason = "还没有登记人物/场景，无法准备参考图"
+    narration = repo.list_where("narration_segments", {"video_id": video_id})
+    takes = repo.list_where("narration_takes", {"video_id": video_id})
+    audio_status = "DONE" if takes else ("NEEDS_SELECTION" if narration else "NOT_STARTED")
+    storyboard_status = "DONE" if beats and beats_with_picture >= len(beats) else ("NEEDS_SELECTION" if beats else "NOT_STARTED")
+    clips_status = "DONE" if beats and beats_with_visual >= len(beats) else ("NEEDS_SELECTION" if beats_with_selection else "NOT_STARTED")
+    review_status = "DONE" if render else "NOT_STARTED"
+
+    steps_view = [
+        step("NARRATION_WRITE", "script", "内容与讲稿", script_status, len(script_revisions), 1, None if script_revisions else "还没有已登记的讲稿版本", "打开第 1 步填写或导入内容"),
+        step("IDENTITY_ASSETS", "assets", "人物与风格", assets_status, reference_ready, len(required_entities), assets_reason, "生成缺失参考或上传选择"),
+        step("NARRATION_TTS", "audio", "配音", audio_status, len(takes), len(narration) or 1, None if audio_status == "DONE" else "还没有可试听的配音", "生成全部配音"),
+        step("EXPLAINER_STORYBOARD", "storyboard", "分镜与画面", storyboard_status, beats_with_picture, len(beats) or 1, None if storyboard_status == "DONE" else "还有画面段没有采用画面", "补齐缺失画面"),
+        step("VISUAL_GENERATION", "clips", "视频片段", clips_status, beats_with_visual, len(beats) or 1, None if clips_status == "DONE" else "还有画面段没有可用片段", "补齐缺失片段"),
+        step("COMPOSITION_RENDER", "review", "预览与导出", review_status, 1 if render else 0, 1, None if render else "还没有可播放的成片", "生成预览"),
+    ]
+    first_actionable = next((item["page"] for item in steps_view if item["status"] != "DONE"), "review")
+    blocking = next((item for item in steps_view if item["status"] in {"FAILED", "NEEDS_SELECTION"} or item["blocked_reason"]), None)
+    locked_segments = locked_segment_count
+    summary = (
+        f"使用讲稿 v{len(script_revisions)}、人物参考 {reference_ready} 项、"
+        f"{video.get('width')}×{video.get('height')} {video.get('subtitle_mode') or '中文字幕'}"
+    )
+    return {
+        "video_id": video_id,
+        "project_id": project_id,
+        "revision": int(video.get("revision") or 0),
+        "steps": steps_view,
+        "first_actionable_page": first_actionable,
+        "blocking_step_code": (blocking or {}).get("step_code"),
+        "blocking_reason": (blocking or {}).get("blocked_reason"),
+        "one_click_route": {
+            "mode": str(video.get("automation_mode") or "AUTO_WITH_EXCEPTIONS"),
+            # There is exactly one picture route left: real AI 图生视频.
+            "visual_route": "I2V",
+            "script_policy": policy,
+            "summary": summary,
+        },
+        "locked_segment_count": locked_segments,
+        "run": {
+            "run_id": str(run["id"]) if run else None,
+            "status": str(run.get("status")) if run else None,
+        },
+        "counts": {
+            "script_revisions": len(script_revisions),
+            "entities": len(entities),
+            "references_ready": reference_ready,
+            "beats": len(beats),
+            "beats_with_keyframe": beats_with_selection,
+            "beats_with_picture": beats_with_picture,
+            "beats_with_visual": beats_with_visual,
+            "narration_segments": len(narration),
+            "narration_takes": len(takes),
+            "editions": len(editions),
+        },
+    }
+
+
+@router.post(
+    "/explainers/{project_id}/visual-generation:submit",
+    status_code=202,
+    operation_id="submitExplainerVisualGeneration",
+    response_model=None,
+)
+async def submit_explainer_visual_generation(
+    project_id: str,
+    payload: ExplainerVisualGenerationSubmitRequest,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    """Generate the real AI image-to-video clips this film is still missing.
+
+    This is the picture stage as a standalone command.  It exists because the stage
+    is the only thing that turns an adopted keyframe into a composable clip, and a
+    film whose production graph run stopped could otherwise never be finished.  The
+    stage reuses every human-adopted keyframe and every beat that already has a READY
+    visual candidate, so pressing it twice never re-draws accepted work.
+    """
+
+    try:
+        def run(repo: ExplainerRepository) -> dict[str, Any]:
+            from local_drama.application.explainers.stage_commands import (
+                build_explainers_command_service,
+            )
+
+            video = repo.require_video_for_project(project_id)
+            service = build_explainers_command_service(
+                _database(request), request.app.state.settings
+            )
+            return service.submit_visual_generation(
+                video_id=str(video["id"]),
+                idempotency_key=str(idempotency_key),
+                beat_ids=tuple(payload.beat_ids or ()),
+                edition_id=payload.edition_id,
+            )
+
+        return _command_owning_service(request, run)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+@router.post(
+    "/explainer-runs/{run_id}/collections/{step_binding_id}:continue",
+    operation_id="continueExplainerCollection",
+    response_model=None,
+)
+async def continue_explainer_collection(
+    run_id: str,
+    step_binding_id: str,
+    payload: ExplainerCollectionContinueRequest,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    """Use the available results and continue a blocked collection stage.
+
+    This is the only business entry point for the replacement-collect flow; the
+    machine MIN_ONE policy calls the same service so a click and an automatic
+    decision can never diverge (spec §D5.1).
+    """
+
+    try:
+        def run(repo: ExplainerRepository) -> dict[str, Any]:
+            from local_drama.application.explainers.visual_generation import (
+                build_explainer_visual_generation_service,
+            )
+
+            service = build_explainer_visual_generation_service(
+                repo, database=_database(request), settings=request.app.state.settings
+            )
+            return service.continue_collection_with_available(
+                run_id=run_id,
+                step_binding_id=step_binding_id,
+                selected_candidate_ids=list(payload.selected_candidate_ids),
+                failed_candidate_ids=list(payload.failed_candidate_ids or []),
+                expected_task_revision=payload.expected_task_revision,
+                expected_old_job_id=payload.expected_old_job_id,
+                actor=str(payload.actor or "local-user"),
+                idempotency_key=str(idempotency_key),
+            )
+
+        return _command_owning_service(request, run)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
+@router.post(
+    "/explainers/{project_id}/beats/{beat_id}/selections:unlock",
+    operation_id="unlockExplainerSelection",
+    response_model=None,
+)
+async def unlock_explainer_selection(
+    project_id: str, beat_id: str, payload: ExplainerSelectionUnlockRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        def run(repo: ExplainerRepository) -> dict[str, Any]:
+            repo.require_explainer_project(project_id)
+            video = repo.require_video_for_project(project_id)
+            from local_drama.application.explainers.storyboard import build_storyboard_service
+
+            return build_storyboard_service(repo).unlock_selection(
+                project_id=project_id,
+                video_id=str(video["id"]),
+                beat_id=beat_id,
+                selection_id=str(payload.selection_id),
+                edition_id=payload.edition_id,
+                purpose=str(payload.purpose or "VISUAL"),
+                actor=str(payload.actor or ""),
+                expected_revision=payload.expected_revision,
+            )
+
+        return _command(request, run)
+    except DomainRuleError as error:
+        raise api_error_from_domain(error) from error
+    except ExplainerContractError as error:
+        raise api_error_from_explainers(error) from error
+
+
 @router.get("/explainer-schedules", operation_id="listExplainerSchedules", response_model=None)
 async def list_explainer_schedules(
     request: Request,

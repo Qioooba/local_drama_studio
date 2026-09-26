@@ -126,6 +126,77 @@ def test_decode_verification_maps_to_the_technical_layer_input(synthetic_clip: P
     # The source clip is declared so the report's per-clip coverage check is real.
     assert payload["source_clips"][0]["media_version_id"] == "mv-1"
     assert payload["source_clips"][0]["total_frames"] == 50
+    # A file with no audio stream has no loudness measurement, and the mapping does
+    # not invent one: the technical layer then reports the band as unverified.
+    assert "loudness_lufs" not in payload
+    assert "peak_dbtp" not in payload
+
+
+@pytest.fixture(scope="module")
+def quiet_narrated_clip(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A clip whose audio is real and quiet: loudness must be measured, not assumed."""
+
+    directory = tmp_path_factory.mktemp("media-qc-audio")
+    path = directory / "quiet.mp4"
+    subprocess.run(  # noqa: S603 - test fixture builds the command itself
+        [
+            str(FFMPEG), "-nostdin", "-hide_banner", "-v", "error",
+            "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=6",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=6:sample_rate=48000",
+            "-af", "volume=-20dB",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", "-y", str(path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return path
+
+
+def test_the_delivered_loudness_band_is_measured_not_assumed(quiet_narrated_clip: Path) -> None:
+    """The technical layer verifies the band the mixer claims to hit."""
+
+    verification = _verifier().verify(quiet_narrated_clip)
+    assert verification.audio is not None, "a real audio track must be measured"
+    audio = verification.audio
+    assert audio["loudness_lufs"] < -17.0, audio
+    assert isinstance(audio["peak_dbtp"], float)
+    assert audio["measurement_tool"].startswith("ffmpeg ebur128")
+    assert audio["band"]["loudness_lufs"] == -16.0
+
+    payload = verification.as_technical_input(rel_path="projects/p/x.mp4", media_version_id="mv-1")
+    assert payload["loudness_lufs"] == audio["loudness_lufs"]
+    assert payload["peak_dbtp"] == audio["peak_dbtp"]
+    assert payload["audio_gaps_ms"] == audio["audio_gaps_ms"]
+    assert payload["audio_measurement"]["silence_threshold_db"] == -45.0
+
+
+def test_a_silent_stretch_is_reported_as_an_audio_gap(tmp_path: Path) -> None:
+    """A declared 2 s hole in the audio is a measured fact, not a guess."""
+
+    path = tmp_path / "gap.mp4"
+    subprocess.run(  # noqa: S603 - test fixture builds the command itself
+        [
+            str(FFMPEG), "-nostdin", "-hide_banner", "-v", "error",
+            "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=4",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=1:sample_rate=48000",
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000:duration=2",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=1:sample_rate=48000",
+            "-filter_complex", "[1:a][2:a][3:a]concat=n=3:v=0:a=1[a]",
+            "-map", "0:v:0", "-map", "[a]",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", "-y", str(path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    audio = _verifier().verify(path).audio
+    assert audio is not None
+    gaps = [gap for gap in audio["audio_gaps_ms"] if gap["duration_ms"] >= 1200]
+    assert gaps, audio["audio_gaps_ms"]
+    assert gaps[0]["start_ms"] >= 500
+
 
 
 def test_truncated_file_fails_loudly_instead_of_passing(synthetic_clip: Path, tmp_path: Path) -> None:

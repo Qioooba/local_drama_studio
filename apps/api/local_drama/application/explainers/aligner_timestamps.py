@@ -41,8 +41,71 @@ __all__ = [
     "ALIGNER_TIMESTAMP_GRID_MS",
     "DEFAULT_ALIGNER_SAMPLE_RATE_HZ",
     "normalize_aligner_timestamps",
+    "rescale_word_timings",
     "timestamp_samples",
 ]
+
+
+def rescale_word_timings(
+    word_timings: Sequence[Mapping[str, Any]], *, from_rate: int, to_rate: int
+) -> list[dict[str, Any]]:
+    """Re-express word timings from the aligner's rate in the take's rate.
+
+    The locked aligner runs at 16 kHz while a narration take is 48 kHz, and a
+    revision records the *take's* ``sample_rate_hz``.  Consuming 16 kHz sample
+    positions as if they were 48 kHz made every mapped cue window three times too
+    short: the delivered 1962 film gave the first thirteen characters of a sentence
+    773 ms and the remaining twenty-two 5.97 s.  The stored positions are therefore
+    converted once, here, so the revision's declared rate is the rate its samples
+    really are in.
+    """
+
+    source_rate = int(from_rate or 0)
+    target_rate = int(to_rate or 0)
+    if source_rate <= 0 or target_rate <= 0 or source_rate == target_rate:
+        return [dict(item) for item in word_timings]
+    scale = target_rate / source_rate
+    rescaled: list[dict[str, Any]] = []
+    for item in word_timings:
+        entry = dict(item)
+        for field in ("start_sample", "end_sample"):
+            value = entry.get(field)
+            if value is None:
+                continue
+            try:
+                entry[field] = int(round(float(value) * scale))
+            except (TypeError, ValueError):
+                continue
+        rescaled.append(entry)
+    return rescaled
+
+
+def declared_aligner_sample_rate(timestamps: Any) -> int:
+    """The rate the aligner's own timestamps are expressed in.
+
+    A runtime that declares ``sample_rate_hz`` on its timestamps is believed; one
+    that reports only seconds is taken to be the locked 16 kHz model this project
+    ships.  Never inferred from magnitude: a 0.5 s token is not "500 samples".
+    """
+
+    if isinstance(timestamps, Sequence) and not isinstance(timestamps, (str, bytes)):
+        for item in timestamps:
+            if not isinstance(item, Mapping):
+                continue
+            if item.get("start_sample") is not None and item.get("end_sample") is not None:
+                try:
+                    rate = int(item.get("sample_rate_hz") or 0)
+                except (TypeError, ValueError):
+                    rate = 0
+                if rate > 0:
+                    return rate
+            try:
+                rate = int(item.get("sample_rate_hz") or 0)
+            except (TypeError, ValueError):
+                rate = 0
+            if rate > 0:
+                return rate
+    return DEFAULT_ALIGNER_SAMPLE_RATE_HZ
 
 
 def _as_int_pair(start: Any, end: Any) -> tuple[int | None, int | None]:

@@ -475,10 +475,9 @@ def resolve_visual_fallback(
             preserves_human_lock=True,
         )
 
-    if planned_render_type in {"I2V", "PARALLAX"}:
+    if planned_render_type == "I2V":
         for candidate in (
             VisualFallback.SIMPLER_MOTION.value,
-            VisualFallback.I2V_TO_MOTION_STILL.value,
             VisualFallback.I2V_TO_INFORMATION_GRAPHIC.value,
             VisualFallback.APPROVED_LOWER_RESOURCE_PROFILE.value,
         ):

@@ -79,7 +79,7 @@ def _beats(codes: tuple[str, ...], canonical: str) -> list[dict[str, object]]:
     return [
         {
             "code": code,
-            "render_type": "STILL_MOTION",
+            "render_type": "I2V",
             "visual_intent": f"{code} 的画面",
             "visual_factuality": "SYMBOLIC",
             "segment_canonical_ids": [canonical],
@@ -165,7 +165,7 @@ def test_legacy_unattributed_beats_are_read_only_explicitly(database: Database) 
                 "video_id": VIDEO_ID,
                 "code": "B900",
                 "ordinal": 0,
-                "render_type": "STILL_MOTION",
+                "render_type": "I2V",
                 "visual_intent": "旧分镜",
             },
         )

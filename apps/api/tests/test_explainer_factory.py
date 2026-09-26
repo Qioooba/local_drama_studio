@@ -615,7 +615,7 @@ def test_repairs_skip_human_locked_beats(database: Database) -> None:
         repository = ExplainerRepository(connection)
         locked = repository.insert(
             "explainer_visual_beats",
-            {"video_id": video["id"], "code": "B01", "ordinal": 0, "render_type": "STILL_MOTION", "locked_by_human": True},
+            {"video_id": video["id"], "code": "B01", "ordinal": 0, "render_type": "I2V", "locked_by_human": True},
         )
         free = repository.insert(
             "explainer_visual_beats",
@@ -766,7 +766,7 @@ def test_must_be_motion_never_degrades_to_a_still_image() -> None:
         beat_must_be_motion=True,
         beat_locked_by_human=False,
         planned_render_type="I2V",
-        allowed_fallbacks=("I2V_TO_MOTION_STILL",),
+        allowed_fallbacks=("I2V_TO_INFORMATION_GRAPHIC",),
         repair_budget_exhausted=True,
     )
     assert decision.allowed is False
@@ -777,7 +777,7 @@ def test_must_be_motion_never_degrades_to_a_still_image() -> None:
         beat_must_be_motion=False,
         beat_locked_by_human=True,
         planned_render_type="I2V",
-        allowed_fallbacks=("I2V_TO_MOTION_STILL",),
+        allowed_fallbacks=("I2V_TO_INFORMATION_GRAPHIC",),
         repair_budget_exhausted=True,
     )
     assert locked.allowed is False
@@ -1045,7 +1045,31 @@ def test_api_exposes_the_explainer_surface() -> None:
         ("/api/v2/explainers/{project_id}/beats", "get"),
         ("/api/v2/explainers/{project_id}/beats/{beat_id}/candidates", "get"),
         ("/api/v2/explainers/{project_id}/beats/{beat_id}/selections", "post"),
+        ("/api/v2/explainers/{project_id}/beats/{beat_id}/selections:unlock", "post"),
         ("/api/v2/explainers/{project_id}/beats/{beat_id}/impact", "get"),
+        # Per-object generation (design §D4/D7): the read-only plan, the real submit,
+        # and the same pair for entity reference images.
+        ("/api/v2/explainers/{project_id}/beats/{beat_id}/generations:plan", "post"),
+        ("/api/v2/explainers/{project_id}/beats/{beat_id}/generations", "post"),
+        ("/api/v2/explainers/{project_id}/assets/{entity_id}/reference-generations:plan", "post"),
+        ("/api/v2/explainers/{project_id}/assets/{entity_id}/reference-generations", "post"),
+        ("/api/v2/explainers/{project_id}/assets/{entity_id}/candidates", "get"),
+        ("/api/v2/explainers/{project_id}/assets/{entity_id}/references", "post"),
+        ("/api/v2/explainers/{project_id}/assets/{entity_id}/references:unlock", "post"),
+        # Original-fiction topic seeding and the deterministic reference-design prompt
+        # (§C4.4/§C4.5) are now part of the HTTP surface.
+        ("/api/v2/explainers/{project_id}/story-seed", "post"),
+        ("/api/v2/explainers/{project_id}/assets/{entity_id}/reference-design", "get"),
+        ("/api/v2/explainers/{project_id}/visual-preferences", "patch"),
+        ("/api/v2/explainers/{project_id}/readiness", "get"),
+        # Per-object commands a person performs on an existing object.
+        ("/api/v2/explainers/{project_id}/beats/{beat_id}", "patch"),
+        ("/api/v2/explainers/{project_id}/beats/{beat_id}/candidates:register", "post"),
+        ("/api/v2/explainers/{project_id}/beats/{beat_id}/candidates/{candidate_id}:archive", "post"),
+        ("/api/v2/explainer-editions/{edition_id}/narration/{take_id}:adopt", "post"),
+        # "Use the available results and continue" replaces the blocked collect job
+        # for the same workflow task (design §D5.1).
+        ("/api/v2/explainer-runs/{run_id}/collections/{step_binding_id}:continue", "post"),
         ("/api/v2/explainers/{project_id}/assets", "get"),
         ("/api/v2/explainers/{project_id}/editions", "get"),
         ("/api/v2/explainers/{project_id}/editions", "post"),

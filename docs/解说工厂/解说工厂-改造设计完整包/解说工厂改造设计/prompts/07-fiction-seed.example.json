@@ -1,0 +1,35 @@
+{
+  "schema_version": "localdrama.explainer.fiction-seed.v1",
+  "title": "夜航灯",
+  "premise": "一名年轻守灯员发现港口信号灯反复指向一艘早已停航的小船。",
+  "setting": "虚构的近代海港小镇；空间集中在灯塔、码头和旧船舱。",
+  "characters": [
+    {
+      "name": "林舟",
+      "role": "守灯员",
+      "appearance": "短发、深色旧外套，携带工作手电。",
+      "stable_traits": [
+        "谨慎",
+        "熟悉港口信号"
+      ],
+      "desire": "查明异常灯号来源"
+    }
+  ],
+  "story_steps": [
+    {
+      "summary": "林舟记录反复出现的异常灯号，并前往旧船核查。",
+      "character_indexes": [
+        0
+      ],
+      "location": "码头",
+      "cause": "灯号与港口当前航线不符",
+      "result": "他在旧船舱发现一台仍在运转的定时信号装置"
+    }
+  ],
+  "ending": "装置留下的是上一任守灯员未完成的告别信号，林舟在记录后关闭它。",
+  "continuity_constraints": [
+    "港口与人物均为虚构",
+    "林舟的外套和手电在本片保持一致"
+  ],
+  "scope_conflicts": []
+}

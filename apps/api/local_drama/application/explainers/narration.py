@@ -325,6 +325,185 @@ class ExplainerNarrationService:
             "chapters": written_chapters,
         }
 
+    # --------------------------------------------------------- preserved script
+    def register_preserved_script(
+        self,
+        *,
+        project_id: str,
+        video_id: str,
+        locale: str,
+        title: str,
+        script_source_text: str,
+        pronunciation_map: Sequence[Mapping[str, str]] = (),
+        freeze: bool = True,
+        actor: str = "local-user",
+        annotations: Mapping[str, Any] | None = None,
+        extra_provenance: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Deterministically register the user's own manuscript as a revision.
+
+        This is the precondition the preflight gate demands for
+        ``PRESERVE_ORIGINAL`` (audit A4/§B2.1): the finished script must exist
+        *before* planning can ask for it.  The body is sliced by the program, the
+        concatenation and SHA-256 are proven, and the exact text plus the
+        per-segment ``source_start/source_end/separator`` map are stored in the
+        revision's ``provenance_json`` — no new table is introduced (§C4.1).
+
+        A model may only add annotations: ``display_text``/``spoken_text`` stay
+        program-owned, and an annotation set that omits a segment, duplicates one
+        or rewrites the body is refused as a whole.
+        """
+
+        from local_drama.application.explainers import contracts_v2
+
+        self.repo.require_explainer_project(project_id)
+        video = self.repo.find("explainer_videos", video_id)
+        if video is None or str(video.get("project_id")) != project_id:
+            raise ExplainerContractError(
+                "NOT_FOUND", "解说作品不存在或不属于该项目", {"project_id": project_id, "video_id": video_id}
+            )
+        built = contracts_v2.build_preserved_segments(
+            script_source_text, pronunciation_map=pronunciation_map
+        )
+        validation = contracts_v2.validate_preserved_concatenation(
+            built["segments"],
+            script_source_text=built["script_source_text"],
+            leading_separator=str(built.get("leading_separator") or ""),
+        )
+        source_hash = str(built["script_source_hash"])
+
+        existing = self._preserved_revision_by_hash(video_id=video_id, script_source_hash=source_hash)
+        if existing is not None and annotations is None:
+            return {
+                "script_revision": existing,
+                "segments": self.repo.segments(str(existing["id"])),
+                "validation": {**validation, "reused": True},
+                "reused": True,
+                "script_source_hash": source_hash,
+                "frozen": str(existing.get("status")) == "FROZEN",
+            }
+
+        segments = [dict(item) for item in built["segments"]]
+        chapter_breaks: list[str] = []
+        if annotations is not None:
+            validated = contracts_v2.validate_contract("preserved-script-annotations.v1", annotations)
+            assert isinstance(validated, contracts_v2.PreservedScriptAnnotationsV1)
+            contracts_v2.assert_one_annotation_per_segment(
+                validated.annotations,
+                required_segment_ids=[item["canonical_segment_id"] for item in segments],
+            )
+            contracts_v2.assert_unverified_phrases_are_substrings(
+                validated.annotations,
+                segment_texts={item["canonical_segment_id"]: item["display_text"] for item in segments},
+            )
+            by_id = {item.canonical_segment_id: item for item in validated.annotations}
+            chapter_breaks = list(validated.chapter_break_before_segment_ids)
+            for segment in segments:
+                annotation = by_id[segment["canonical_segment_id"]]
+                segment["statement_type"] = annotation.statement_type.value
+                segment["claim_ids"] = list(annotation.claim_ids)
+                segment["entity_ids"] = list(annotation.entity_ids)
+                segment["pause_after_ms"] = int(annotation.pause_after_ms)
+                merged = list(segment["pronunciation_map"])
+                known = {pair["display"] for pair in merged}
+                for suggestion in annotation.pronunciation_suggestions:
+                    if suggestion.display in known:
+                        continue
+                    if suggestion.display not in segment["display_text"]:
+                        raise ExplainerContractError(
+                            "SCHEMA_INVALID",
+                            "读音建议的 display 必须是本段正文的实际片段",
+                            {
+                                "canonical_segment_id": segment["canonical_segment_id"],
+                                "display": suggestion.display,
+                            },
+                        )
+                    merged.append({"display": suggestion.display, "spoken": suggestion.spoken})
+                    known.add(suggestion.display)
+                segment["pronunciation_map"] = merged
+                segment["spoken_text"] = apply_pronunciation_map(segment["display_text"], merged)
+
+        chapter_codes: dict[str, str] = {}
+        for index, segment in enumerate(segments):
+            if index == 0 or segment["canonical_segment_id"] in chapter_breaks:
+                chapter_codes[segment["canonical_segment_id"]] = f"ch_{len(chapter_codes) + 1:03d}"
+            else:
+                chapter_codes[segment["canonical_segment_id"]] = f"ch_{max(1, len(chapter_codes)):03d}"
+        for segment in segments:
+            self._assert_span_equivalence(
+                display_text=segment["display_text"],
+                spoken_text=segment["spoken_text"],
+                pronunciation_map=segment["pronunciation_map"],
+                exact_body=built["script_source_text"][
+                    segment["source_start"] : segment["source_end"]
+                ],
+            )
+            segment["chapter_code"] = chapter_codes[segment["canonical_segment_id"]]
+
+        provenance = {
+            "script_policy": contracts_v2.ScriptPolicy.PRESERVE_ORIGINAL.value,
+            "preserved_original": True,
+            "script_source_text": built["script_source_text"],
+            "script_source_hash": source_hash,
+            "leading_separator": str(built.get("leading_separator") or ""),
+            "segment_spans": [
+                {
+                    "canonical_segment_id": item["canonical_segment_id"],
+                    "source_start": item["source_start"],
+                    "source_end": item["source_end"],
+                    "separator": item["separator"],
+                }
+                for item in segments
+            ],
+            "max_script_revisions": 0,
+            "length_expansion_requested": False,
+            "spoken_text_never_rewritten_by_normaliser": True,
+            "annotations_applied": annotations is not None,
+            **dict(extra_provenance or {}),
+        }
+        created = self.create_script_revision(
+            project_id=project_id,
+            video_id=video_id,
+            locale=locale,
+            title=title,
+            outline=[],
+            segments=segments,
+            status="DRAFT",
+            actor=actor,
+            provenance=provenance,
+        )
+        revision = created["script_revision"]
+        frozen = (
+            self.freeze_script(script_revision_id=str(revision["id"]), actor=actor) if freeze else None
+        )
+        return {
+            "script_revision": frozen["script_revision"] if frozen else revision,
+            "segments": created["segments"],
+            "validation": {**validation, "reused": False},
+            "reused": False,
+            "script_source_hash": source_hash,
+            "frozen": frozen is not None,
+        }
+
+    def _preserved_revision_by_hash(self, *, video_id: str, script_source_hash: str) -> dict[str, Any] | None:
+        """The already-registered preserved revision for exactly this manuscript."""
+
+        rows = self.repo.list_where(
+            "explainer_script_revisions",
+            {"video_id": video_id},
+            order_by="revision_no",
+            descending=True,
+        )
+        for row in rows:
+            provenance = row.get("provenance_json")
+            if not isinstance(provenance, Mapping):
+                continue
+            if not provenance.get("preserved_original"):
+                continue
+            if str(provenance.get("script_source_hash") or "") == script_source_hash:
+                return row
+        return None
+
     # ------------------------------------------------------------------ freeze
     @staticmethod
     def frozen_payload_for_repo(repo: ExplainerRepository, *, script_revision_id: str) -> dict[str, Any]:
@@ -718,6 +897,7 @@ class ExplainerNarrationService:
         actor: str,
         take_id: str | None = None,
         record: Mapping[str, Any] | None = None,
+        adoption_authority: str = "MACHINE_STAGE",
     ) -> dict[str, Any] | None:
         """Adopt one take of a segment, demoting its siblings in the same step.
 
@@ -727,6 +907,11 @@ class ExplainerNarrationService:
         the standalone TTS job family) is how a re-read could produce a take that
         nothing ever selected: alignment then refused the segment with
         ``NARRATION_TAKE_NOT_SELECTED`` (audit A03, design §5.2).
+
+        ``adoption_authority`` records *who* chose: a machine stage adopts the take it
+        just measured, while a person choosing between already generated takes
+        (design §B4 「已生成版本 → 采用此配音」) is recorded as ``HUMAN``.  Both are
+        real adoption records, never machine approvals on the human's behalf.
         """
 
         if take_id:
@@ -749,8 +934,6 @@ class ExplainerNarrationService:
             "UPDATE narration_takes SET selected=0 WHERE segment_id=? AND id<>?",
             (segment_id, str(row["id"])),
         )
-        # A machine stage adopts the take it just verified: this is not a human
-        # approval, and the record names the stage that did it.
         adopted = self.repo.update(
             "narration_takes",
             str(row["id"]),
@@ -759,7 +942,7 @@ class ExplainerNarrationService:
                 "status": "VERIFIED",
                 "generation_json": {
                     **dict(existing_generation or {}),
-                    "adoption_authority": "MACHINE_STAGE",
+                    "adoption_authority": str(adoption_authority),
                     "adopted_by": str(actor),
                     **dict(record or {}),
                 },
@@ -777,8 +960,33 @@ class ExplainerNarrationService:
         return int(row["current"] if row is not None else 0) + 1
 
     def _assert_span_equivalence(
-        self, *, display_text: str, spoken_text: str, pronunciation_map: Sequence[Mapping[str, str]]
+        self,
+        *,
+        display_text: str,
+        spoken_text: str,
+        pronunciation_map: Sequence[Mapping[str, str]],
+        exact_body: str | None = None,
     ) -> None:
+        """Prove ``spoken_text`` is the reading the map implies for ``display_text``.
+
+        ``exact_body`` is the preserved-script *exact* mode (§C4.1): the caller
+        passes the stored source slice, and the check becomes byte-for-byte.  It
+        is additive — the existing equivalence proof is unchanged and no caller
+        that omits it can be weakened by it.
+        """
+
+        if exact_body is not None and display_text != exact_body:
+            raise ExplainerContractError(
+                "SCHEMA_INVALID",
+                "保留模式的 display_text 必须与保存的原稿切片逐字符相同（不做裁剪、不改标点）",
+                {
+                    "exact_body_characters": len(exact_body),
+                    "display_text_characters": len(display_text),
+                    "exact_body_head": exact_body[:40],
+                    "display_text_head": display_text[:40],
+                    "preserved_mode": True,
+                },
+            )
         for pair in pronunciation_map:
             display = str(pair.get("display") or "")
             spoken = str(pair.get("spoken") or "")

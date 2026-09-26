@@ -205,6 +205,14 @@ class GpuRuntimeCoordinator:
             self.adapters.get(runtime).activate(activation_context)
             self._mark_ready(runtime, owner_ref)
             return
+        # The recorded residency does not name the target (it may be missing or
+        # stale after a failed job that deliberately kept its weights warm), so
+        # the target runtime can itself still be holding the device.  The gate
+        # below measures *device-wide* free memory and cannot tell that cache
+        # apart from a foreign process, so the target's own cached weights are
+        # released first.  Each adapter tolerates an unreachable service and
+        # still refuses while the runtime is genuinely busy.
+        self.adapters.get(runtime).release_cached_state()
         # Verify only after every old runtime has been evicted. Keeping this
         # gate inside the Comfy adapter made an Ollama -> llama.cpp switch
         # inspect VRAM before Ollama had been unloaded.

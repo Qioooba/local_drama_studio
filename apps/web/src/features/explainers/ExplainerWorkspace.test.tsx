@@ -11,9 +11,14 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, createMemoryRouter, RouterProvider, useLocation } from "react-router-dom";
+import { useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// The topbar runtime indicator polls health endpoints; it is not part of what
+// these tests measure and must not turn into background network traffic.
+vi.mock("../../features/status-v2/LocalRuntimeIndicator", () => ({ LocalRuntimeIndicator: () => null }));
 
 vi.mock("../../generated/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../generated/api")>();
@@ -34,12 +39,13 @@ vi.mock("../../generated/api", async (importOriginal) => {
 
 import * as api from "../../generated/api";
 import { ExplainerFactoryPage } from "./FactoryPage";
-import { ExplainerWorkspaceShell } from "./ExplainerWorkspaceShell";
+import { ExplainerOverviewRedirect, ExplainerWorkspaceShell } from "./ExplainerWorkspaceShell";
 import { ExplainerReviewPage } from "./ReviewPage";
 import { ExplainerAudioPage } from "./AudioPage";
 import { StateNotice, type PageState } from "./components";
-import { coverageRows, plannedVsActual, runStatusLabel, stepStatusLabel } from "./viewModels";
-import { parseRouteContext, routes } from "../../app/routeRegistry";
+import { coverageRows, isRetiredRenderType, plannedVsActual, renderTypeLabel, runStatusLabel, stepStatusLabel } from "./viewModels";
+import { isExplainerPage, isExplainerLegacyPage, parseRouteContext, routes } from "../../app/routeRegistry";
+import { AppShell } from "../../layouts/AppShell";
 
 const WORKSPACE = {
   project_id: "p1",
@@ -191,6 +197,113 @@ describe("explainer routing", () => {
   it("fails closed for an unknown explainer sub-page", () => {
     expect(parseRouteContext("/explainers/p1/episodes/e1/plan").routeId).toBeNull();
     expect(parseRouteContext("/explainers/p1/not-a-page").routeId).toBeNull();
+    expect(parseRouteContext("/explainers/p1/clips").routeId).toBe("explainerClips");
+  });
+
+  it("keeps the retired overview routable without making it a seventh step", async () => {
+    expect(parseRouteContext("/explainers/p1/overview")).toMatchObject({
+      routeId: "explainerOverview",
+      scope: "EXPLAINER",
+      projectId: "p1",
+      explainerPage: "overview",
+    });
+    expect(isExplainerPage("overview")).toBe(false);
+    expect(isExplainerLegacyPage("overview")).toBe(true);
+    expect(isExplainerPage("clips")).toBe(true);
+  });
+
+  it("redirects /overview to the first step needing attention and keeps the panel locator", async () => {
+    function LocationProbe() {
+      const location = useLocation();
+      return <p data-testid="explainer-location">{`${location.pathname}${location.search}`}</p>;
+    }
+    renderWithProviders(
+      <Routes>
+        <Route path="/explainers/:projectId" element={<ExplainerWorkspaceShell />}>
+          <Route path="overview" element={<ExplainerOverviewRedirect />} />
+          <Route path="script" element={<LocationProbe />} />
+        </Route>
+      </Routes>,
+      "/explainers/p1/overview?panel=progress",
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("explainer-location").textContent).toBe("/explainers/p1/script?panel=progress"),
+    );
+  });
+});
+
+describe("explainer subtree mount key (§B12.2)", () => {
+  it("does not remount the explainer page when an object locator changes", async () => {
+    let mounts = 0;
+    function MountProbe() {
+      useEffect(() => {
+        mounts += 1;
+      }, []);
+      return <p>mount-probe</p>;
+    }
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/explainers/:projectId",
+          element: <AppShell />,
+          children: [
+            {
+              element: <ExplainerWorkspaceShell />,
+              children: [
+                { path: "script", element: <MountProbe /> },
+                { path: "assets", element: <MountProbe /> },
+              ],
+            },
+          ],
+        },
+      ],
+      { initialEntries: ["/explainers/p1/script"] },
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByText("mount-probe")).toBeTruthy());
+    const initialMounts = mounts;
+
+    await act(async () => {
+      await router.navigate("/explainers/p1/script?beat=beat-9");
+    });
+    await waitFor(() => expect(screen.getByText("mount-probe")).toBeTruthy());
+    expect(mounts).toBe(initialMounts);
+
+    await act(async () => {
+      await router.navigate("/explainers/p1/script?panel=progress");
+    });
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "制作进度" })).toBeTruthy());
+    expect(mounts).toBe(initialMounts);
+
+    // A real step change is still a new page.
+    await act(async () => {
+      await router.navigate("/explainers/p1/assets");
+    });
+    await waitFor(() => expect(mounts).toBeGreaterThan(initialMounts));
+  });
+
+  it("keeps the sidebar free of production steps and of a second flow entry", async () => {
+    const router = createMemoryRouter(
+      [{ path: "/explainers/:projectId", element: <AppShell />, children: [{ element: <ExplainerWorkspaceShell />, children: [{ path: "script", element: <p>mount-probe</p> }] }] }],
+      { initialEntries: ["/explainers/p1/script"] },
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByText("mount-probe")).toBeTruthy());
+    const sidebar = document.getElementById("studio-sidebar-nav");
+    expect(sidebar?.textContent ?? "").toContain("解说工厂");
+    expect(sidebar?.textContent ?? "").toContain("全部项目");
+    expect(sidebar?.textContent ?? "").not.toContain("返回当前作品");
+    expect(sidebar?.textContent ?? "").not.toContain("视频片段");
   });
 });
 
@@ -205,31 +318,54 @@ describe("explainer factory page", () => {
 });
 
 describe("explainer workspace shell", () => {
-  it("renders the six pages", async () => {
+  it("renders the six documented steps and nothing about 总览与生产", async () => {
     renderWithProviders(
       <Routes>
         <Route path="/explainers/:projectId" element={<ExplainerWorkspaceShell />}>
-          <Route path="overview" element={<p>overview-body</p>} />
+          <Route path="script" element={<p>script-body</p>} />
         </Route>
       </Routes>,
+      "/explainers/p1/script",
     );
-    for (const label of ["总览与生产", "资料与解说稿", "人物与风格", "分镜与画面", "声音与字幕", "审片与导出"]) {
+    for (const label of ["内容与讲稿", "人物与风格", "配音", "分镜与画面", "视频片段", "预览与导出"]) {
       expect(screen.getByRole("link", { name: label })).toBeTruthy();
     }
-    await waitFor(() => expect(screen.getByText("overview-body")).toBeTruthy());
+    expect(screen.getByRole("link", { name: "视频片段" }).getAttribute("href")).toBe("/explainers/p1/clips");
+    // `overview` is no longer a seventh tab; its content lives in the drawer.
+    expect(screen.queryByRole("link", { name: "总览与生产" })).toBeNull();
+    await waitFor(() => expect(screen.getByText("script-body")).toBeTruthy());
   });
 
   it("never renders a season or episode context", async () => {
     renderWithProviders(
       <Routes>
         <Route path="/explainers/:projectId" element={<ExplainerWorkspaceShell />}>
-          <Route path="overview" element={<p>overview-body</p>} />
+          <Route path="script" element={<p>script-body</p>} />
         </Route>
       </Routes>,
+      "/explainers/p1/script",
     );
-    await waitFor(() => expect(screen.getByText("overview-body")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("script-body")).toBeTruthy());
     expect(screen.queryByText(/分集/)).toBeNull();
     expect(screen.queryByText(/整剧交付/)).toBeNull();
+  });
+
+  it("no longer prints the English eyebrow or the multi-badge row", async () => {
+    renderWithProviders(
+      <Routes>
+        <Route path="/explainers/:projectId" element={<ExplainerWorkspaceShell />}>
+          <Route path="script" element={<p>script-body</p>} />
+        </Route>
+      </Routes>,
+      "/explainers/p1/script",
+    );
+    await waitFor(() => expect(screen.getByText("script-body")).toBeTruthy());
+    expect(screen.queryByText("EXPLAINER WORKSPACE")).toBeNull();
+    expect(screen.queryByText("解说作品")).toBeNull();
+    expect(screen.queryByText("目标 5 分钟")).toBeNull();
+    // Row 3 keeps exactly one page heading and one line of explanation.
+    expect(screen.getByRole("heading", { name: "内容与讲稿" })).toBeTruthy();
+    expect(screen.getByText(/先确认这份讲稿/)).toBeTruthy();
   });
 });
 
@@ -403,12 +539,41 @@ describe("explainer audio page", () => {
 
 describe("explainer view models", () => {
   it("keeps planned and actual render types apart", () => {
-    expect(plannedVsActual({ render_type: "I2V" })).toEqual({ planned: "I2V", actual: null, degraded: false });
-    expect(plannedVsActual({ render_type: "I2V", render_type_actual: "STILL_MOTION" })).toEqual({
+    expect(plannedVsActual({ render_type: "I2V" })).toEqual({ planned: "I2V", actual: null, degraded: false, plannedIsRetired: false });
+    // A planned AI 动态 shot produced by real 图生视频 is not a degradation.
+    expect(plannedVsActual({ render_type: "I2V", render_type_actual: "I2V" })).toEqual({
       planned: "I2V",
-      actual: "STILL_MOTION",
-      degraded: true,
+      actual: "I2V",
+      degraded: false,
+      plannedIsRetired: false,
     });
+    // Anything that differs from the plan is still recorded as a degradation.
+    expect(plannedVsActual({ render_type: "I2V", render_type_actual: "INFOGRAPHIC" })).toEqual({
+      planned: "I2V",
+      actual: "INFOGRAPHIC",
+      degraded: true,
+      plannedIsRetired: false,
+    });
+    // A legacy row that still stores the removed 静图推拉 type is flagged as an
+    // outdated plan, not silently treated as a legal target.
+    expect(plannedVsActual({ render_type: "STILL_MOTION" })).toEqual({
+      planned: "STILL_MOTION",
+      actual: null,
+      degraded: false,
+      plannedIsRetired: true,
+    });
+  });
+
+  it("never labels a removed render type as a still-motion clip", () => {
+    expect(renderTypeLabel("I2V")).toBe("AI 动态（图生视频）");
+    expect(renderTypeLabel("INFOGRAPHIC")).toContain("图形动画");
+    expect(renderTypeLabel("LICENSED_MEDIA")).toContain("授权素材");
+    // 静图推拉 was removed: a stale value reads as a retired plan, never as a still label.
+    expect(renderTypeLabel("STILL_MOTION")).toBe("计划方式已停用");
+    expect(renderTypeLabel("PARALLAX")).toBe("计划方式已停用");
+    expect(renderTypeLabel("STILL_MOTION")).not.toContain("静图");
+    expect(isRetiredRenderType("IMAGE_MOTION")).toBe(true);
+    expect(isRetiredRenderType("I2V")).toBe(false);
   });
 
   it("labels run and step states in Chinese without inventing a state", () => {

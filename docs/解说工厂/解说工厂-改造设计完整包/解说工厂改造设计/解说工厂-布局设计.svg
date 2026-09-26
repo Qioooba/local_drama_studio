@@ -1,0 +1,440 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1000" viewBox="0 0 1440 1000">
+<title>解说工厂第4步布局设计示意，非运行截图</title>
+<defs><linearGradient id="night" x2="0" y2="1"><stop stop-color="#17283d"/><stop offset="1" stop-color="#254456"/></linearGradient></defs>
+<rect x="0" y="0" width="1440" height="1000" rx="0" fill="#0b0e15"/>
+<rect x="0" y="0" width="1440" height="83" rx="0" fill="#0b0e15"/>
+<path d="M0 82H1440" stroke="#242b3a"/>
+<rect x="32" y="21" width="40" height="40" rx="11" fill="#7656e8"/>
+<rect x="44" y="32" width="16" height="17" rx="1" fill="none" stroke="#fff"/>
+<path d="m49 36 7 5-7 5z" fill="#fff"/>
+<text x="87" y="39" fill="#f4f6fb" font-size="21" font-weight="700" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">雨夜灯塔</text>
+<rect x="193" y="24" width="69" height="22" rx="5" fill="#222a37"/>
+<text x="205" y="39" fill="#c1ccda" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">解说工厂</text>
+<text x="88" y="60" fill="#a3adbe" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">原创虚构  ·  横屏 16:9  ·  中文</text>
+<circle cx="826" cy="41" r="3" fill="#70dac1"/>
+<text x="837" y="46" fill="#a3adbe" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">修改已保存</text>
+<rect x="936" y="22" width="100" height="40" rx="7" fill="#181e2b" stroke="#354054"/>
+<text x="948" y="48" fill="#dbdeed" font-size="13" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">制作进度</text>
+<rect x="1052" y="22" width="167" height="40" rx="7" fill="#181e2b" stroke="#354054"/>
+<text x="1064" y="48" fill="#dbdeed" font-size="13" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">✦ 一键生成到预览</text>
+<text x="1250" y="34" fill="#bbb0d1" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">设计原型 · 示例数据</text>
+<text x="1250" y="54" fill="#9c94b5" font-size="10" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">不调用模型，不上传文件</text>
+<circle cx="60" cy="132" r="14" fill="#142e2a" stroke="#32695d"/>
+<text x="56" y="137" fill="#70dac1" font-size="13" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">1</text>
+<text x="84" y="127" fill="#f4f6fb" font-size="13" font-weight="650" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">内容与讲稿</text>
+<text x="84" y="147" fill="#8793a7" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">已完成</text>
+<circle cx="290" cy="132" r="14" fill="#142e2a" stroke="#32695d"/>
+<text x="286" y="137" fill="#70dac1" font-size="13" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">2</text>
+<text x="314" y="127" fill="#f4f6fb" font-size="13" font-weight="650" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">人物与风格</text>
+<text x="314" y="147" fill="#8793a7" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">已完成</text>
+<circle cx="520" cy="132" r="14" fill="#142e2a" stroke="#32695d"/>
+<text x="516" y="137" fill="#70dac1" font-size="13" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">3</text>
+<text x="544" y="127" fill="#f4f6fb" font-size="13" font-weight="650" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">配音</text>
+<text x="544" y="147" fill="#8793a7" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">已完成</text>
+<rect x="724" y="102" width="216" height="62" rx="10" fill="#211c35" stroke="#554279"/>
+<circle cx="750" cy="132" r="14" fill="#7656e8" stroke="#7656e8"/>
+<text x="746" y="137" fill="#fff" font-size="13" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">4</text>
+<text x="774" y="127" fill="#f4f6fb" font-size="13" font-weight="650" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">分镜与画面</text>
+<text x="774" y="147" fill="#beacef" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">正在编辑</text>
+<circle cx="980" cy="132" r="14" fill="#111620" stroke="#3b465a"/>
+<text x="976" y="137" fill="#bac5d6" font-size="13" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">5</text>
+<text x="1004" y="127" fill="#f4f6fb" font-size="13" font-weight="650" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">视频片段</text>
+<text x="1004" y="147" fill="#8793a7" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">可前往查看</text>
+<circle cx="1210" cy="132" r="14" fill="#111620" stroke="#3b465a"/>
+<text x="1206" y="137" fill="#bac5d6" font-size="13" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">6</text>
+<text x="1234" y="127" fill="#f4f6fb" font-size="13" font-weight="650" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">预览与导出</text>
+<text x="1234" y="147" fill="#8793a7" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">可前往查看</text>
+<text x="33" y="203" fill="#ad97ff" font-size="11" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">第 4 步 / 共 6 步</text>
+<text x="32" y="238" fill="#f4f6fb" font-size="27" font-weight="700" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">挑出你满意的画面</text>
+<text x="32" y="265" fill="#a3adbe" font-size="13" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">每个镜头都有对应的旁白、参考和候选；只改不满意的那一张。</text>
+<rect x="1174" y="218" width="229" height="26" rx="6" fill="#17372f"/>
+<text x="1187" y="236" fill="#70dac1" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">6 / 6 个镜头已有画面</text>
+<rect x="32" y="291" width="206" height="572" rx="10" fill="#10151e" stroke="#202736"/>
+<text x="48" y="318" fill="#8391a6" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">全部镜头</text>
+<text x="159" y="318" fill="#8391a6" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">6 个示例</text>
+<svg x="50" y="345" width="57" height="43" viewBox="0 0 480 270" preserveAspectRatio="xMidYMid slice">
+<rect x="0" y="0" width="480" height="300" rx="0" fill="url(#night)"/>
+<path d="M0 165q90-35 198-4t282-9v139H0z" fill="#244658"/><path d="m195 295 74-102 44-6 76 47 91-4v70z" fill="#202f3d"/><path d="M299 228 310 76h40l15 152z" fill="#647888"/><path d="M310 80h39l4-15-23-16-23 16z" fill="#283948"/><rect x="311" y="80" width="38" height="26" rx="2" fill="#e4bd77"/><path d="M319 130h14v20h-14zM316 180h16v20h-16z" fill="#1a2a39"/><path d="m311 89-260 37 23-58z" fill="#e4bd77" opacity=".12"/>
+<path d="m269 300 7-25 25-6-1-28 29-3" fill="none" stroke="#92a0a4" stroke-width="6"/><circle cx="224" cy="209" r="10" fill="#bfa289"/><path d="m214 220-10 39h37l-8-38z" fill="#315c7a"/><rect x="240" y="230" width="9" height="13" rx="2" fill="#e4bd77"/>
+<path d="m19 0-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m62 37-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m105 74-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m148 111-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m191 148-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m234 185-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m277 222-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m320 259-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m363 26-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m406 63-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m449 100-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m492 137-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m35 174-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m78 211-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m121 248-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m164 15-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m207 52-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m250 89-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m293 126-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m336 163-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m379 200-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m422 237-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m465 4-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m8 41-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m51 78-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m94 115-7 19" stroke="#adc4da" opacity=".14"/>
+</svg>
+<text x="117" y="363" fill="#f1f2f8" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">01 暴雨海岸</text>
+<text x="117" y="382" fill="#929fb3" font-size="10" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">00:00–00:08</text>
+<rect x="42" y="410" width="186" height="68" rx="7" fill="#251f37" stroke="#655081"/>
+<svg x="50" y="421" width="57" height="43" viewBox="0 0 480 270" preserveAspectRatio="xMidYMid slice">
+<rect x="0" y="0" width="480" height="300" rx="0" fill="url(#night)"/>
+<path d="M0 165q90-35 198-4t282-9v139H0z" fill="#244658"/><path d="m195 295 74-102 44-6 76 47 91-4v70z" fill="#202f3d"/><path d="M299 228 310 76h40l15 152z" fill="#647888"/><path d="M310 80h39l4-15-23-16-23 16z" fill="#283948"/><rect x="311" y="80" width="38" height="26" rx="2" fill="#e4bd77"/><path d="M319 130h14v20h-14zM316 180h16v20h-16z" fill="#1a2a39"/><path d="m311 89-260 37 23-58z" fill="#e4bd77" opacity=".12"/>
+<path d="m241 280 17-40 22-6 12-22 30-13" fill="none" stroke="#8291a4" stroke-width="6"/><circle cx="247" cy="208" r="10" fill="#bfa289"/><path d="m237 219-10 39h37l-8-38z" fill="#3a6078"/><rect x="263" y="229" width="9" height="13" rx="2" fill="#e4bd77"/>
+<path d="m38 0-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m81 37-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m124 74-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m167 111-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m210 148-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m253 185-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m296 222-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m339 259-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m382 26-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m425 63-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m468 100-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m11 137-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m54 174-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m97 211-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m140 248-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m183 15-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m226 52-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m269 89-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m312 126-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m355 163-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m398 200-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m441 237-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m484 4-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m27 41-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m70 78-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m113 115-7 19" stroke="#adc4da" opacity=".14"/>
+</svg>
+<text x="117" y="439" fill="#f1f2f8" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">02 林舟上山</text>
+<text x="117" y="458" fill="#929fb3" font-size="10" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">00:08–00:16</text>
+<svg x="50" y="497" width="57" height="43" viewBox="0 0 480 270" preserveAspectRatio="xMidYMid slice">
+<rect x="0" y="0" width="480" height="300" rx="0" fill="url(#night)"/>
+<path d="M0 165q90-35 198-4t282-9v139H0z" fill="#244658"/><path d="m195 295 74-102 44-6 76 47 91-4v70z" fill="#202f3d"/><path d="M299 228 310 76h40l15 152z" fill="#647888"/><path d="M310 80h39l4-15-23-16-23 16z" fill="#283948"/><rect x="311" y="80" width="38" height="26" rx="2" fill="#e4bd77"/><path d="M319 130h14v20h-14zM316 180h16v20h-16z" fill="#1a2a39"/><path d="m311 89-260 37 23-58z" fill="#e4bd77" opacity=".12"/>
+<path d="m269 300 7-25 25-6-1-28 29-3" fill="none" stroke="#92a0a4" stroke-width="6"/><circle cx="224" cy="209" r="10" fill="#bfa289"/><path d="m214 220-10 39h37l-8-38z" fill="#315c7a"/><rect x="240" y="230" width="9" height="13" rx="2" fill="#e4bd77"/>
+<path d="m57 0-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m100 37-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m143 74-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m186 111-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m229 148-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m272 185-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m315 222-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m358 259-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m401 26-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m444 63-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m487 100-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m30 137-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m73 174-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m116 211-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m159 248-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m202 15-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m245 52-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m288 89-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m331 126-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m374 163-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m417 200-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m460 237-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m3 4-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m46 41-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m89 78-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m132 115-7 19" stroke="#adc4da" opacity=".14"/>
+</svg>
+<text x="117" y="515" fill="#f1f2f8" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">03 塔门相逢</text>
+<text x="117" y="534" fill="#929fb3" font-size="10" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">00:16–00:24</text>
+<svg x="50" y="573" width="57" height="43" viewBox="0 0 480 270" preserveAspectRatio="xMidYMid slice">
+<rect x="0" y="0" width="480" height="300" rx="0" fill="url(#night)"/>
+<path d="M0 165q90-35 198-4t282-9v139H0z" fill="#244658"/><path d="m195 295 74-102 44-6 76 47 91-4v70z" fill="#202f3d"/><path d="M299 228 310 76h40l15 152z" fill="#647888"/><path d="M310 80h39l4-15-23-16-23 16z" fill="#283948"/><rect x="311" y="80" width="38" height="26" rx="2" fill="#e4bd77"/><path d="M319 130h14v20h-14zM316 180h16v20h-16z" fill="#1a2a39"/><path d="m311 89-260 37 23-58z" fill="#e4bd77" opacity=".12"/>
+<path d="m241 280 17-40 22-6 12-22 30-13" fill="none" stroke="#8291a4" stroke-width="6"/><circle cx="247" cy="208" r="10" fill="#bfa289"/><path d="m237 219-10 39h37l-8-38z" fill="#3a6078"/><rect x="263" y="229" width="9" height="13" rx="2" fill="#e4bd77"/>
+<path d="m76 0-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m119 37-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m162 74-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m205 111-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m248 148-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m291 185-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m334 222-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m377 259-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m420 26-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m463 63-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m6 100-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m49 137-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m92 174-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m135 211-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m178 248-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m221 15-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m264 52-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m307 89-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m350 126-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m393 163-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m436 200-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m479 237-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m22 4-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m65 41-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m108 78-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m151 115-7 19" stroke="#adc4da" opacity=".14"/>
+</svg>
+<text x="117" y="591" fill="#f1f2f8" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">04 信中往事</text>
+<text x="117" y="610" fill="#929fb3" font-size="10" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">00:24–00:32</text>
+<svg x="50" y="649" width="57" height="43" viewBox="0 0 480 270" preserveAspectRatio="xMidYMid slice">
+<rect x="0" y="0" width="480" height="300" rx="0" fill="url(#night)"/>
+<path d="M0 165q90-35 198-4t282-9v139H0z" fill="#244658"/><path d="m195 295 74-102 44-6 76 47 91-4v70z" fill="#202f3d"/><path d="M299 228 310 76h40l15 152z" fill="#647888"/><path d="M310 80h39l4-15-23-16-23 16z" fill="#283948"/><rect x="311" y="80" width="38" height="26" rx="2" fill="#e4bd77"/><path d="M319 130h14v20h-14zM316 180h16v20h-16z" fill="#1a2a39"/><path d="m311 89-260 37 23-58z" fill="#e4bd77" opacity=".12"/>
+<path d="m269 300 7-25 25-6-1-28 29-3" fill="none" stroke="#92a0a4" stroke-width="6"/><circle cx="224" cy="209" r="10" fill="#bfa289"/><path d="m214 220-10 39h37l-8-38z" fill="#315c7a"/><rect x="240" y="230" width="9" height="13" rx="2" fill="#e4bd77"/>
+<path d="m95 0-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m138 37-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m181 74-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m224 111-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m267 148-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m310 185-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m353 222-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m396 259-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m439 26-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m482 63-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m25 100-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m68 137-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m111 174-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m154 211-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m197 248-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m240 15-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m283 52-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m326 89-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m369 126-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m412 163-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m455 200-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m498 237-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m41 4-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m84 41-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m127 78-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m170 115-7 19" stroke="#adc4da" opacity=".14"/>
+</svg>
+<text x="117" y="667" fill="#f1f2f8" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">05 重新点灯</text>
+<text x="117" y="686" fill="#929fb3" font-size="10" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">00:32–00:40</text>
+<svg x="50" y="725" width="57" height="43" viewBox="0 0 480 270" preserveAspectRatio="xMidYMid slice">
+<rect x="0" y="0" width="480" height="300" rx="0" fill="url(#night)"/>
+<path d="M0 165q90-35 198-4t282-9v139H0z" fill="#244658"/><path d="m195 295 74-102 44-6 76 47 91-4v70z" fill="#202f3d"/><path d="M299 228 310 76h40l15 152z" fill="#647888"/><path d="M310 80h39l4-15-23-16-23 16z" fill="#283948"/><rect x="311" y="80" width="38" height="26" rx="2" fill="#e4bd77"/><path d="M319 130h14v20h-14zM316 180h16v20h-16z" fill="#1a2a39"/><path d="m311 89-260 37 23-58z" fill="#e4bd77" opacity=".12"/>
+<path d="m241 280 17-40 22-6 12-22 30-13" fill="none" stroke="#8291a4" stroke-width="6"/><circle cx="247" cy="208" r="10" fill="#bfa289"/><path d="m237 219-10 39h37l-8-38z" fill="#3a6078"/><rect x="263" y="229" width="9" height="13" rx="2" fill="#e4bd77"/>
+<path d="m114 0-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m157 37-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m200 74-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m243 111-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m286 148-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m329 185-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m372 222-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m415 259-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m458 26-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m1 63-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m44 100-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m87 137-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m130 174-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m173 211-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m216 248-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m259 15-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m302 52-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m345 89-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m388 126-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m431 163-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m474 200-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m17 237-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m60 4-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m103 41-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m146 78-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m189 115-7 19" stroke="#adc4da" opacity=".14"/>
+</svg>
+<text x="117" y="743" fill="#f1f2f8" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">06 海上回应</text>
+<text x="117" y="762" fill="#929fb3" font-size="10" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">00:40–00:48</text>
+<rect x="258" y="291" width="1146" height="572" rx="12" fill="#121620" stroke="#202736"/>
+<text x="283" y="325" fill="#f4f6fb" font-size="16" font-weight="650" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">镜头 02 · 林舟上山</text>
+<rect x="467" y="308" width="43" height="22" rx="4" fill="#232a38"/>
+<text x="478" y="323" fill="#c0cadb" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">8 秒</text>
+<text x="1314" y="325" fill="#beacff" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">编辑镜头</text>
+<svg x="282" y="348" width="510" height="288" viewBox="0 0 480 270" preserveAspectRatio="xMidYMid slice">
+<rect x="0" y="0" width="480" height="300" rx="0" fill="url(#night)"/>
+<path d="M0 165q90-35 198-4t282-9v139H0z" fill="#244658"/><path d="m195 295 74-102 44-6 76 47 91-4v70z" fill="#202f3d"/><path d="M299 228 310 76h40l15 152z" fill="#647888"/><path d="M310 80h39l4-15-23-16-23 16z" fill="#283948"/><rect x="311" y="80" width="38" height="26" rx="2" fill="#e4bd77"/><path d="M319 130h14v20h-14zM316 180h16v20h-16z" fill="#1a2a39"/><path d="m311 89-260 37 23-58z" fill="#e4bd77" opacity=".12"/>
+<path d="m241 280 17-40 22-6 12-22 30-13" fill="none" stroke="#8291a4" stroke-width="6"/><circle cx="247" cy="208" r="10" fill="#bfa289"/><path d="m237 219-10 39h37l-8-38z" fill="#3a6078"/><rect x="263" y="229" width="9" height="13" rx="2" fill="#e4bd77"/>
+<path d="m38 0-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m81 37-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m124 74-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m167 111-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m210 148-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m253 185-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m296 222-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m339 259-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m382 26-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m425 63-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m468 100-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m11 137-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m54 174-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m97 211-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m140 248-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m183 15-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m226 52-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m269 89-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m312 126-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m355 163-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m398 200-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m441 237-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m484 4-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m27 41-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m70 78-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m113 115-7 19" stroke="#adc4da" opacity=".14"/>
+</svg>
+<rect x="291" y="609" width="146" height="18" rx="4" fill="#10151ccd"/>
+<text x="298" y="622" fill="#dadde7" font-size="10" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">图形占位 · 非生成结果</text>
+<text x="282" y="661" fill="#c5b2f8" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">正在预览 · 候选 2</text>
+<rect x="642" y="645" width="68" height="34" rx="7" fill="#181e2b" stroke="#354054"/>
+<text x="654" y="667" fill="#dbdeed" font-size="12" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">采用</text>
+<rect x="718" y="645" width="73" height="34" rx="7" fill="#181e2b" stroke="#354054"/>
+<text x="730" y="667" fill="#dbdeed" font-size="12" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">锁定</text>
+<text x="818" y="365" fill="#c6cfdb" font-size="12" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">对应旁白</text>
+<path d="M820 384L820 436" stroke="#715598"/>
+<text x="834" y="405" fill="#d4dbe7" font-size="15" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">“林舟沿着石阶往上跑，怀里护着</text>
+<text x="834" y="431" fill="#d4dbe7" font-size="15" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">一盏旧煤油灯。”</text>
+<text x="818" y="470" fill="#a6b3c7" font-size="11" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">画面内容</text>
+<text x="818" y="495" fill="#adbbcd" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">中景，林舟身穿深蓝雨衣，双手护着旧煤油灯，</text>
+<text x="818" y="516" fill="#adbbcd" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">沿潮湿石阶走向灯塔。人物外观沿用主参考。</text>
+<text x="818" y="548" fill="#a6b3c7" font-size="11" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">使用的参考</text>
+<rect x="818" y="560" width="58" height="25" rx="5" fill="#182031" stroke="#33415a"/>
+<text x="829" y="578" fill="#b3c7e2" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">林舟</text>
+<rect x="884" y="560" width="88" height="25" rx="5" fill="#182031" stroke="#33415a"/>
+<text x="895" y="578" fill="#b3c7e2" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">旧煤油灯</text>
+<rect x="980" y="560" width="88" height="25" rx="5" fill="#182031" stroke="#33415a"/>
+<text x="991" y="578" fill="#b3c7e2" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">山间石阶</text>
+<path d="M818 609H1378" stroke="#293142"/>
+<text x="818" y="635" fill="#a8b4c7" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">›  提示词与生成设置</text>
+<path d="M282 698H1380" stroke="#293142"/>
+<text x="282" y="729" fill="#f4f6fb" font-size="14" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">画面候选</text>
+<text x="365" y="729" fill="#9daac0" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">3 张 · 历史保留</text>
+<rect x="1006" y="708" width="92" height="34" rx="7" fill="#181e2b" stroke="#354054"/>
+<text x="1018" y="730" fill="#dbdeed" font-size="12" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">并排比较</text>
+<rect x="1107" y="708" width="83" height="34" rx="7" fill="#181e2b" stroke="#354054"/>
+<text x="1119" y="730" fill="#dbdeed" font-size="12" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">本次 1 张</text>
+<rect x="1199" y="708" width="97" height="34" rx="7" fill="#181e2b" stroke="#354054"/>
+<text x="1211" y="730" fill="#dbdeed" font-size="12" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">再抽一组</text>
+<rect x="1305" y="708" width="75" height="34" rx="7" fill="#181e2b" stroke="#354054"/>
+<text x="1317" y="730" fill="#dbdeed" font-size="12" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">上传</text>
+<rect x="283" y="753" width="175" height="92" rx="7" fill="#101720" stroke="#30394b"/>
+<svg x="284" y="754" width="173" height="62" viewBox="0 0 480 270" preserveAspectRatio="xMidYMid slice">
+<rect x="0" y="0" width="480" height="300" rx="0" fill="url(#night)"/>
+<path d="M0 165q90-35 198-4t282-9v139H0z" fill="#244658"/><path d="m195 295 74-102 44-6 76 47 91-4v70z" fill="#202f3d"/><path d="M299 228 310 76h40l15 152z" fill="#647888"/><path d="M310 80h39l4-15-23-16-23 16z" fill="#283948"/><rect x="311" y="80" width="38" height="26" rx="2" fill="#e4bd77"/><path d="M319 130h14v20h-14zM316 180h16v20h-16z" fill="#1a2a39"/><path d="m311 89-260 37 23-58z" fill="#e4bd77" opacity=".12"/>
+<path d="m269 300 7-25 25-6-1-28 29-3" fill="none" stroke="#92a0a4" stroke-width="6"/><circle cx="224" cy="209" r="10" fill="#bfa289"/><path d="m214 220-10 39h37l-8-38z" fill="#315c7a"/><rect x="240" y="230" width="9" height="13" rx="2" fill="#e4bd77"/>
+<path d="m19 0-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m62 37-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m105 74-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m148 111-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m191 148-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m234 185-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m277 222-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m320 259-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m363 26-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m406 63-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m449 100-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m492 137-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m35 174-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m78 211-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m121 248-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m164 15-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m207 52-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m250 89-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m293 126-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m336 163-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m379 200-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m422 237-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m465 4-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m8 41-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m51 78-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m94 115-7 19" stroke="#adc4da" opacity=".14"/>
+</svg>
+<text x="293" y="835" fill="#d6deeb" font-size="10" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">候选 1</text>
+<rect x="390" y="822" width="57" height="17" rx="4" fill="#17372f"/>
+<text x="397" y="834" fill="#70dac1" font-size="9" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">已采用</text>
+<rect x="473" y="753" width="175" height="92" rx="7" fill="#101720" stroke="#9277ff"/>
+<svg x="474" y="754" width="173" height="62" viewBox="0 0 480 270" preserveAspectRatio="xMidYMid slice">
+<rect x="0" y="0" width="480" height="300" rx="0" fill="url(#night)"/>
+<path d="M0 165q90-35 198-4t282-9v139H0z" fill="#244658"/><path d="m195 295 74-102 44-6 76 47 91-4v70z" fill="#202f3d"/><path d="M299 228 310 76h40l15 152z" fill="#647888"/><path d="M310 80h39l4-15-23-16-23 16z" fill="#283948"/><rect x="311" y="80" width="38" height="26" rx="2" fill="#e4bd77"/><path d="M319 130h14v20h-14zM316 180h16v20h-16z" fill="#1a2a39"/><path d="m311 89-260 37 23-58z" fill="#e4bd77" opacity=".12"/>
+<path d="m241 280 17-40 22-6 12-22 30-13" fill="none" stroke="#8291a4" stroke-width="6"/><circle cx="247" cy="208" r="10" fill="#bfa289"/><path d="m237 219-10 39h37l-8-38z" fill="#3a6078"/><rect x="263" y="229" width="9" height="13" rx="2" fill="#e4bd77"/>
+<path d="m38 0-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m81 37-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m124 74-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m167 111-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m210 148-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m253 185-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m296 222-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m339 259-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m382 26-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m425 63-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m468 100-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m11 137-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m54 174-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m97 211-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m140 248-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m183 15-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m226 52-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m269 89-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m312 126-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m355 163-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m398 200-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m441 237-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m484 4-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m27 41-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m70 78-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m113 115-7 19" stroke="#adc4da" opacity=".14"/>
+</svg>
+<text x="483" y="835" fill="#d6deeb" font-size="10" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">候选 2</text>
+<rect x="580" y="822" width="57" height="17" rx="4" fill="#25203d"/>
+<text x="587" y="834" fill="#c5b6ff" font-size="9" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">预览中</text>
+<rect x="663" y="753" width="175" height="92" rx="7" fill="#101720" stroke="#30394b"/>
+<svg x="664" y="754" width="173" height="62" viewBox="0 0 480 270" preserveAspectRatio="xMidYMid slice">
+<rect x="0" y="0" width="480" height="300" rx="0" fill="url(#night)"/>
+<path d="M0 165q90-35 198-4t282-9v139H0z" fill="#244658"/><path d="m195 295 74-102 44-6 76 47 91-4v70z" fill="#202f3d"/><path d="M299 228 310 76h40l15 152z" fill="#647888"/><path d="M310 80h39l4-15-23-16-23 16z" fill="#283948"/><rect x="311" y="80" width="38" height="26" rx="2" fill="#e4bd77"/><path d="M319 130h14v20h-14zM316 180h16v20h-16z" fill="#1a2a39"/><path d="m311 89-260 37 23-58z" fill="#e4bd77" opacity=".12"/>
+<path d="m269 300 7-25 25-6-1-28 29-3" fill="none" stroke="#92a0a4" stroke-width="6"/><circle cx="224" cy="209" r="10" fill="#bfa289"/><path d="m214 220-10 39h37l-8-38z" fill="#315c7a"/><rect x="240" y="230" width="9" height="13" rx="2" fill="#e4bd77"/>
+<path d="m57 0-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m100 37-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m143 74-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m186 111-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m229 148-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m272 185-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m315 222-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m358 259-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m401 26-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m444 63-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m487 100-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m30 137-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m73 174-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m116 211-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m159 248-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m202 15-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m245 52-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m288 89-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m331 126-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m374 163-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m417 200-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m460 237-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m3 4-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m46 41-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m89 78-7 19" stroke="#adc4da" opacity=".14"/>
+<path d="m132 115-7 19" stroke="#adc4da" opacity=".14"/>
+</svg>
+<text x="673" y="835" fill="#d6deeb" font-size="10" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">候选 3</text>
+<rect x="853" y="753" width="175" height="92" rx="7" fill="#10141e" stroke="#3d495f"/>
+<text x="931" y="790" fill="#a6b4cc" font-size="25" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">+</text>
+<text x="911" y="818" fill="#9dacc3" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">追加候选</text>
+<text x="282" y="891" fill="#8291a8" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">候选点选只预览。采用新图会保留旧图，并提示更新这个镜头的视频。</text>
+<rect x="0" y="920" width="1440" height="80" rx="0" fill="#0d111a"/>
+<path d="M0 920H1440" stroke="#2a3041"/>
+<rect x="32" y="939" width="103" height="40" rx="7" fill="#181e2b" stroke="#354054"/>
+<text x="44" y="965" fill="#dbdeed" font-size="13" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">← 上一步</text>
+<text x="540" y="963" fill="#a3adbe" font-size="12" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">0 个镜头已锁定 · 新候选保留历史</text>
+<rect x="1187" y="936" width="216" height="40" rx="7" fill="#7656e8" stroke="#8a6fec"/>
+<text x="1199" y="962" fill="#fff" font-size="13" font-weight="600" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">下一步：视频片段 →</text>
+<rect x="990" y="876" width="413" height="26" rx="5" fill="#191b25" stroke="#343443"/>
+<text x="1002" y="894" fill="#aaa1bf" font-size="11" font-weight="400" font-family="Microsoft YaHei,Noto Sans CJK SC,Arial,sans-serif">布局设计示意 · 非当前应用截图 · 未浏览器实测</text>
+</svg>

@@ -39,6 +39,27 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _reconcile_explainer_candidates(database: Database, settings: Settings) -> dict[str, Any]:
+    """Re-project finished explainer candidate jobs onto their reserved rows.
+
+    The completion callback in ``LocalMediaWorker`` is the primary path, but a crash,
+    a restart or a dropped callback must not leave a candidate stuck in
+    ``GENERATING`` forever.  This pass is idempotent and only reads job state plus
+    verified artifacts, so running it at startup and on the periodic maintenance tick
+    is safe (design §D6).  Any failure is reported instead of aborting the worker.
+    """
+
+    try:
+        from local_drama.application.explainers.visual_generation_completion import (
+            build_explainer_visual_completion_service,
+        )
+
+        service = build_explainer_visual_completion_service(database, settings)
+        return service.reconcile_pending()
+    except Exception as error:  # a reconcile failure must never stop the worker
+        return {"scanned": 0, "finalized": 0, "failed": 0, "still_pending": 0, "error": type(error).__name__}
+
+
 class WorkerSessionService:
     """Owns session truth independently of an API process or browser window."""
 
@@ -487,6 +508,7 @@ class WorkerSupervisor:
             "storage_operations": StorageOperationService(self.database, self.settings).reconcile(),
             "episode_runs": episode_runs.watchdog(stale_seconds=0, actor="worker-startup-watchdog"),
             "production_sessions": production_sessions.reconcile_active(actor="worker-startup-reconcile"),
+            "explainer_candidates": _reconcile_explainer_candidates(self.database, self.settings),
         }
         session = self.sessions.start_session(
             worker_id,
@@ -513,6 +535,7 @@ class WorkerSupervisor:
         last_episode_watchdog_at = time.monotonic()
         last_episode_watchdog = startup_reconcile["episode_runs"]
         last_production_session_reconcile = startup_reconcile["production_sessions"]
+        last_explainer_candidate_reconcile = startup_reconcile["explainer_candidates"]
         last_provider_reconcile = provider_reconcile
         # 解说工厂定时生产驻留在本机 Worker 内：不是浏览器计时器，也不是外部提醒
         # 服务。它只领取触发点并交给既有 automation workflow 执行。
@@ -582,6 +605,13 @@ class WorkerSupervisor:
                         last_episode_watchdog = episode_runs.watchdog()
                         last_production_session_reconcile = production_sessions.reconcile_active(
                             actor="worker-periodic-reconcile"
+                        )
+                        # A lost completion callback must self-heal: the periodic
+                        # maintenance pass re-projects finished explainer candidate
+                        # jobs onto their reserved rows while the worker keeps running,
+                        # not only at startup (design §D6).
+                        last_explainer_candidate_reconcile = _reconcile_explainer_candidates(
+                            self.database, self.settings
                         )
                         last_episode_watchdog_at = now_monotonic
                     if now_monotonic - last_explainer_schedule_tick_at >= 30.0:
@@ -663,6 +693,7 @@ class WorkerSupervisor:
                     "production_sessions": last_production_session_reconcile,
                     "provider_successes": last_provider_reconcile,
                     "explainer_schedules": last_explainer_schedule_tick,
+                    "explainer_candidates": last_explainer_candidate_reconcile,
                 },
             }
         except Exception:

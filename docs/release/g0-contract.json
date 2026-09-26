@@ -97,7 +97,7 @@
   ],
   "migration_heads": {
     "source": "docs/release/migration-contract.json",
-    "expected_heads": ["0104_pipeline_apply_watermark"]
+    "expected_heads": ["0109_explainer_subtitle_build_stage"]
   },
   "quality_gates": [
     {

@@ -67,26 +67,34 @@ from local_drama.domain.explainers.policies import (
 )
 from local_drama.infrastructure.database.explainer_repository import ExplainerRepository
 
-#: Starting channel mix guideline (~60% still-motion / 30% short video /
-#: 10% infographic).  It is a preset that the channel may adjust: it is never a
-#: template lock, and LICENSED_MEDIA is reported outside the guideline.
-DEFAULT_CHANNEL_MIX: dict[str, float] = {"still_motion": 0.6, "i2v": 0.3, "infographic": 0.1}
+#: Starting channel mix guideline.  A 解说 film is an AI 图生视频 product, so the
+#: guideline is overwhelmingly I2V; the graphic and licensed-material families stay
+#: their own categories and are never merged into a still-picture substitute for a
+#: moving shot.  It is a preset that the channel may adjust: it is never a template
+#: lock, and LICENSED_MEDIA is reported outside the guideline.
+DEFAULT_CHANNEL_MIX: dict[str, float] = {"i2v": 0.9, "infographic": 0.1}
 
-#: Preset family -> render types that satisfy it.
+#: Preset family -> render types that satisfy it.  The retired ``still_motion``
+#: family (``STILL_MOTION`` / ``PARALLAX``) is gone with the deterministic
+#: push/pull picture path it described.
 MIX_FAMILIES: dict[str, tuple[str, ...]] = {
-    "still_motion": (RenderType.STILL_MOTION.value, RenderType.PARALLAX.value),
     "i2v": (RenderType.I2V.value,),
     "infographic": (RenderType.INFOGRAPHIC.value,),
     "licensed_media": (RenderType.LICENSED_MEDIA.value,),
 }
 
-#: Render types that cannot carry motion at all.
-STILL_RENDER_TYPES: frozenset[str] = frozenset(
-    {RenderType.STILL_MOTION.value, RenderType.INFOGRAPHIC.value}
-)
+#: Render types that cannot carry motion at all.  A beat that must really move may
+#: never be planned or degraded onto one of these.
+STILL_RENDER_TYPES: frozenset[str] = frozenset({RenderType.INFOGRAPHIC.value})
 #: Render types that can produce a distinct end frame.
 MOTION_CAPABLE_RENDER_TYPES: frozenset[str] = frozenset(
-    {RenderType.I2V.value, RenderType.PARALLAX.value, RenderType.LICENSED_MEDIA.value}
+    {RenderType.I2V.value, RenderType.LICENSED_MEDIA.value}
+)
+#: Render types that represent a produced, composable clip.  A retired still-motion
+#: row is deliberately absent: it is history, not a clip, so it must not make a beat
+#: look as though its picture work were already delivered.
+PRODUCED_CLIP_RENDER_TYPES: frozenset[str] = frozenset(
+    {RenderType.I2V.value, RenderType.INFOGRAPHIC.value, RenderType.LICENSED_MEDIA.value}
 )
 
 #: Reference policies a beat may declare.  There is no DB/domain enum for this
@@ -103,8 +111,12 @@ REFERENCE_POLICIES: frozenset[str] = frozenset(
 )
 
 CANDIDATE_KINDS: frozenset[str] = frozenset({"CREATIVE", "TECHNICAL_RETRY"})
+#: ``KEYFRAME`` separates the adopted first frame from the final composable clip
+#: (design §D2.2 item 6): candidates already carried a ``purpose`` string, and this
+#: is the one value the application whitelist was missing.  Existing ``VISUAL`` rows
+#: are unchanged.
 CANDIDATE_PURPOSES: frozenset[str] = frozenset(
-    {"VISUAL", "REFERENCE", "COMPOSITION", "INFOGRAPHIC_LAYER", "LICENSED_MEDIA"}
+    {"VISUAL", "KEYFRAME", "REFERENCE", "COMPOSITION", "INFOGRAPHIC_LAYER", "LICENSED_MEDIA"}
 )
 
 #: The five revisions every beat is expected to reference (design: identity pack,
@@ -933,7 +945,7 @@ class ExplainerStoryboardService:
         if abs(total - 1.0) > 1e-6:
             raise ExplainerContractError(
                 "SCHEMA_INVALID",
-                "still_motion / i2v / infographic 三个比例之和必须为 1",
+                "i2v / infographic 两个比例之和必须为 1",
                 {"preset": guided, "sum": round(total, 9)},
             )
         return resolved, "CALLER_PRESET"
@@ -1410,12 +1422,19 @@ class ExplainerStoryboardService:
         budget: Budget | Mapping[str, Any] | None = None,
         step_code: str = DEFAULT_STORYBOARD_STEP_CODE,
         key_identity: bool | None = None,
+        qc_summary: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Register one candidate variant and enforce the separate budgets.
 
         Technical retries and creative repairs each get their own counter and
         their own authorization; when either is exhausted this raises
         ``BUDGET_EXCEEDED`` so the caller stops instead of drawing again.
+
+        ``qc_summary`` lets a producer add the facts it *actually measured* at
+        registration time (a worker that produced a real file knows the file exists
+        and its duration).  It is merged **under** the fields this method measures
+        itself, so a caller can never claim a check it did not run and can never
+        overwrite the motion/integrity facts computed here.
         """
 
         kind = _require_member(str(candidate_kind), CANDIDATE_KINDS, field="candidate_kind")
@@ -1435,9 +1454,20 @@ class ExplainerStoryboardService:
                 {"beat_id": beat_id, "video_id": video_id, "beat_video_id": beat["video_id"]},
             )
         render_type_planned = str(beat["render_type"])
-        actual = str(render_type_actual) if render_type_actual else render_type_planned
-        _require_member(actual, (item.value for item in RenderType), field="render_type_actual", beat_id=beat_id)
-        degraded = actual != render_type_planned
+        # A KEYFRAME / REFERENCE candidate is a *picture*, not a rendered clip, so it
+        # declares no actual render type at all: only a real composable clip has one.
+        # The old fallback copied the beat's planned type onto every candidate, which
+        # made a reference or a first frame claim the plan's I2V as if a video model
+        # had produced it.
+        if render_type_actual:
+            actual: str | None = str(render_type_actual)
+        elif str(purpose) == "VISUAL":
+            actual = render_type_planned
+        else:
+            actual = None
+        if actual is not None:
+            _require_member(actual, (item.value for item in RenderType), field="render_type_actual", beat_id=beat_id)
+        degraded = actual is not None and actual != render_type_planned
         if degraded and not str(fallback_reason or "").strip():
             raise ExplainerContractError(
                 "SCHEMA_INVALID",
@@ -1459,6 +1489,25 @@ class ExplainerStoryboardService:
             "explainer_media_candidates", {"beat_id": beat_id, "candidate_kind": "TECHNICAL_RETRY"}
         )
         creative_repairs_before = max(0, len(creative_rows) - initial_allowance)
+        # The *first* candidate of a given purpose is a delivery, not a repair.  A beat
+        # needs both a first frame (``KEYFRAME``) and a composable clip (``VISUAL``),
+        # and they are produced by different models in two separate steps; counting the
+        # second one as a redraw of the first made a legitimately generated clip
+        # unregistrable — the GPU work was finished and then discarded with
+        # ``BUDGET_EXCEEDED`` because three candidate rows already existed for that
+        # beat.  Only a *second* candidate for the same purpose is a creative repair.
+        existing_same_purpose = [
+            item
+            for item in creative_rows
+            if str(item.get("purpose") or "VISUAL") == str(purpose)
+            and (
+                str(purpose) != "VISUAL"
+                # A picture candidate is a delivered first frame whatever its render
+                # type; a VISUAL candidate only counts once it is a real clip.
+                or str(item.get("render_type_actual") or "") in PRODUCED_CLIP_RENDER_TYPES
+            )
+        ]
+        is_first_delivery = kind == "CREATIVE" and not existing_same_purpose
         # Technical retries are counted per (step, beat): one busy beat may not
         # consume the whole step's retry budget, but it also may not exceed it.
         retry_ledger_key = f"{step_code}:{beat_id}"
@@ -1469,7 +1518,7 @@ class ExplainerStoryboardService:
         )
         if kind == "TECHNICAL_RETRY":
             ledger.check_technical_retry(retry_ledger_key)
-        else:
+        elif not is_first_delivery:
             ledger.check_creative_repair(beat_id)
 
         variant_row = self.repo.query_one(
@@ -1482,11 +1531,27 @@ class ExplainerStoryboardService:
         variant_no = int((variant_row["max_variant"] if variant_row else 0) or 0) + 1
         technical_retry_count = len(technical_rows) + 1 if kind == "TECHNICAL_RETRY" else 0
         creative_repair_count = creative_repairs_before + 1 if kind == "CREATIVE" else 0
-        if kind == "CREATIVE" and len(creative_rows) < initial_allowance:
-            # Initial candidates are not repairs.
+        if kind == "CREATIVE" and (len(creative_rows) < initial_allowance or is_first_delivery):
+            # Initial candidates, and the first delivery of any purpose, are not repairs.
             creative_repair_count = 0
 
         must_be_motion_violated = bool(beat["must_be_motion"]) and actual in STILL_RENDER_TYPES
+        if must_be_motion_violated and str(purpose) == "VISUAL":
+            # A still is a perfectly good KEYFRAME (it is the input an I2V job needs),
+            # but it can never be the final composable clip of a beat the plan marked as
+            # requiring motion (design §B5.2/§B6.2).  Refusing here keeps every producer
+            # — the worker stage, an upload, a re-draw — under the same rule instead of
+            # only the HTTP registration route.
+            raise ExplainerContractError(
+                "QC_BLOCKED",
+                "必须运动的画面段不能登记静图作为最终片段；请登记为首帧候选并生成 AI 动态片段",
+                {
+                    "beat_id": beat_id,
+                    "purpose": str(purpose),
+                    "render_type_actual": actual,
+                    "must_be_motion": True,
+                },
+            )
         row = self.repo.insert(
             "explainer_media_candidates",
             {
@@ -1507,6 +1572,9 @@ class ExplainerStoryboardService:
                 "technical_retry_count": technical_retry_count,
                 "creative_repair_count": creative_repair_count,
                 "qc_summary_json": {
+                    # Measured facts first, caller-supplied facts second: this method's
+                    # own measurements always win.
+                    **(dict(qc_summary) if isinstance(qc_summary, Mapping) else {}),
                     "must_be_motion_violated": must_be_motion_violated,
                     "media_integrity_status": str(media.get("integrity_status") or ""),
                     "checked_here": "REGISTRATION_ONLY",
@@ -1811,17 +1879,30 @@ class ExplainerStoryboardService:
         authority: str = "MACHINE_POLICY",
         actor: str | None = None,
         policy_decision_id: str | None = None,
+        purpose: str = "VISUAL",
+        expected_selection_id: str | None = None,
+        expected_revision: int | None = None,
     ) -> dict[str, Any]:
         """Adopt one candidate as the ACTIVE selection without deleting history.
 
-        Refuses to overwrite a human-locked beat unless ``authority="HUMAN"`` and
-        refuses to adopt a still-image candidate for a ``must_be_motion`` beat.
+        Refuses to overwrite a human-locked scope unless ``authority="HUMAN"`` and
+        refuses to adopt a still-image candidate as the final clip of a
+        ``must_be_motion`` beat.
+
+        ``purpose`` separates the three layers the design requires (spec §D2.2):
+        ``REFERENCE`` (定妆参考), ``KEYFRAME`` (the adopted first frame) and
+        ``VISUAL`` (the final composable clip).  Each purpose owns its own ACTIVE
+        row per edition, so adopting a new first frame can no longer silently
+        replace an adopted clip, and the ``must_be_motion`` gate applies only to the
+        final ``VISUAL`` selection — a still candidate is exactly what an I2V job
+        needs as its输入首帧.
         """
 
         self.repo.require_explainer_project(project_id)
         authority_value = _require_member(
             str(authority), ("MACHINE_POLICY", "HUMAN"), field="adoption_authority"
         )
+        purpose_value = _require_member(str(purpose), CANDIDATE_PURPOSES, field="purpose")
         if authority_value == "HUMAN" and not str(actor or "").strip():
             raise ExplainerContractError(
                 "SCHEMA_INVALID", "HUMAN 采用必须记录真实操作者", {"beat_id": beat_id}
@@ -1840,6 +1921,22 @@ class ExplainerStoryboardService:
                 "候选不属于该画面段或该解说作品",
                 {"candidate_id": candidate_id, "beat_id": beat_id, "video_id": video_id},
             )
+        if str(candidate.get("purpose") or "VISUAL") != purpose_value:
+            raise ExplainerContractError(
+                "INVALID_REQUEST",
+                "候选的用途与本次采用的目标不一致",
+                {
+                    "candidate_id": candidate_id,
+                    "candidate_purpose": str(candidate.get("purpose") or "VISUAL"),
+                    "purpose": purpose_value,
+                },
+            )
+        if str(candidate.get("status") or "") != "READY":
+            raise ExplainerContractError(
+                "QC_BLOCKED",
+                "只有已生成并登记媒体的候选才能采用",
+                {"candidate_id": candidate_id, "status": str(candidate.get("status") or "")},
+            )
         if edition_id is not None:
             edition = self.repo.get("explainer_editions", str(edition_id))
             if str(edition["video_id"]) != video_id:
@@ -1849,25 +1946,41 @@ class ExplainerStoryboardService:
                     {"edition_id": str(edition_id), "video_id": video_id},
                 )
 
-        locked = self.repo.has_human_lock(beat_id)
+        locked = self.repo.has_human_lock(beat_id, purpose=purpose_value)
         if locked and authority_value != "HUMAN":
             raise ExplainerContractError(
                 "QC_BLOCKED",
                 "该画面段已按人工锁定，自动流程不能替换；如需更新请以 HUMAN 权威重新采用",
-                {"beat_id": beat_id, "authority": authority_value},
+                {"beat_id": beat_id, "authority": authority_value, "purpose": purpose_value},
             )
+        if expected_selection_id is not None:
+            current = self.repo.active_beat_selection(
+                beat_id, str(edition_id) if edition_id else None, purpose=purpose_value
+            )
+            current_id = str(current["id"]) if current else None
+            if current_id != str(expected_selection_id):
+                raise ExplainerContractError(
+                    "STALE_REVISION",
+                    "该画面已更新，请刷新当前选择后重试。",
+                    {
+                        "purpose": purpose_value,
+                        "expected_selection_id": str(expected_selection_id),
+                        "current_selection_id": current_id,
+                    },
+                )
 
         render_type_planned = str(candidate.get("render_type_planned") or beat["render_type"])
         render_type_actual = str(candidate.get("render_type_actual") or render_type_planned)
-        if bool(beat["must_be_motion"]) and render_type_actual in STILL_RENDER_TYPES:
+        if purpose_value == "VISUAL" and bool(beat["must_be_motion"]) and render_type_actual in STILL_RENDER_TYPES:
             raise ExplainerContractError(
                 "QC_BLOCKED",
-                "必须运动的画面段不能采用静帧候选",
+                "必须运动的画面段不能采用静帧候选作为最终片段",
                 {
                     "beat_id": beat_id,
                     "candidate_id": candidate_id,
                     "must_be_motion": True,
                     "render_type_actual": render_type_actual,
+                    "hint": "静帧可以作为首帧候选（purpose=KEYFRAME）用于生成 AI 动态片段。",
                 },
             )
 
@@ -1933,7 +2046,13 @@ class ExplainerStoryboardService:
             )
 
         media_sha256 = str(candidate["media_sha256"] or media["sha256"])
-        previous = self.repo.active_beat_selection(beat_id, str(edition_id) if edition_id else None)
+        # An ACTIVE selection exists per (beat, purpose, edition) scope.  A NULL
+        # edition_id is the video-wide fallback tier and a concrete edition_id is a
+        # deliberate per-edition override, so adopting one must never supersede the
+        # other (design §D2.2 item 2: the scope is exact, not "newest wins").
+        previous = self.repo.active_beat_selection(
+            beat_id, str(edition_id) if edition_id else None, purpose=purpose_value
+        )
         if (
             previous is not None
             and str(previous["candidate_id"]) == str(candidate_id)
@@ -1958,6 +2077,7 @@ class ExplainerStoryboardService:
                 "beat_code": str(beat["code"]),
                 "candidate_id": str(candidate_id),
                 "edition_id": str(edition_id) if edition_id else None,
+                "purpose": purpose_value,
                 "adoption_authority": authority_value,
                 "locked_by_human": authority_value == "HUMAN" or locked,
                 "reused_existing_selection": True,
@@ -1990,6 +2110,7 @@ class ExplainerStoryboardService:
                 "video_id": video_id,
                 "beat_id": beat_id,
                 "edition_id": str(edition_id) if edition_id else None,
+                "purpose": purpose_value,
                 "candidate_id": str(candidate_id),
                 "media_asset_id": str(candidate["media_asset_id"] or media["media_asset_id"]),
                 "media_version_id": str(candidate["media_version_id"]),
@@ -2015,6 +2136,7 @@ class ExplainerStoryboardService:
             "beat_code": str(beat["code"]),
             "candidate_id": str(candidate_id),
             "edition_id": str(edition_id) if edition_id else None,
+            "purpose": purpose_value,
             "adoption_authority": authority_value,
             "locked_by_human": authority_value == "HUMAN",
             "reused_existing_selection": False,
@@ -2035,7 +2157,281 @@ class ExplainerStoryboardService:
             "planned_and_actual_are_separate_fields": True,
         }
 
-    # ------------------------------------------------------------------ repair
+    # ------------------------------------------------------------------ archive / edit
+    def archive_candidate(
+        self,
+        *,
+        project_id: str,
+        video_id: str,
+        candidate_id: str,
+        actor: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """Stop offering one candidate without deleting its media (design §B5.3).
+
+        ``不采用`` hides a candidate from the working list.  The physical media and the
+        row are kept so the decision is reversible and auditable; only the *status*
+        moves to ``REJECTED``, which the adoption rule already treats as not adoptable.
+        The current adopted candidate can never be archived this way — removing the
+        working version is an explicit unlock/replace action, not a cleanup.
+        """
+
+        self.repo.require_explainer_project(project_id)
+        candidate = self.repo.get("explainer_media_candidates", candidate_id)
+        if str(candidate["video_id"]) != video_id:
+            raise ExplainerContractError(
+                "INVALID_REQUEST",
+                "候选不属于该解说作品",
+                {"candidate_id": candidate_id, "video_id": video_id},
+            )
+        beat_id = str(candidate.get("beat_id") or "")
+        if beat_id:
+            for purpose in CANDIDATE_PURPOSES:
+                active = self.repo.active_beat_selection(beat_id, purpose=str(purpose))
+                if active and str(active.get("candidate_id") or "") == candidate_id:
+                    raise ExplainerContractError(
+                        "QC_BLOCKED",
+                        "该候选是当前采用版本，不能直接不采用；请先采用其他候选或解锁。",
+                        {"candidate_id": candidate_id, "purpose": str(purpose)},
+                    )
+        status = str(candidate.get("status") or "")
+        if status == "REJECTED":
+            return {
+                "candidate_id": candidate_id,
+                "status": "REJECTED",
+                "archived": False,
+                "idempotent_replay": True,
+                "media_kept": True,
+            }
+        if status in {"PENDING", "GENERATING"}:
+            raise ExplainerContractError(
+                "QC_BLOCKED",
+                "该候选仍在生成中，完成或失败后才能归档",
+                {"candidate_id": candidate_id, "status": status},
+            )
+        lineage = candidate.get("lineage_json") if isinstance(candidate.get("lineage_json"), Mapping) else {}
+        updated = self.repo.update(
+            "explainer_media_candidates",
+            candidate_id,
+            {
+                "status": "REJECTED",
+                "adopted": False,
+                "lineage_json": {
+                    **dict(lineage),
+                    "archived_by": str(actor),
+                    "archived_reason": str(reason or "用户选择不采用"),
+                    "archived_at": utc_now_iso(),
+                    "previous_status": status,
+                },
+            },
+            actor=actor,
+        )
+        return {
+            "candidate_id": candidate_id,
+            "status": str(updated.get("status") or "REJECTED"),
+            "previous_status": status,
+            "archived": True,
+            "idempotent_replay": False,
+            "media_kept": True,
+            "recoverable": True,
+            "actor": str(actor),
+        }
+
+    def update_beat(
+        self,
+        *,
+        project_id: str,
+        video_id: str,
+        beat_id: str,
+        changes: Mapping[str, Any],
+        actor: str,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Save this beat's own description and presentation (design §B5.2).
+
+        Only a person edits a beat outside the planner, so the new values are recorded
+        as a ``HUMAN`` edit.  The full image/video prompt structure lives in
+        ``shot_grammar_json.prompt_bundle`` while ``prompt_intent`` stays the compatible
+        single-string field ``create_plan`` reads (design §C5.4), so both are written
+        together and neither silently diverges.  A queued task keeps its own frozen
+        snapshot: nothing already dispatched is rewritten.
+        """
+
+        beat = self.repo.get("explainer_visual_beats", beat_id)
+        if str(beat["video_id"]) != video_id:
+            raise ExplainerContractError(
+                "INVALID_REQUEST", "画面段不属于该解说作品", {"beat_id": beat_id, "video_id": video_id}
+            )
+        if expected_revision is not None and int(expected_revision) != int(beat.get("revision") or 0):
+            raise ExplainerContractError(
+                "STALE_REVISION",
+                "该画面段已被其他操作更新，请刷新后重试",
+                {
+                    "beat_id": beat_id,
+                    "expected_revision": int(expected_revision),
+                    "actual_revision": int(beat.get("revision") or 0),
+                },
+            )
+        allowed = {
+            "visual_intent",
+            "prompt_intent",
+            "negative_prompt",
+            "camera_movement",
+            "on_screen_text",
+            "continuity_note",
+            "render_type",
+            "preferred_duration_ms",
+            "must_be_motion",
+        }
+        unknown = sorted(set(changes) - allowed)
+        if unknown:
+            raise ExplainerContractError(
+                "SCHEMA_INVALID", "不允许修改这些字段", {"fields": unknown, "allowed": sorted(allowed)}
+            )
+        payload: dict[str, Any] = {}
+        grammar = beat.get("shot_grammar_json") if isinstance(beat.get("shot_grammar_json"), Mapping) else {}
+        prompt_bundle = dict(grammar.get("prompt_bundle") or {}) if isinstance(grammar, Mapping) else {}
+        if "visual_intent" in changes:
+            payload["visual_intent"] = str(changes["visual_intent"])
+            prompt_bundle["visual_intent"] = str(changes["visual_intent"])
+        if "prompt_intent" in changes:
+            payload["prompt_intent"] = str(changes["prompt_intent"])
+            prompt_bundle["prompt"] = str(changes["prompt_intent"])
+        if "negative_prompt" in changes:
+            prompt_bundle["negative_prompt"] = str(changes["negative_prompt"])
+        if "camera_movement" in changes:
+            prompt_bundle["camera_movement"] = str(changes["camera_movement"])
+        if "on_screen_text" in changes:
+            prompt_bundle["on_screen_text"] = [str(item) for item in (changes["on_screen_text"] or [])]
+        if "continuity_note" in changes:
+            prompt_bundle["continuity_note"] = str(changes["continuity_note"])
+        if prompt_bundle:
+            payload["shot_grammar_json"] = {**dict(grammar), "prompt_bundle": prompt_bundle}
+        if "render_type" in changes and changes["render_type"] is not None:
+            render_type = _require_member(
+                str(changes["render_type"]), (item.value for item in RenderType), field="render_type"
+            )
+            payload["render_type"] = render_type
+            if render_type in STILL_RENDER_TYPES and bool(beat.get("must_be_motion")):
+                # Presenting a motion requirement as a still cannot be silent: it is
+                # recorded as an explicit user decision that the requirement no longer
+                # holds, and only this beat is affected (design §B6.2).
+                payload["must_be_motion"] = False
+                payload["fallback_reason"] = "USER_CHANGED_PRESENTATION_TO_STILL"
+        if "preferred_duration_ms" in changes and changes["preferred_duration_ms"] is not None:
+            payload["preferred_duration_ms"] = int(changes["preferred_duration_ms"])
+        if "must_be_motion" in changes and changes["must_be_motion"] is not None:
+            if bool(changes["must_be_motion"]) and str(payload.get("render_type") or beat.get("render_type")) in STILL_RENDER_TYPES:
+                raise ExplainerContractError(
+                    "SCHEMA_INVALID",
+                    "必须运动的镜头不能同时是静图呈现方式，请先改为 AI 动态",
+                    {"beat_id": beat_id},
+                )
+            payload["must_be_motion"] = bool(changes["must_be_motion"])
+        if not payload:
+            raise ExplainerContractError("SCHEMA_INVALID", "没有需要保存的修改", {"beat_id": beat_id})
+        updated = self.repo.update("explainer_visual_beats", beat_id, payload, actor=actor)
+        return {
+            "beat": updated,
+            "beat_id": beat_id,
+            "beat_code": str(updated.get("code") or beat.get("code") or ""),
+            "changed_fields": sorted(payload),
+            "edit_authority": "HUMAN",
+            "actor": str(actor),
+            "revision": int(updated.get("revision") or 0),
+            "queued_tasks_keep_their_snapshot": True,
+            "planned_and_actual_are_separate_fields": True,
+        }
+
+    def unlock_selection(
+        self,
+        *,
+        project_id: str,
+        video_id: str,
+        beat_id: str,
+        selection_id: str,
+        edition_id: str | None = None,
+        purpose: str = "VISUAL",
+        actor: str | None = None,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Remove the human lock from one ``(beat, purpose, edition)`` scope.
+
+        Unlocking only changes the *replacement policy*: the current choice stays
+        selected and its media is untouched (spec §B9 item 7).  It is a deliberate,
+        actor-recorded command, so an automatic flow can never simulate a human
+        unlock, and a lock on the adopted first frame is independent from a lock on
+        the final clip.
+        """
+
+        self.repo.require_explainer_project(project_id)
+        purpose_value = _require_member(str(purpose), CANDIDATE_PURPOSES, field="purpose")
+        actor_value = str(actor or "").strip()
+        if not actor_value:
+            raise ExplainerContractError(
+                "SCHEMA_INVALID", "解锁必须记录真实操作者，机器流程不能模拟人工解锁", {"beat_id": beat_id}
+            )
+        beat = self.repo.get("explainer_visual_beats", beat_id)
+        if str(beat["video_id"]) != video_id:
+            raise ExplainerContractError(
+                "INVALID_REQUEST", "画面段不属于该解说作品", {"beat_id": beat_id, "video_id": video_id}
+            )
+        if expected_revision is not None and int(expected_revision) != int(beat.get("revision") or 0):
+            raise ExplainerContractError(
+                "STALE_REVISION",
+                "该画面已更新，请刷新后重试。",
+                {
+                    "expected_revision": int(expected_revision),
+                    "actual_revision": int(beat.get("revision") or 0),
+                },
+            )
+        current = self.repo.find("explainer_beat_selections", selection_id)
+        if current is None or str(current.get("beat_id")) != beat_id:
+            raise ExplainerContractError(
+                "INVALID_REQUEST", "选择记录不属于该画面段", {"selection_id": selection_id, "beat_id": beat_id}
+            )
+        if str(current.get("purpose") or "VISUAL") != purpose_value:
+            raise ExplainerContractError(
+                "INVALID_REQUEST",
+                "选择记录的用途与本次解锁目标不一致",
+                {"selection_id": selection_id, "purpose": purpose_value},
+            )
+        if edition_id is not None and str(current.get("edition_id") or "") != str(edition_id):
+            raise ExplainerContractError(
+                "INVALID_REQUEST",
+                "选择记录不属于该输出版本",
+                {"selection_id": selection_id, "edition_id": str(edition_id)},
+            )
+        was_locked = bool(current.get("locked_by_human"))
+        if was_locked:
+            self.repo.update(
+                "explainer_beat_selections",
+                selection_id,
+                {
+                    "locked_by_human": False,
+                    "actor": actor_value,
+                    "decided_at": utc_now_iso(),
+                },
+            )
+        if purpose_value == "VISUAL" and bool(beat.get("locked_by_human")):
+            self.repo.update(
+                "explainer_visual_beats",
+                beat_id,
+                {"locked_by_human": False, "locked_by": actor_value, "locked_at": utc_now_iso()},
+            )
+        return {
+            "selection_id": selection_id,
+            "beat_id": beat_id,
+            "purpose": purpose_value,
+            "edition_id": str(edition_id) if edition_id else None,
+            "was_locked": was_locked,
+            "locked_by_human": False,
+            "actor": actor_value,
+            "current_media_kept": True,
+            "media_deleted": False,
+            "unlocked_by_human": True,
+        }
+
     def request_repair(
         self,
         *,

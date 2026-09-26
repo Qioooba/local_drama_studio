@@ -27,6 +27,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.explainers.contracts import ExplainerContractError, content_hash, is_sha256
 from local_drama.infrastructure.database.explainer_repository import ExplainerRepository
 
@@ -260,6 +261,11 @@ def build_qc_handlers(
                 fact_reader=fact_reader,
                 sampling_reader=sampling_reader,
                 candidate_adopter=candidate_adopter,
+                # The picture check used to be dropped here: ``build_qc_handlers``
+                # accepted ``candidate_checker`` but the closure never forwarded it,
+                # so the per-candidate content/identity check could only ever run
+                # when a test injected one by hand.
+                candidate_checker=candidate_checker,
             )
 
         return handler
@@ -305,34 +311,99 @@ def run_qc_layers(
     skipped: list[dict[str, Any]] = []
     provider_capability: dict[str, Any] | None = None
     candidate_adoption: dict[str, Any] | None = None
-    with repo_factory() as repo:
-        service = quality_factory(repo)
-        subject_hash = subject["declared_subject_hash"] or resolve_subject_hash(
+    candidate_checks: list[dict[str, Any]] = []
+
+    # A QC layer decodes a whole film and asks a multimodal model about its frames;
+    # that takes minutes.  Holding one SQLite write transaction across it starves the
+    # worker's own lease heartbeat, and the job is orphaned with
+    # ``WORKER_LEASE_EXPIRED`` (measured on the 1962 film's ``COMPOSITION_QC``: the
+    # lease expired 60 s in and the three attempts never wrote a report).  Every unit
+    # of work therefore reads its inputs and writes its report inside one *short*
+    # transaction, which is the same rule the render stage already follows.
+    def work(call: Callable[[Any], Any]) -> Any:
+        with repo_factory() as repo:
+            return call(repo)
+
+    def read_subject_hash(repo: Any) -> str:
+        return subject["declared_subject_hash"] or resolve_subject_hash(
             repo, subject["subject_kind"], subject["subject_revision_id"]
         )
-        context: dict[str, Any] = {
-            **dict(payload),
-            "project_id": project_id,
-            "video_id": video_id,
-            "edition_id": edition_id,
-            "subject_kind": subject["subject_kind"],
-            "subject_revision_id": subject["subject_revision_id"],
-            "subject_hash": subject_hash,
-        }
 
-        def port(name: str, layer: str) -> Any:
-            reader = ports[name]
-            if reader is None:
-                skipped.append({"layer": layer, "reason": f"{name.upper()}_NOT_INJECTED"})
-            return reader
+    provider_capability = work(lambda repo: _provider_capability(quality_factory(repo)))
+    subject_hash = work(read_subject_hash)
+    context: dict[str, Any] = {
+        **dict(payload),
+        "project_id": project_id,
+        "video_id": video_id,
+        "edition_id": edition_id,
+        "subject_kind": subject["subject_kind"],
+        "subject_revision_id": subject["subject_revision_id"],
+        "subject_hash": subject_hash,
+    }
 
-        if "TECHNICAL" in layers:
-            reader = port("technical_reader", "TECHNICAL")
-            if reader is not None:
-                measurements = dict(reader(repo, context))
-                measurement_hash = str(measurements.pop("subject_hash", "") or "")
-                reports.append(
-                    service.run_technical_check(
+    def port(name: str, layer: str) -> Any:
+        reader = ports[name]
+        if reader is None:
+            skipped.append({"layer": layer, "reason": f"{name.upper()}_NOT_INJECTED"})
+        return reader
+
+    # A layer whose *inputs* cannot be produced is a layer that did not run, not
+    # a broken QC stage.  Before this guard, one unbindable layer took the whole
+    # job down with it: a ``COMPOSITION_QC`` over the 1962 film died with
+    # ``SCHEMA_INVALID frame_range`` from the depth layer and the technical and
+    # subtitle reports it had already measured were thrown away.  The tolerated
+    # codes are exactly "this layer has nothing to measure here"; a real failure
+    # (a media mismatch, a corrupt artifact) still propagates.
+    tolerated = {"NOT_RUN", "CAPABILITY_UNAVAILABLE", "DECODE_TOOL_UNAVAILABLE"}
+
+    def _skip(layer: str, error: BaseException) -> None:
+        code = str(getattr(error, "code", "") or "")
+        skipped.append(
+            {
+                "layer": layer,
+                "reason": code,
+                "message": str(getattr(error, "message", "") or error)[:400],
+                "next_step": "该层保持未运行，报告不会把它算作通过。",
+            }
+        )
+
+    def run_layer(layer: str, call: Callable[[], Any]) -> None:
+        try:
+            reports.append(call())
+        except (ExplainerContractError, DomainRuleError) as error:
+            if str(getattr(error, "code", "") or "") not in tolerated:
+                raise
+            _skip(layer, error)
+
+    def read_inputs(name: str, layer: str) -> dict[str, Any] | None:
+        """The measurements one layer needs, or ``None`` when it cannot run.
+
+        A reader reports "this layer has nothing to measure here" with a tolerated
+        code (no render yet, no decoder, no sampling plan).  That is a layer that did
+        not run — it must not take the whole stage's other reports down with it.  The
+        read happens in its own short transaction; the measurements travel to the
+        layer as plain data.
+        """
+
+        reader = port(name, layer)
+        if reader is None:
+            return None
+        try:
+            return work(lambda repo: dict(reader(repo, context)))
+        except (ExplainerContractError, DomainRuleError) as error:
+            if str(getattr(error, "code", "") or "") not in tolerated:
+                raise
+            _skip(layer, error)
+            return None
+
+    if "TECHNICAL" in layers:
+        measurements = read_inputs("technical_reader", "TECHNICAL")
+        if measurements is not None:
+            measurement_hash = str(measurements.pop("subject_hash", "") or "")
+            run_layer(
+                "TECHNICAL",
+                lambda measurements=measurements, measurement_hash=measurement_hash: work(
+                    lambda repo: quality_factory(repo).run_technical_check(
                         project_id=project_id,
                         video_id=video_id,
                         edition_id=edition_id,
@@ -341,14 +412,16 @@ def run_qc_layers(
                         subject_hash=measurement_hash or subject_hash,
                         technical=measurements,
                     )
-                )
+                ),
+            )
 
-        if "SUBTITLE" in layers:
-            reader = port("subtitle_reader", "SUBTITLE")
-            if reader is not None:
-                measured = dict(reader(repo, context))
-                reports.append(
-                    service.run_subtitle_check(
+    if "SUBTITLE" in layers:
+        measured = read_inputs("subtitle_reader", "SUBTITLE")
+        if measured is not None:
+            run_layer(
+                "SUBTITLE",
+                lambda measured=measured: work(
+                    lambda repo: quality_factory(repo).run_subtitle_check(
                         project_id=project_id,
                         video_id=video_id,
                         edition_id=edition_id,
@@ -360,34 +433,55 @@ def run_qc_layers(
                         total_frames=int(measured.get("total_frames") or 0),
                         current_revision_id=str(measured.get("current_revision_id") or "") or None,
                     )
-                )
+                ),
+            )
 
-        if "FACT" in layers:
-            reader = port("fact_reader", "FACT")
-            if reader is not None:
-                measured = dict(reader(repo, context))
-                reports.append(
-                    service.run_fact_check(
+    if "FACT" in layers:
+        measured = read_inputs("fact_reader", "FACT")
+        if measured is not None:
+            run_layer(
+                "FACT",
+                lambda measured=measured: work(
+                    lambda repo: quality_factory(repo).run_fact_check(
                         project_id=project_id,
                         video_id=video_id,
                         subject_hash=str(measured.pop("subject_hash", "") or subject_hash),
                         claims=measured.get("claims") or (),
                         segment_claims=measured.get("segment_claims") or (),
                     )
-                )
+                ),
+            )
 
-        wants_semantic = "SEMANTIC" in layers
-        wants_depth = "DEPTH" in layers
-        if wants_semantic or wants_depth:
-            reader = port("sampling_reader", "SEMANTIC" if wants_semantic else "DEPTH")
-            if reader is not None:
-                sampling = dict(reader(repo, context))
-                sampled_hash = str(sampling.get("subject_hash") or subject_hash)
-                provider_capability = _provider_capability(service)
-                plan = sampling.get("plan") or {}
-                if wants_semantic:
-                    reports.append(
-                        service.run_semantic_check(
+    wants_semantic = "SEMANTIC" in layers
+    wants_depth = "DEPTH" in layers
+    # The depth layer is defined over *one named shot*: ``run_depth_check``
+    # records its report against a VISUAL_BEAT subject.  A film-scale subject
+    # (a whole COMPOSITION_RENDER) therefore has no honest frame range for it —
+    # the previous code passed the ``(0, 0)`` default and the layer rejected it
+    # with SCHEMA_INVALID, which failed the whole QC job.
+    depth_scope_is_one_shot = str(subject["subject_kind"]).upper() in {"VISUAL_BEAT", "BEAT"}
+    if wants_depth and not depth_scope_is_one_shot:
+        # Refused before any provider or frame question: at film scale there is no
+        # single shot for a per-frame depth pass to cover.
+        skipped.append(
+            {
+                "layer": "DEPTH",
+                "reason": "DEPTH_LAYER_SCOPE_IS_ONE_SHOT",
+                "message": "成片级质检没有逐帧深检的对象；该层只覆盖单个画面段",
+                "next_step": "要逐帧深检请对具体画面段提交 DEPTH 质检并给出帧区间。",
+            }
+        )
+        wants_depth = False
+    if wants_semantic or wants_depth:
+        sampling = read_inputs("sampling_reader", "SEMANTIC" if wants_semantic else "DEPTH")
+        if sampling is not None:
+            sampled_hash = str(sampling.get("subject_hash") or subject_hash)
+            plan = sampling.get("plan") or {}
+            if wants_semantic:
+                run_layer(
+                    "SEMANTIC",
+                    lambda sampling=sampling, plan=plan, sampled_hash=sampled_hash: work(
+                        lambda repo: quality_factory(repo).run_semantic_check(
                             project_id=project_id,
                             video_id=video_id,
                             edition_id=edition_id,
@@ -398,15 +492,28 @@ def run_qc_layers(
                             reference_frames=sampling.get("reference_frames") or (),
                             questions=sampling.get("questions") or (),
                         )
+                    ),
+                )
+            if wants_depth:
+                provider = work(lambda repo: getattr(quality_factory(repo), "visual_provider", None))
+                depth_range = sampling.get("depth_frame_range")
+                if provider is None:
+                    skipped.append({"layer": "DEPTH", "reason": PROVIDER_ABSENT_REASON})
+                elif not depth_range:
+                    skipped.append(
+                        {
+                            "layer": "DEPTH",
+                            "reason": "DEPTH_FRAME_RANGE_MISSING",
+                            "message": "抽样计划没有给出该镜头要逐帧深检的帧区间",
+                            "next_step": "为该画面段提供 depth_frame_range 后重跑 DEPTH 层。",
+                        }
                     )
-                if wants_depth:
-                    provider = getattr(service, "visual_provider", None)
-                    if provider is None:
-                        skipped.append({"layer": "DEPTH", "reason": PROVIDER_ABSENT_REASON})
-                    else:
-                        start, end = _as_frame_range(sampling.get("depth_frame_range"))
-                        reports.append(
-                            service.run_depth_check(
+                else:
+                    start, end = _as_frame_range(depth_range)
+                    run_layer(
+                        "DEPTH",
+                        lambda start=start, end=end, provider=provider, sampling=sampling, sampled_hash=sampled_hash: work(
+                            lambda repo: quality_factory(repo).run_depth_check(
                                 project_id=project_id,
                                 video_id=video_id,
                                 edition_id=edition_id,
@@ -417,24 +524,25 @@ def run_qc_layers(
                                 already_processed=sampling.get("already_processed") or (),
                                 questions=sampling.get("questions") or (),
                             )
-                        )
-            elif wants_depth:
-                # ``port`` already recorded the sampling layer as not run.
-                pass
+                        ),
+                    )
+        elif wants_depth:
+            # ``port`` already recorded the sampling layer as not run.
+            pass
 
-        # The picture check runs before adoption: the gate can only adopt material
-        # whose required checks PASSED, and these are the fields that carry that
-        # answer.  A check that could not run writes nothing and says why, so the
-        # candidate stays UNKNOWN instead of quietly passing (design §6.2).
-        if stage == ADOPTION_STAGE and candidate_checker is not None:
-            candidate_checks = _check_beat_candidates(repo, context, candidate_checker)
+    # The picture check runs before adoption: the gate can only adopt material
+    # whose required checks PASSED, and these are the fields that carry that
+    # answer.  A check that could not run writes nothing and says why, so the
+    # candidate stays UNKNOWN instead of quietly passing (design §6.2).
+    if stage == ADOPTION_STAGE and candidate_checker is not None:
+        candidate_checks = work(lambda repo: _check_beat_candidates(repo, context, candidate_checker))
 
-        # Picture adoption belongs to this stage, not to generation: the candidates
-        # are registered by ``VISUAL_GENERATION`` and only adopted once the checks
-        # have run (design §4.2/"通过后统一采用").  A beat with no adoption is
-        # unfinished work and is reported as such below.
-        if stage == ADOPTION_STAGE and candidate_adopter is not None:
-            candidate_adoption = dict(candidate_adopter(repo, context))
+    # Picture adoption belongs to this stage, not to generation: the candidates
+    # are registered by ``VISUAL_GENERATION`` and only adopted once the checks
+    # have run (design §4.2/"通过后统一采用").  A beat with no adoption is
+    # unfinished work and is reported as such below.
+    if stage == ADOPTION_STAGE and candidate_adopter is not None:
+        candidate_adoption = work(lambda repo: dict(candidate_adopter(repo, context)))
 
     completed = [str(item.get("detector") or item.get("subject_kind") or "") for item in reports]
     # The stage status is derived from the layer reports, not from their count: a
@@ -487,6 +595,10 @@ def run_qc_layers(
         "publication_authorized": False,
         "human_reviewed_claimed": False,
         "candidate_adoption": candidate_adoption,
+        # Which candidate the picture check could measure, and — for one it could
+        # not — the reason.  The gate verdict comes from the adoption below, but a
+        # check that did not run has no other place to say why.
+        "candidate_checks": candidate_checks,
         "required_selections_present": required_selections_present,
         "status": status,
         "machine_check": {"status": status, "ok": status == "PASS"},

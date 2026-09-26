@@ -1,0 +1,52 @@
+{
+  "schema_version": "localdrama.explainer.content-extract.v2",
+  "entities": [
+    {
+      "name": "人物甲",
+      "entity_type": "REAL_PERSON",
+      "same_as_entity_id": null,
+      "aliases": [],
+      "source_span_ids": [
+        "provided-span-id"
+      ],
+      "known_appearance": [],
+      "unknown_attributes": [
+        "服装颜色",
+        "准确外貌"
+      ],
+      "state": null,
+      "ambiguity": null
+    }
+  ],
+  "claims": [
+    {
+      "statement": "此处只写该片段明确支持的一条命题。",
+      "statement_kind": "FACT",
+      "importance": "KEY",
+      "entity_indexes": [
+        0
+      ],
+      "evidence": [
+        {
+          "source_span_id": "provided-span-id",
+          "stance": "SUPPORTS"
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "title": "事件标题",
+      "story_time_start": null,
+      "story_time_end": null,
+      "place_entity_index": null,
+      "participant_entity_indexes": [
+        0
+      ],
+      "claim_indexes": [
+        0
+      ]
+    }
+  ],
+  "ambiguities": []
+}

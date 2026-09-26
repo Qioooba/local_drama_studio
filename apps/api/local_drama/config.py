@@ -131,12 +131,14 @@ class Settings(BaseModel):
     #: rather than something compiled into the renderer.
     explainer_generation_height: int = Field(default=480, ge=240, le=2160)
     explainer_delivery_height: int = Field(default=1080, ge=480, le=4320)
-    #: Explainer picture track source: the bound local image model (default) or the
-    #: deterministic typeset card.  Machine-config keys live under ``runtime``.
-    explainer_picture_source: str = Field(default="LOCAL_GENERATION", pattern="^(LOCAL_GENERATION|TYPESET_CARD)$")
     explainer_generation_steps: int = Field(default=20, ge=1, le=80)
     explainer_generation_timeout_seconds: float = Field(default=600.0, gt=0, le=7200)
     explainer_generation_negative_prompt: str = ""
+    #: Wall-clock budget for ONE explainer image-to-video generation.  A real H3
+    #: clip is a multi-minute GPU job, so the image budget above is far too small
+    #: and reusing it would time out every beat.  This is the ``explainer_video_*``
+    #: family: the only picture route an explainer has is a real generated video.
+    explainer_video_timeout_seconds: float = Field(default=1800.0, gt=0, le=7200)
     #: VoxCPM2 narration sampling.  ``explainer_tts_inference_timesteps`` keeps the
     #: project's speed-oriented 4 while making the declared 4-vs-10 comparison one
     #: settings change; ``explainer_tts_max_len`` is the generated-patch ceiling
@@ -414,8 +416,8 @@ class Settings(BaseModel):
             "explainer_delivery_height",
             "explainer_generation_steps",
             "explainer_generation_timeout_seconds",
-            "explainer_picture_source",
             "explainer_generation_negative_prompt",
+            "explainer_video_timeout_seconds",
             "explainer_tts_inference_timesteps",
             "explainer_tts_max_len",
         ):

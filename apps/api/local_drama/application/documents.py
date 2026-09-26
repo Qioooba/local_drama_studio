@@ -21,6 +21,7 @@ from pypdf import PdfReader
 
 from local_drama.config import Settings
 from local_drama.domain.errors import DomainRuleError
+from local_drama.domain.explainers.contracts import text_hash
 from local_drama.domain.source_text import ParagraphLayoutHint, SourceParagraph
 from local_drama.infrastructure.database.sqlite import Database
 from local_drama.infrastructure.filesystem.path_policy import canonical_relative_path, controlled_path
@@ -455,11 +456,86 @@ DOCUMENT_EXTRACTION_MAX_BYTES = 64 * 1024 * 1024
 DOCUMENT_EXTRACTION_MAX_CHARACTERS = 8 * 1024 * 1024
 
 
-def _text_extraction_encoding(path: Path) -> dict[str, Any]:
-    """Report the encoding facts of a plain-text document without guessing."""
+#: Encodings an operator may force for a *text* document (§C2 item 3).  The set
+#: is deliberately closed: an arbitrary codec name would be a way to smuggle a
+#: lossy decode into the authoritative body.
+TEXT_ENCODING_OVERRIDES: dict[str, dict[str, Any]] = {
+    "utf-8": {"codec": "utf-8", "requires_bom": None},
+    "utf-8-sig": {"codec": "utf-8-sig", "requires_bom": None},
+    "gb18030": {"codec": "gb18030", "requires_bom": None},
+    "utf-16": {"codec": "utf-16", "requires_bom": (b"\xff\xfe", b"\xfe\xff")},
+    "utf-16-le": {"codec": "utf-16", "requires_bom": (b"\xff\xfe",)},
+    "utf-16-be": {"codec": "utf-16", "requires_bom": (b"\xfe\xff",)},
+    "utf-32": {"codec": "utf-32", "requires_bom": (b"\xff\xfe\x00\x00", b"\x00\x00\xfe\xff")},
+    "utf-32-le": {"codec": "utf-32", "requires_bom": (b"\xff\xfe\x00\x00",)},
+    "utf-32-be": {"codec": "utf-32", "requires_bom": (b"\x00\x00\xfe\xff",)},
+}
+
+
+def _raw_sha256(path: Path) -> str:
+    """SHA-256 of the uploaded bytes, streamed so a 64 MiB file is never doubled."""
+
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def normalise_encoding_override(value: str | None) -> str | None:
+    """Validate an optional ``encoding_override`` against the closed allowlist."""
+
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if text not in TEXT_ENCODING_OVERRIDES:
+        raise DomainRuleError(
+            "UNSUPPORTED_ENCODING_OVERRIDE",
+            "不支持该编码覆盖值；请选择 utf-8、utf-8-sig、gb18030 或带 BOM 的 UTF-16/32",
+            {"encoding_override": text, "allowed": sorted(TEXT_ENCODING_OVERRIDES)},
+        )
+    return text
+
+
+def _text_extraction_encoding(path: Path, *, encoding_override: str | None = None) -> dict[str, Any]:
+    """Report the encoding facts of a plain-text document without guessing.
+
+    An explicit override decodes *strictly*: if the bytes are not valid in the
+    chosen encoding the operator is told to pick another one instead of being
+    handed a body full of U+FFFD.  Without an override the order is BOM first,
+    then strict UTF-8, then GB18030 (reported ``LOW`` confidence, because
+    GB18030 accepts almost any byte stream).
+    """
 
     raw = path.read_bytes()
     had_bom = any(raw.startswith(bom) for bom, _ in _TEXT_BOMS)
+    override = normalise_encoding_override(encoding_override)
+    if override is not None:
+        spec = TEXT_ENCODING_OVERRIDES[override]
+        required_boms = spec.get("requires_bom")
+        if required_boms and not any(raw.startswith(bom) for bom in required_boms):
+            raise DomainRuleError(
+                "ENCODING_OVERRIDE_BOM_REQUIRED",
+                "该编码必须由明确的字节序标记（BOM）确认，文件缺少对应 BOM",
+                {"encoding_override": override, "had_bom": had_bom},
+            )
+        try:
+            text = raw.decode(str(spec["codec"]))
+        except UnicodeDecodeError as error:
+            raise DomainRuleError(
+                "DOCUMENT_DECODE_FAILED",
+                "按所选编码无法解码该文件，请改用其他编码后重试",
+                {"encoding_override": override, "byte_offset": error.start},
+            ) from error
+        return {
+            "encoding": override,
+            "confidence": "HIGH",
+            "had_bom": had_bom,
+            "encoding_source": "OPERATOR_OVERRIDE",
+            "text": text,
+        }
     for bom, encoding in _TEXT_BOMS:
         if raw.startswith(bom):
             try:
@@ -467,6 +543,7 @@ def _text_extraction_encoding(path: Path) -> dict[str, Any]:
                     "encoding": encoding,
                     "confidence": "HIGH",
                     "had_bom": True,
+                    "encoding_source": "BOM",
                     "text": raw.decode(encoding),
                 }
             except UnicodeDecodeError:
@@ -477,6 +554,7 @@ def _text_extraction_encoding(path: Path) -> dict[str, Any]:
                 "encoding": encoding,
                 "confidence": "HIGH" if encoding == "utf-8" else "LOW",
                 "had_bom": had_bom,
+                "encoding_source": "STRICT_UTF8" if encoding == "utf-8" else "GB18030_COMPAT_FALLBACK",
                 "text": raw.decode(encoding),
             }
         except UnicodeDecodeError:
@@ -485,8 +563,10 @@ def _text_extraction_encoding(path: Path) -> dict[str, Any]:
         "encoding": "gb18030",
         "confidence": "LOW",
         "had_bom": had_bom,
+        "encoding_source": "GB18030_REPLACEMENT_FALLBACK",
         "text": raw.decode("gb18030", errors="replace"),
     }
+
 
 
 _TEXT_BOMS: tuple[tuple[bytes, str], ...] = (
@@ -505,11 +585,16 @@ def extract_document_text(
     *,
     maximum_bytes: int = DOCUMENT_EXTRACTION_MAX_BYTES,
     maximum_characters: int = DOCUMENT_EXTRACTION_MAX_CHARACTERS,
+    encoding_override: str | None = None,
 ) -> dict[str, Any]:
     """Extract a document's body by dispatching on its real format.
 
     Callers must pass a *controlled* temporary file: this function only reads the
     path it is given and never resolves a client-supplied location by itself.
+
+    ``encoding_override`` is honoured for plain text only and refused for a
+    container: DOCX/PDF/EPUB bytes are a ZIP or a PDF object graph, so "try
+    another encoding" could only ever produce mojibake (§C2 item 3).
 
     The returned mapping is the traceable port described by the design:
 
@@ -517,9 +602,10 @@ def extract_document_text(
         the extracted body, newline-normalised;
     ``format``
         ``TEXT`` / ``DOCX`` / ``PDF`` / ``EPUB``, i.e. which reader ran;
-    ``encoding`` / ``confidence`` / ``had_bom``
-        only meaningful for ``TEXT`` (``None``/``"N/A"`` otherwise), so a caller
-        can no longer ask a ZIP container to "choose another encoding";
+    ``encoding`` / ``confidence`` / ``had_bom`` / ``encoding_source``
+        only meaningful for ``TEXT`` (``None``/``"CONTAINER_PARSED"`` otherwise);
+    ``raw_sha256`` / ``body_sha256`` / ``span_hash`` locating rule
+        the uploaded bytes, the canonical body and each future span (§C2 item 4);
     ``quality``
         ``complete`` / ``partial`` plus the paragraph and character counts;
     ``budgets``
@@ -530,6 +616,8 @@ def extract_document_text(
     A container that cannot be parsed, an over-complex structure, an empty body
     and a document over budget all raise ``DomainRuleError`` *before* the caller
     persists anything, so a lossy result can never be stored as an authority.
+    Extraction quality is *not* a credibility verdict and nothing here is
+    translated into fact credibility (§C2 item 6).
     """
 
     target = Path(path)
@@ -546,17 +634,26 @@ def extract_document_text(
             {"byte_size": size, "max_bytes": int(maximum_bytes)},
         )
 
+    raw_sha256 = _raw_sha256(target)
     if suffix in BINARY_DOCUMENT_SUFFIXES:
+        if normalise_encoding_override(encoding_override) is not None:
+            raise DomainRuleError(
+                "INVALID_ENCODING_OVERRIDE",
+                "容器格式（DOCX/PDF/EPUB）不接受编码覆盖：请直接按格式提取正文",
+                {"suffix": suffix, "encoding_override": str(encoding_override)},
+            )
         document_format = {".docx": "DOCX", ".pdf": "PDF", ".epub": "EPUB"}[suffix]
         text = _read_text(target)
         encoding: str | None = None
         confidence = "CONTAINER_PARSED"
+        encoding_source = "CONTAINER_READER"
         had_bom = False
     elif suffix in TEXT_DOCUMENT_SUFFIXES or suffix == "":
-        decoded = _text_extraction_encoding(target)
+        decoded = _text_extraction_encoding(target, encoding_override=encoding_override)
         text = decoded["text"]
         encoding = str(decoded["encoding"])
         confidence = str(decoded["confidence"])
+        encoding_source = str(decoded.get("encoding_source") or "UNKNOWN")
         had_bom = bool(decoded["had_bom"])
         document_format = "TEXT"
     else:
@@ -581,6 +678,7 @@ def extract_document_text(
         )
     replacement_count = normalised.count("\ufffd")
     warnings: list[dict[str, Any]] = []
+    read_notes: list[dict[str, Any]] = []
     if replacement_count:
         warnings.append(
             {
@@ -589,19 +687,38 @@ def extract_document_text(
                 "message": "文本解码产生了替换字符，请确认编码后再作为权威正文使用",
             }
         )
+    if document_format == "TEXT" and confidence == "LOW":
+        # An operator-facing note, deliberately *not* a quality warning: a
+        # GB18030-compatible read is still an exact decode of the bytes, it is
+        # only the encoding *decision* that is uncertain.  Folding it into
+        # ``warnings`` would flip ``quality`` to ``partial`` and let a route
+        # refuse a perfectly readable file.
+        read_notes.append(
+            {
+                "code": "COMPATIBILITY_ENCODING",
+                "encoding": encoding,
+                "message": "按 GB18030 兼容读取，请在预览中确认正文，必要时重新选择编码",
+            }
+        )
     paragraph_count = len([line for line in normalised.split("\n") if line.strip()])
     return {
         "text": normalised,
         "format": document_format,
         "encoding": encoding,
         "confidence": confidence,
+        "encoding_source": encoding_source,
         "had_bom": had_bom,
         "byte_size": size,
+        "raw_sha256": raw_sha256,
+        "body_sha256": text_hash(normalised),
+        "span_hash_rule": "sha256(span.quote_text over the canonical body)",
         "character_count": len(normalised),
         "paragraph_count": paragraph_count,
         "replacement_char_count": replacement_count,
         "quality": "complete" if not warnings else "partial",
         "warnings": warnings,
+        "read_notes": read_notes,
+        "credibility_derived_from_quality": False,
         "budgets": {
             "max_bytes": int(maximum_bytes),
             "max_characters": int(maximum_characters),

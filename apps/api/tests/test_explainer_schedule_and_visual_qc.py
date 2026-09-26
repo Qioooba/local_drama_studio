@@ -444,6 +444,47 @@ def test_visual_provider_rejects_an_out_of_range_confidence(tmp_path: Path) -> N
     assert findings[0]["confidence"] is None
 
 
+def test_visual_provider_keeps_the_batches_it_could_read(tmp_path: Path) -> None:
+    """One unanswered batch must not discard the batches that were really read.
+
+    The delivered 1962 film's 13-batch semantic pass reported NOT_RUN with zero
+    coverage because a single request met a restarting model server, while twelve
+    batches of real observations were already in hand.
+    """
+
+    paths = []
+    for index in range(8):
+        path = tmp_path / f"frame_{index:04d}.png"
+        path.write_bytes(PNG_1X1)
+        paths.append(path)
+
+    class _FlakyClient(_FakeVisionClient):
+        def chat_json(self, system, user, images=None, *, json_schema=None, inference_options=None):  # noqa: ANN001, ANN202
+            if not self.calls:
+                self.calls.append({"images": list(images or []), "user": user, "schema": json_schema})
+                raise ExplainerContractError("CAPABILITY_UNAVAILABLE", "模型服务正在重启")
+            return super().chat_json(
+                system, user, images, json_schema=json_schema, inference_options=inference_options
+            )
+
+    client = _FlakyClient([{"frames": []}])
+    provider = LocalLlmVisualQcProvider(
+        client_factory=lambda: client,
+        frame_path_resolver=lambda frame_entry: paths[int(frame_entry["frame_id"])],
+        batch_size=4,
+    )
+    findings = provider.check_frames(
+        frames=[{"frame_id": index, "frame_ref": f"shot-{index:02d}"} for index in range(8)],
+        questions=[],
+    )
+    unchecked = [item for item in findings if item["issue_kind"] == "SEMANTIC_QC_UNCHECKED"]
+    # The four frames of the unanswered batch are reported unchecked, one by one.
+    assert sorted(item["frame_id"] for item in unchecked) == [0, 1, 2, 3]
+    assert all(item["unknown_reason"] == "CAPABILITY_UNAVAILABLE" for item in unchecked)
+    # The second batch was answered, so the pass kept its real coverage.
+    assert len(client.calls) == 2
+
+
 def test_visual_provider_batches_frames(tmp_path: Path) -> None:
     paths = []
     for index in range(12):

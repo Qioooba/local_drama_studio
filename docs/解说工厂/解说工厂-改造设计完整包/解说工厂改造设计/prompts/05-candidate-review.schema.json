@@ -1,0 +1,177 @@
+{
+  "$defs": {
+    "CriterionCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "criterion": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Criterion",
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "UNKNOWN"
+          ],
+          "title": "Result",
+          "type": "string"
+        },
+        "evidence": {
+          "maxLength": 2000,
+          "title": "Evidence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "criterion",
+        "result",
+        "evidence"
+      ],
+      "title": "CriterionCheck",
+      "type": "object"
+    },
+    "FrameResult": {
+      "additionalProperties": false,
+      "properties": {
+        "frame_id": {
+          "minimum": 0,
+          "title": "Frame Id",
+          "type": "integer"
+        },
+        "observations": {
+          "items": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Observations",
+          "type": "array"
+        },
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/CriterionCheck"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Checks",
+          "type": "array"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/ObservedIssue"
+          },
+          "maxItems": 32,
+          "title": "Issues",
+          "type": "array"
+        },
+        "unknown_reason": {
+          "maxLength": 2000,
+          "title": "Unknown Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "frame_id",
+        "observations",
+        "checks",
+        "issues",
+        "unknown_reason"
+      ],
+      "title": "FrameResult",
+      "type": "object"
+    },
+    "ObservedIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "issue_kind": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Issue Kind",
+          "type": "string"
+        },
+        "observed": {
+          "maxLength": 2000,
+          "title": "Observed",
+          "type": "string"
+        },
+        "expected": {
+          "maxLength": 2000,
+          "title": "Expected",
+          "type": "string"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Confidence"
+        },
+        "unknown_reason": {
+          "maxLength": 2000,
+          "title": "Unknown Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issue_kind",
+        "observed",
+        "expected",
+        "confidence",
+        "unknown_reason"
+      ],
+      "title": "ObservedIssue",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "localdrama.explainer.candidate-review.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "candidate_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Candidate Id",
+      "type": "string"
+    },
+    "frame_results": {
+      "items": {
+        "$ref": "#/$defs/FrameResult"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Frame Results",
+      "type": "array"
+    },
+    "motion_observation": {
+      "enum": [
+        "OBSERVED",
+        "NOT_OBSERVED",
+        "UNKNOWN"
+      ],
+      "title": "Motion Observation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "frame_results",
+    "motion_observation"
+  ],
+  "title": "CandidateReview",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:localdrama:explainer:design:05-candidate-review",
+  "description": "Design contract, not yet integrated. Static validation does not establish reference membership, project ownership, coverage, factuality or approval. Apply README service checks."
+}

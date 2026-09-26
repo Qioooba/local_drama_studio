@@ -111,6 +111,11 @@ JSON_COLUMNS: dict[str, frozenset[str]] = {
         {"files_json", "license_scope_json", "license_blockers_json", "ai_disclosure_json", "metadata_json", "requested_territories_json"}
     ),
     "publication_receipts": frozenset({"response_json"}),
+    "story_asset_references": frozenset({"metadata_json"}),
+    # The shared asset an explainer entity adopts its reference against (design §B3.3):
+    # the step-2 flow reuses or creates this row, so it carries the same audit columns
+    # as the explainer tables.
+    "story_assets": frozenset({"extra_json"}),
 }
 
 #: Tables whose ``id`` is a UUID and that carry the standard audit columns.
@@ -154,6 +159,12 @@ _TABLES: tuple[str, ...] = (
     "schedule_occurrences",
     "publication_packages",
     "publication_receipts",
+    # The explainer entity ↔ shared story-asset reference chain (spec D3): the
+    # explainer side adopts and unlocks a reference through the same generic
+    # helpers, so this table is registered here instead of growing a second
+    # explainer-only reference table.
+    "story_asset_references",
+    "story_assets",
 )
 
 #: Tables that carry ``updated_at``/``revision`` and therefore support touch().
@@ -195,6 +206,8 @@ _MUTABLE_TABLES: frozenset[str] = frozenset(
         "schedule_occurrences",
         "publication_packages",
         "publication_receipts",
+        "story_asset_references",
+        "story_assets",
     }
 )
 
@@ -429,6 +442,112 @@ class ExplainerRepository:
                 "NOT_FOUND", "该项目还没有解说作品", {"project_id": project_id}
             )
         return video
+
+    # --------------------------------------------------- content-chain projection
+    def video_input_payload(self, video_id: str) -> dict[str, Any]:
+        """The durable input projection of one video (never ``None``).
+
+        ``script_policy`` lives here (spec §C1) so the option is stored without a
+        new table.  This reader returns the *stored* value, which may be absent
+        for a legacy row; the definite policy is resolved by
+        ``contracts_v2.resolve_script_policy`` so the default lives in one place
+        and infrastructure keeps no application policy.
+        """
+
+        video = self.find("explainer_videos", video_id)
+        if video is None:
+            raise ExplainerContractError("NOT_FOUND", "解说作品不存在", {"video_id": video_id})
+        payload = video.get("input_payload_json")
+        return dict(payload) if isinstance(payload, Mapping) else {}
+
+    def stored_script_policy(self, video_id: str) -> Any:
+        """The raw ``script_policy`` stored in ``input_payload_json`` (or ``None``)."""
+
+        return self.video_input_payload(video_id).get("script_policy")
+
+    def preserved_script_revision(
+        self, video_id: str, *, script_source_hash: str | None = None
+    ) -> dict[str, Any] | None:
+        """The preserved-mode revision of this video, optionally by exact hash.
+
+        A preserved revision carries ``preserved_original`` and the exact
+        ``script_source_hash`` in ``provenance_json`` (see
+        ``narration.register_preserved_script``); the original body is never
+        reconstructed from the evidence body.
+        """
+
+        rows = self.list_where(
+            "explainer_script_revisions",
+            {"video_id": video_id},
+            order_by="revision_no",
+            descending=True,
+        )
+        for row in rows:
+            provenance = row.get("provenance_json")
+            if not isinstance(provenance, Mapping) or not provenance.get("preserved_original"):
+                continue
+            if script_source_hash and str(provenance.get("script_source_hash") or "") != script_source_hash:
+                continue
+            return row
+        return None
+
+    def story_seed_source(self, video_id: str, *, input_hash: str) -> dict[str, Any] | None:
+        """A finished authored-fiction seed for exactly this input hash (§C4.5).
+
+        The seed is stored through the ordinary source path, so the reuse key is
+        recorded in ``rights_json`` next to the credibility kind rather than in a
+        new table.
+        """
+
+        for row in self.list_where(
+            "explainer_sources", {"video_id": video_id}, order_by="created_at", descending=False
+        ):
+            rights = row.get("rights_json")
+            if not isinstance(rights, Mapping):
+                continue
+            if str(row.get("source_kind")) != "AUTHORED_FICTION_PACK":
+                continue
+            if str(rights.get("seed_input_hash") or "") == str(input_hash):
+                return row
+        return None
+
+    def set_disambiguation(
+        self,
+        table: str,
+        row_id: str,
+        value: Mapping[str, Any] | None,
+        *,
+        actor: str | None = None,
+        human_decision_key: str = "human_decision",
+    ) -> dict[str, Any]:
+        """Write ``disambiguation_json`` without ever erasing a human decision.
+
+        ``research.py::_apply_entities`` currently writes ``{}`` on every apply,
+        which silently discards an operator's decision.  This is the storage-side
+        guard: an empty write leaves an existing value untouched, and an existing
+        human decision is carried forward over a newer machine value.  The richer
+        application-level merge rule lives in
+        ``contracts_v2.merge_decision_metadata``.
+        """
+
+        if table not in {"explainer_entities", "explainer_claims"}:
+            raise ExplainerContractError(
+                "SCHEMA_INVALID", "该表没有 disambiguation_json 字段", {"table": table}
+            )
+        current = self.get(table, row_id)
+        existing = current.get("disambiguation_json")
+        existing_map = dict(existing) if isinstance(existing, Mapping) else {}
+        incoming = dict(value or {})
+        if not incoming and existing_map:
+            return current
+        if existing_map.get(human_decision_key):
+            incoming = {
+                **existing_map,
+                **incoming,
+                human_decision_key: existing_map[human_decision_key],
+                "human_decision_preserved": True,
+            }
+        return self.update(table, row_id, {"disambiguation_json": incoming}, actor=actor)
 
     # ------------------------------------------------------------------ media ownership
     def require_same_project_media(self, *, project_id: str, media_version_id: str) -> dict[str, Any]:
@@ -698,33 +817,200 @@ class ExplainerRepository:
             ),
         )
 
-    def active_beat_selection(self, beat_id: str, edition_id: str | None = None) -> dict[str, Any] | None:
+    _SELECTION_GLOBAL_SQL = (
+        "SELECT * FROM explainer_beat_selections"
+        " WHERE beat_id = ? AND purpose = ? AND status = 'ACTIVE' AND edition_id IS NULL"
+        " ORDER BY decided_at DESC, created_at DESC LIMIT 1"
+    )
+    _SELECTION_EDITION_SQL = (
+        "SELECT * FROM explainer_beat_selections"
+        " WHERE beat_id = ? AND purpose = ? AND status = 'ACTIVE' AND edition_id = ?"
+        " ORDER BY decided_at DESC, created_at DESC LIMIT 1"
+    )
+
+    def active_beat_selection(
+        self,
+        beat_id: str,
+        edition_id: str | None = None,
+        purpose: str = "VISUAL",
+    ) -> dict[str, Any] | None:
+        """Return the ACTIVE selection for one ``(beat, purpose, edition)`` scope.
+
+        The scope is exact (spec D2.2): a NULL ``edition_id`` is the video-wide
+        fallback tier and a concrete ``edition_id`` is a deliberate per-edition
+        override, so each scope owns its own row.  ``purpose`` separates the adopted
+        first frame (``KEYFRAME``) from the final composable clip (``VISUAL``) so
+        adopting a new still cannot replace an adopted clip.
+
+        The edition-scoped read returns **only** its own row.  A caller that wants the
+        documented "use the video-wide choice when this edition has none" behaviour
+        asks for it explicitly through :meth:`resolved_beat_selection`, so a newer
+        global row can never silently override a deliberate per-edition adoption.
+        """
+
         if edition_id is None:
             return decode_row(
                 "explainer_beat_selections",
-                self.query_one(
-                    "SELECT * FROM explainer_beat_selections WHERE beat_id = ? AND status = 'ACTIVE' ORDER BY created_at DESC LIMIT 1",
-                    (beat_id,),
-                ),
+                self.query_one(self._SELECTION_GLOBAL_SQL, (beat_id, purpose)),
             )
         return decode_row(
             "explainer_beat_selections",
-            self.query_one(
-                """
-                SELECT * FROM explainer_beat_selections
-                WHERE beat_id = ? AND status = 'ACTIVE' AND (edition_id IS NULL OR edition_id = ?)
-                ORDER BY created_at DESC LIMIT 1
-                """,
-                (beat_id, edition_id),
+            self.query_one(self._SELECTION_EDITION_SQL, (beat_id, purpose, edition_id)),
+        )
+
+    def resolved_beat_selection(
+        self,
+        beat_id: str,
+        edition_id: str | None = None,
+        purpose: str = "VISUAL",
+    ) -> dict[str, Any] | None:
+        """The edition's own ACTIVE selection, else the video-wide one (or ``None``)."""
+
+        selection = self.active_beat_selection(beat_id, edition_id, purpose=purpose)
+        if selection is not None or edition_id is None:
+            return selection
+        return self.active_beat_selection(beat_id, None, purpose=purpose)
+
+    def active_beat_selections(self, beat_id: str, edition_id: str | None = None) -> list[dict[str, Any]]:
+        """Every ACTIVE selection of a beat, one per purpose, for this edition."""
+
+        scopes: list[str] = ["edition_id IS NULL"]
+        params: list[Any] = [beat_id]
+        if edition_id is not None:
+            scopes.append("edition_id = ?")
+            params.append(edition_id)
+        rows = self.query_all(
+            f"""
+            SELECT * FROM explainer_beat_selections
+            WHERE beat_id = ? AND status = 'ACTIVE' AND ({' OR '.join(scopes)})
+            ORDER BY purpose, decided_at DESC
+            """,
+            tuple(params),
+        )
+        return decode_rows("explainer_beat_selections", rows)
+
+    def selections_for_edition(self, edition_id: str) -> list[dict[str, Any]]:
+        return decode_rows(
+            "explainer_beat_selections",
+            self.query_all(
+                "SELECT * FROM explainer_beat_selections WHERE edition_id = ? ORDER BY created_at DESC",
+                (edition_id,),
             ),
         )
 
-    def has_human_lock(self, beat_id: str) -> bool:
-        selection = self.active_beat_selection(beat_id)
+    def has_human_lock(self, beat_id: str, purpose: str = "VISUAL") -> bool:
+        """Whether a human has locked this scope.
+
+        ``purpose`` defaults to ``VISUAL`` because that is the layer an automatic
+        pipeline must never overwrite (the final composable clip); a lock on the
+        adopted first frame is a different, independent scope, so a caller that cares
+        about it asks for ``purpose="KEYFRAME"`` explicitly.
+
+        The default lookup is deliberately video-wide: a human lock recorded on a
+        specific edition still protects the material from being regenerated, so this
+        checks the video-wide tier first and then any edition-scoped ACTIVE row.
+        """
+
+        if purpose == "VISUAL":
+            beat = self.find("explainer_visual_beats", beat_id)
+            if beat and beat.get("locked_by_human"):
+                return True
+        selection = self.active_beat_selection(beat_id, purpose=purpose)
         if selection and selection.get("locked_by_human"):
             return True
-        beat = self.find("explainer_visual_beats", beat_id)
-        return bool(beat and beat.get("locked_by_human"))
+        row = self.query_one(
+            """
+            SELECT 1 FROM explainer_beat_selections
+            WHERE beat_id = ? AND purpose = ? AND status = 'ACTIVE' AND locked_by_human = 1
+            LIMIT 1
+            """,
+            (beat_id, purpose),
+        )
+        return row is not None
+
+    def media_candidates(
+        self,
+        *,
+        beat_id: str | None = None,
+        entity_id: str | None = None,
+        purpose: str | None = None,
+        edition_id: str | None = None,
+        include_superseded: bool = True,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Read candidates for exactly one owner, newest first (spec D7).
+
+        Old versions are never hidden by default: the candidate history is what
+        makes "再抽一批并比较" auditable, so paging is the caller's decision.
+        """
+
+        if (beat_id is None) == (entity_id is None):
+            raise ValueError("media_candidates requires exactly one of beat_id or entity_id")
+        clauses: list[str] = []
+        params: list[Any] = []
+        if beat_id is not None:
+            clauses.append("beat_id = ?")
+            params.append(beat_id)
+        else:
+            clauses.append("entity_id = ?")
+            params.append(entity_id)
+        if purpose is not None:
+            clauses.append("purpose = ?")
+            params.append(purpose)
+        if edition_id is not None:
+            clauses.append("(edition_id IS NULL OR edition_id = ?)")
+            params.append(edition_id)
+        if not include_superseded:
+            clauses.append("status <> 'SUPERSEDED'")
+        params.append(int(limit))
+        rows = self.query_all(
+            f"""
+            SELECT * FROM explainer_media_candidates
+            WHERE {' AND '.join(clauses)}
+            ORDER BY created_at DESC, variant_no DESC
+            LIMIT ?
+            """,
+            tuple(params),
+        )
+        return decode_rows("explainer_media_candidates", rows)
+
+    def candidate_by_job(self, job_id: str) -> dict[str, Any] | None:
+        """Resolve the explainer candidate a worker job belongs to, if any.
+
+        The worker completion hook calls this for *every* finished model job, so a
+        miss is a normal, silent "not ours" answer rather than an error.
+        """
+
+        if not job_id:
+            return None
+        return decode_row(
+            "explainer_media_candidates",
+            self.query_one(
+                "SELECT * FROM explainer_media_candidates WHERE job_id = ? ORDER BY created_at DESC LIMIT 1",
+                (job_id,),
+            ),
+        )
+
+    def entity_candidates(self, entity_id: str, *, include_superseded: bool = True) -> list[dict[str, Any]]:
+        return self.media_candidates(
+            entity_id=entity_id, purpose="REFERENCE", include_superseded=include_superseded
+        )
+
+    def candidates_needing_finalize(self, limit: int = 200) -> list[dict[str, Any]]:
+        """Reserved candidates that a finished job has not projected into media yet.
+
+        Used by the startup/periodic reconcile scan so a lost completion callback
+        self-heals instead of leaving a candidate stuck in ``GENERATING``.
+        """
+
+        return decode_rows(
+            "explainer_media_candidates",
+            self.query_all(
+                "SELECT * FROM explainer_media_candidates WHERE status IN ('PENDING','GENERATING') "
+                "ORDER BY created_at ASC LIMIT ?",
+                (int(limit),),
+            ),
+        )
 
     def beats_referencing_identity(self, video_id: str, identity_pack_version_id: str) -> list[dict[str, Any]]:
         return decode_rows(
@@ -1132,6 +1418,30 @@ class ExplainerRepository:
             parameters.append(subject_hash)
         sql += " ORDER BY created_at DESC LIMIT 1"
         return decode_row("explainer_qc_reports", self.query_one(sql, tuple(parameters)))
+
+    def qc_reports_for_subject(
+        self,
+        *,
+        subject_kind: str,
+        subject_revision_id: str,
+        subject_hash: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Every QC report for one subject revision, newest first.
+
+        QC writes one report per layer, so "the" report for a film is a set.  The
+        delivery package lists them all instead of silently shipping whichever layer
+        happened to write last.
+        """
+
+        sql = "SELECT * FROM explainer_qc_reports WHERE subject_kind = ? AND subject_revision_id = ?"
+        parameters: list[Any] = [subject_kind, subject_revision_id]
+        if subject_hash:
+            sql += " AND subject_hash = ?"
+            parameters.append(subject_hash)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        parameters.append(max(1, int(limit)))
+        return decode_rows("explainer_qc_reports", self.query_all(sql, tuple(parameters)))
 
     def issues(self, report_id: str, *, statuses: Sequence[str] | None = None) -> list[dict[str, Any]]:
         sql = "SELECT * FROM explainer_qc_issues WHERE report_id = ?"

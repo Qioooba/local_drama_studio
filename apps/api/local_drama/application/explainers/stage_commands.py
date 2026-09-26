@@ -48,6 +48,17 @@ __all__ = [
 EXPLAINER_STAGE_JOB_TYPES: Mapping[str, str] = {
     "NARRATION_TTS": "NARRATION_TTS",
     "NARRATION_ALIGN": "NARRATION_ALIGN",
+    # The picture stage now produces real AI image-to-video clips, and it is the one
+    # stage that turns an adopted keyframe into a composable clip.  It used to be
+    # reachable only through the whole production graph, so a film whose graph run
+    # had stopped could never get its remaining clips.  It has a first-party handler
+    # in the same ``EXPLAINER_TASK`` family, so it is scheduled here too.
+    "VISUAL_GENERATION": "EXPLAINER_TASK",
+    # ``SUBTITLE_BUILD`` is a prerequisite of a complete delivery package, and the
+    # export stage refuses to freeze a package whose declared subtitle locale has no
+    # subtitle revision.  Without a standalone command the only way to produce one was
+    # to re-run the whole production graph.
+    "SUBTITLE_BUILD": "EXPLAINER_TASK",
     "COMPOSITION_RENDER": "EXPLAINER_TASK",
     "EXPLAINER_POLICY_EVALUATE": "EXPLAINER_TASK",
     "COMPOSITION_QC": "EXPLAINER_TASK",
@@ -67,6 +78,7 @@ STAGE_CAPABILITY_UNAVAILABLE = "CAPABILITY_UNAVAILABLE"
 #: job.  Those are reported as unschedulable instead of being answered with a
 #: fabricated acceptance (design §8.2).
 REPAIR_STAGE_FOR_RESPONSIBLE_STEP: Mapping[str, str] = {
+    "VISUAL_GENERATION": "VISUAL_GENERATION",
     "COMPOSITION_RENDER": "COMPOSITION_RENDER",
     "COMPOSITION_QC": "COMPOSITION_QC",
     "EXPLAINER_POLICY_EVALUATE": "EXPLAINER_POLICY_EVALUATE",
@@ -444,42 +456,176 @@ class ExplainersCommandService:
             )
         )
 
-    # ------------------------------------------------------------------ render
-    def submit_composition_render(
+    def submit_alignment_rerun(
         self,
         *,
         edition_id: str,
-        composition: Mapping[str, Any],
         idempotency_key: str,
-        confirm: bool,
+        take_ids: Sequence[str] = (),
     ) -> dict[str, Any]:
-        """Register a real render job bound to the frozen manifest.
+        """Re-run forced alignment for this edition's selected takes.
 
-        ``COMPOSITION_RENDER`` now has a first-party worker handler, so the command
-        creates a claimable ``EXPLAINER_TASK`` job for the edition instead of
-        describing work no worker could pick up.  Nothing is written unless the
-        composition really is frozen: the previous behaviour flipped the edition to
-        ``RENDERING`` and returned ``SUBMITTED`` while no job existed.
+        Alignment revisions are append-only, and the pipeline align *stage* only
+        processes takes that have no revision yet — so a take whose stored clock is
+        unusable could never be re-measured from the page.  Each take becomes its own
+        real ``NARRATION_ALIGN`` job; nothing is written unless the edition and its
+        takes exist.
         """
 
         with self.database.connect() as connection:
             repo = ExplainerRepository(connection)
             edition = repo.get("explainer_editions", edition_id)
+            if edition is None:
+                raise ExplainerContractError("NOT_FOUND", "找不到该输出版本", {"edition_id": edition_id})
             video = repo.get("explainer_videos", str(edition["video_id"]))
-        if str(composition.get("status")) != "FROZEN":
+            locale = normalize_locale(str(edition["voice_locale"]))
+            takes = repo.selected_takes(str(video["id"]), locale)
+            wanted = {str(item) for item in take_ids if str(item)}
+            if wanted:
+                takes = [item for item in takes if str(item["id"]) in wanted]
+        if not takes:
             return self._blocked(
-                stage_code="COMPOSITION_RENDER",
+                stage_code="NARRATION_ALIGN",
                 blockers=[
                     {
                         "code": "SCHEMA_INVALID",
-                        "message": "渲染必须基于已冻结的 composition manifest",
-                        "next_step": "先冻结 composition。",
+                        "message": "该输出版本没有已选定的旁白条目，无法重新对齐",
+                        "next_step": "先完成旁白合成并选定 take。",
                     }
                 ],
             )
+        submissions: list[dict[str, Any]] = []
+        for take in takes:
+            result = self.submit_alignment(
+                edition_id=edition_id,
+                take_id=str(take["id"]),
+                locale=locale,
+                idempotency_key=f"{idempotency_key}:{take['id']}",
+            )
+            submissions.append(
+                {
+                    "take_id": str(take["id"]),
+                    "canonical_segment_id": str(take["canonical_segment_id"]),
+                    "status": str(result.get("status") or ""),
+                    "job_id": result.get("job_id"),
+                    "blockers": result.get("blockers"),
+                }
+            )
+        accepted = [item for item in submissions if item["status"] == "ACCEPTED"]
+        return {
+            "status": "ACCEPTED" if accepted else "BLOCKED",
+            "stage_code": "NARRATION_ALIGN",
+            "edition_id": edition_id,
+            "locale": locale,
+            "take_count": len(takes),
+            "accepted_count": len(accepted),
+            "job_ids": [str(item["job_id"]) for item in accepted if item["job_id"]],
+            "submissions": submissions,
+            "note": "每个 take 一个真实对齐任务；旧对齐修订保留，新修订追加。",
+        }
+
+    # ------------------------------------------------------------------ render
+    def submit_visual_generation(
+        self,
+        *,
+        video_id: str,
+        idempotency_key: str,
+        beat_ids: Sequence[str] = (),
+        edition_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Schedule the real picture stage for one film's remaining clips.
+
+        The command exists so a film whose production graph run stopped (or that was
+        driven page by page from the start) can still be finished: the stage itself
+        reuses every human-adopted keyframe and every beat that already has a READY
+        visual candidate, and generates a real image-to-video clip for the rest.
+        Nothing is written unless the film really exists; ``beat_ids`` narrows the
+        run to an explicit selection.
+        """
+
+        with self.database.connect() as connection:
+            repo = ExplainerRepository(connection)
+            video = repo.get("explainer_videos", video_id)
+            if video is None:
+                raise ExplainerContractError(
+                    "NOT_FOUND", "找不到该解说作品", {"video_id": video_id}
+                )
+            editions = repo.list_where("explainer_editions", {"video_id": video_id})
+            if not editions:
+                return self._blocked(
+                    stage_code="VISUAL_GENERATION",
+                    blockers=[
+                        {
+                            "code": "SCHEMA_INVALID",
+                            "message": "该作品没有输出版本，画面没有可落地的载体",
+                            "next_step": "先在项目设置里声明至少一个输出版本。",
+                        }
+                    ],
+                )
+            beats = repo.beats(video_id)
+            if not beats:
+                return self._blocked(
+                    stage_code="VISUAL_GENERATION",
+                    blockers=[
+                        {
+                            "code": "SCHEMA_INVALID",
+                            "message": "该作品还没有画面段，无法生成片段",
+                            "next_step": "先完成第 4 步分镜与画面。",
+                        }
+                    ],
+                )
+            resolved_edition_id = str(edition_id or editions[0]["id"])
+            if not any(str(item["id"]) == resolved_edition_id for item in editions):
+                raise ExplainerContractError(
+                    "INVALID_REQUEST",
+                    "所选输出版本不属于该作品",
+                    {"edition_id": resolved_edition_id, "video_id": video_id},
+                )
         return self._submit_stage(
             _StageRequest(
-                stage_code="COMPOSITION_RENDER",
+                stage_code="VISUAL_GENERATION",
+                project_id=str(video["project_id"]),
+                video_id=video_id,
+                subject_type="EXPLAINER_VIDEO",
+                subject_id=video_id,
+                subject_kind="VIDEO",
+                snapshot={
+                    "semantic_inputs": {
+                        "project_id": str(video["project_id"]),
+                        "video_id": video_id,
+                        "edition_id": resolved_edition_id,
+                        "beat_ids": [str(item) for item in beat_ids],
+                    }
+                },
+                idempotency_key=idempotency_key,
+            )
+        )
+
+    def submit_subtitle_build(
+        self,
+        *,
+        edition_id: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Schedule the real subtitle build for one edition.
+
+        The command exists because a complete delivery package requires a subtitle
+        revision for every locale the edition declares, and the export stage refuses
+        an incomplete roster.  Subtitle building is a plain local stage, so it needs
+        no capability gate beyond the edition existing.
+        """
+
+        with self.database.connect() as connection:
+            repo = ExplainerRepository(connection)
+            edition = repo.get("explainer_editions", edition_id)
+            if edition is None:
+                raise ExplainerContractError(
+                    "NOT_FOUND", "找不到该输出版本", {"edition_id": edition_id}
+                )
+            video = repo.get("explainer_videos", str(edition["video_id"]))
+        return self._submit_stage(
+            _StageRequest(
+                stage_code="SUBTITLE_BUILD",
                 project_id=str(video["project_id"]),
                 video_id=str(video["id"]),
                 subject_type="EXPLAINER_EDITION",
@@ -490,10 +636,140 @@ class ExplainersCommandService:
                         "project_id": str(video["project_id"]),
                         "video_id": str(video["id"]),
                         "edition_id": edition_id,
-                        "composition_revision_id": str(composition.get("id") or ""),
-                        "manifest_hash": str(composition.get("manifest_hash") or ""),
                     }
                 },
+                idempotency_key=idempotency_key,
+            )
+        )
+
+    def submit_composition_qc(
+        self,
+        *,
+        edition_id: str,
+        render_id: str = "",
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Schedule the real technical/session QC for one rendered film.
+
+        ``COMPOSITION_QC`` sits between the render and the machine policy decision,
+        and the delivery package ships its report — but until now the only way to run
+        it was to let the whole production graph reach it, so a film driven stage by
+        stage shipped a package whose ``qc_report.json`` said ``NOT_RUN``.  The
+        subject is pinned to a concrete render (the newest verified one by default),
+        never re-resolved behind the operator's back.
+        """
+
+        from local_drama.infrastructure.database.explainer_repository import ExplainerRepository
+
+        with self.database.connect() as connection:
+            repo = ExplainerRepository(connection)
+            edition = repo.get("explainer_editions", edition_id)
+            if edition is None:
+                raise ExplainerContractError("NOT_FOUND", "找不到该输出版本", {"edition_id": edition_id})
+            video = repo.get("explainer_videos", str(edition["video_id"]))
+            resolved_render_id = str(render_id or "").strip()
+            if resolved_render_id:
+                render = repo.find("composition_renders", resolved_render_id)
+                if render is None or str(render.get("edition_id") or "") != str(edition_id):
+                    raise ExplainerContractError(
+                        "NOT_FOUND",
+                        "找不到该输出版本的渲染版本",
+                        {"edition_id": edition_id, "render_id": resolved_render_id},
+                    )
+            else:
+                target = repo.current_review_target(edition_id)
+                resolved_render_id = str(target.get("render_id") or "")
+            if not resolved_render_id:
+                return self._blocked(
+                    stage_code="COMPOSITION_QC",
+                    blockers=[
+                        {
+                            "code": "SCHEMA_INVALID",
+                            "message": "该输出版本还没有可质检的成片，无法运行技术质检",
+                            "next_step": "先完成第 7 步全片渲染。",
+                        }
+                    ],
+                )
+            render_row = repo.find("composition_renders", resolved_render_id) or {}
+            subject_hash = str(render_row.get("sha256") or "")
+        return self._submit_stage(
+            _StageRequest(
+                stage_code="COMPOSITION_QC",
+                project_id=str(video["project_id"]),
+                video_id=str(video["id"]),
+                subject_type="COMPOSITION_RENDER",
+                subject_id=resolved_render_id,
+                subject_kind="COMPOSITION_RENDER",
+                snapshot={
+                    "semantic_inputs": {
+                        "project_id": str(video["project_id"]),
+                        "video_id": str(video["id"]),
+                        "edition_id": edition_id,
+                        "subject_kind": "COMPOSITION_RENDER",
+                        "subject_revision_id": resolved_render_id,
+                        "render_id": resolved_render_id,
+                        "subject_hash": subject_hash,
+                    }
+                },
+                idempotency_key=idempotency_key,
+            )
+        )
+
+    def submit_composition_render(
+        self,
+        *,
+        edition_id: str,
+        composition: Mapping[str, Any] | None,
+        idempotency_key: str,
+        confirm: bool,
+    ) -> dict[str, Any]:
+        """Register a real render job bound to the frozen manifest.
+
+        ``COMPOSITION_RENDER`` now has a first-party worker handler, so the command
+        creates a claimable ``EXPLAINER_TASK`` job for the edition instead of
+        describing work no worker could pick up.  Nothing is written unless the
+        composition really is frozen: the previous behaviour flipped the edition to
+        ``RENDERING`` and returned ``SUBMITTED`` while no job existed.
+
+        ``composition=None`` is the **first** render of an edition: the stage itself
+        builds and freezes the manifest from the adopted clips and narration, so the
+        command only carries the edition scope.  A caller that passes a composition
+        must pass a frozen one — reading "the latest" behind the operator's back is
+        exactly what this refusal prevents.
+        """
+
+        with self.database.connect() as connection:
+            repo = ExplainerRepository(connection)
+            edition = repo.get("explainer_editions", edition_id)
+            video = repo.get("explainer_videos", str(edition["video_id"]))
+        if composition is not None and str(composition.get("status")) != "FROZEN":
+            return self._blocked(
+                stage_code="COMPOSITION_RENDER",
+                blockers=[
+                    {
+                        "code": "SCHEMA_INVALID",
+                        "message": "渲染必须基于已冻结的 composition manifest",
+                        "next_step": "先冻结 composition。",
+                    }
+                ],
+            )
+        semantic_inputs: dict[str, Any] = {
+            "project_id": str(video["project_id"]),
+            "video_id": str(video["id"]),
+            "edition_id": edition_id,
+        }
+        if composition is not None:
+            semantic_inputs["composition_revision_id"] = str(composition.get("id") or "")
+            semantic_inputs["manifest_hash"] = str(composition.get("manifest_hash") or "")
+        return self._submit_stage(
+            _StageRequest(
+                stage_code="COMPOSITION_RENDER",
+                project_id=str(video["project_id"]),
+                video_id=str(video["id"]),
+                subject_type="EXPLAINER_EDITION",
+                subject_id=edition_id,
+                subject_kind="EDITION",
+                snapshot={"semantic_inputs": semantic_inputs},
                 idempotency_key=idempotency_key,
             )
         )

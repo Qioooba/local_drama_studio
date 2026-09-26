@@ -60,19 +60,27 @@ class _OllamaRuntime:
 
 
 class _LlamaManager:
-    def __init__(self, *, start_error: DomainRuleError | None = None, orphaned: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        start_error: DomainRuleError | None = None,
+        orphaned: bool = False,
+        recorded_process: bool = False,
+    ) -> None:
         self.start_calls: list[LlamaServerLaunchSpec] = []
         self.adopt_calls: list[LlamaServerLaunchSpec] = []
         self.stop_calls = 0
+        self.stop_recorded_calls = 0
         self.running = False
         self.start_error = start_error
         self.orphaned = orphaned
+        self.recorded_process = recorded_process
 
     def is_running(self) -> bool:
         return self.running
 
     def has_owned_process_record(self) -> bool:
-        return self.orphaned
+        return self.orphaned or self.recorded_process
 
     def start(self, spec: LlamaServerLaunchSpec) -> str:
         self.start_calls.append(spec)
@@ -88,6 +96,11 @@ class _LlamaManager:
 
     def stop(self) -> bool:
         self.stop_calls += 1
+        self.running = False
+        return True
+
+    def stop_recorded_process(self) -> bool:
+        self.stop_recorded_calls += 1
         self.running = False
         return True
 
@@ -273,6 +286,37 @@ def test_llama_adapter_evict_adopts_owned_orphan_before_switch() -> None:
     assert adapter.evict(GpuEvictMode.SWITCH) is True
     assert manager.adopt_calls == [_spec()]
     assert manager.stop_calls == 1
+
+
+def test_llama_adapter_evict_stops_recorded_child_when_no_spec_can_be_built() -> None:
+    """An unconfigured managed runtime must not block another runtime's switch.
+
+    The owning installation's PID file proves the child is ours; a machine
+    configuration that can no longer build a launch spec (binary or GGUF path
+    unset after a run) is not proof that the child released the device.
+    """
+
+    def _unbuildable(_context: object = None) -> LlamaServerLaunchSpec:
+        raise DomainRuleError("LLAMA_SERVER_BIN_MISSING", "托管 llama.cpp Runtime 未配置可执行文件路径")
+
+    manager = _LlamaManager(recorded_process=True)
+    adapter = ManagedLlamaCppGpuLifecycleAdapter(manager, _unbuildable)
+    assert adapter.evict(GpuEvictMode.SWITCH) is True
+    assert manager.stop_recorded_calls == 1
+    assert manager.stop_calls == 0
+    assert manager.adopt_calls == []
+
+
+def test_llama_adapter_evict_propagates_unrelated_launch_spec_failures() -> None:
+    def _broken(_context: object = None) -> LlamaServerLaunchSpec:
+        raise DomainRuleError("LLAMA_SERVER_ARGV_INVALID", "launch spec is malformed")
+
+    manager = _LlamaManager(recorded_process=True)
+    adapter = ManagedLlamaCppGpuLifecycleAdapter(manager, _broken)
+    with pytest.raises(DomainRuleError) as caught:
+        adapter.evict(GpuEvictMode.SWITCH)
+    assert caught.value.code == "LLAMA_SERVER_ARGV_INVALID"
+    assert manager.stop_recorded_calls == 0
 
 
 # -- Registry and factory ---------------------------------------------------

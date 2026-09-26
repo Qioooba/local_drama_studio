@@ -42,6 +42,23 @@ class _StubLlamaManager:
         self.stop_calls = 0
         self.running = False
         self.last_spec: LlamaServerLaunchSpec | None = None
+        # The lifecycle adapter asks for the ownership record before adopting or
+        # evicting an orphaned server.  A double that cannot answer that question
+        # made every llama.cpp smoke test die with AttributeError.
+        self.owned_process_record = False
+
+    def has_owned_process_record(self) -> bool:
+        return bool(self.owned_process_record)
+
+    def adopt_owned_process(self, spec: LlamaServerLaunchSpec) -> bool:
+        self.last_spec = spec
+        self.running = True
+        return True
+
+    def stop_recorded_process(self) -> bool:
+        self.owned_process_record = False
+        self.running = False
+        return True
 
     def is_running(self) -> bool:
         return self.running

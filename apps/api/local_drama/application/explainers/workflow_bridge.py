@@ -188,7 +188,11 @@ def run_explainer_workflow_step(
         semantic_inputs["capability_snapshot"] = dict(raw_snapshot)
     if step_code == "EXPLAINER_STORYBOARD":
         # The storyboard may only plan render types the frozen capability snapshot
-        # authorized; without the snapshot the planner keeps the still/graphic path.
+        # authorized.  The deterministic still-picture types (``STILL_MOTION`` /
+        # ``PARALLAX``) are retired: an explainer's moving pictures come from real AI
+        # image-to-video, so ``I2V`` is offered only when the snapshot really has a
+        # published ``video.image_to_video`` binding, and it is offered first so the
+        # planner prefers it over the remaining graphic / licensed-material types.
         raw_capabilities = raw_snapshot
         capabilities: Any = {}
         if isinstance(raw_capabilities, str) and raw_capabilities.strip():
@@ -198,7 +202,7 @@ def run_explainer_workflow_step(
                 capabilities = {}
         elif isinstance(raw_capabilities, Mapping):
             capabilities = dict(raw_capabilities)
-        usable: list[str] = ["STILL_MOTION", "INFOGRAPHIC"]
+        usable: list[str] = []
         entries = capabilities.get("capabilities") if isinstance(capabilities, Mapping) else None
         if isinstance(entries, list):
             available = {
@@ -208,8 +212,7 @@ def run_explainer_workflow_step(
             }
             if "video.image_to_video" in available:
                 usable.append("I2V")
-            if "image.text_to_image" in available:
-                usable.append("PARALLAX")
+        usable.extend(["INFOGRAPHIC", "LICENSED_MEDIA"])
         semantic_inputs["usable_render_types"] = usable
     if step_code in _QC_LAYERS:
         layers = list(_QC_LAYERS[step_code])

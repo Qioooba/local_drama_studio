@@ -40,13 +40,44 @@ export const STEP_STATUS_LABELS: Record<ExplainerStepStatus, string> = {
   STALE: "已过期",
 };
 
+/**
+ * The render types that still exist.  An explainer picture is always produced by
+ * real AI 图生视频 (`I2V`); 图形动画 (`INFOGRAPHIC`) and 已有视频/授权素材
+ * (`LICENSED_MEDIA`) are the two non-AI-picture sources and stay separately named.
+ */
 export const RENDER_TYPE_LABELS: Record<string, string> = {
-  STILL_MOTION: "插画轻动",
-  PARALLAX: "分层视差",
-  I2V: "图生视频",
-  INFOGRAPHIC: "信息图 / 时间线",
-  LICENSED_MEDIA: "授权素材",
+  I2V: "AI 动态（图生视频）",
+  INFOGRAPHIC: "图形动画 / 信息图",
+  LICENSED_MEDIA: "已有视频 / 授权素材",
 };
+
+/**
+ * Render types that the product removed.  静图推拉 (deterministic local
+ * composition: `STILL_MOTION` / `PARALLAX` / `IMAGE_MOTION`) is not a legal
+ * target any more, but a database written before the removal may still hold one.
+ * Such a value is surfaced as an outdated plan that must be changed to AI 动态 —
+ * never as a still-image motion label, and never silently as AI 动态 either.
+ */
+export const RETIRED_RENDER_TYPES: ReadonlySet<string> = new Set([
+  "STILL_MOTION",
+  "PARALLAX",
+  "IMAGE_MOTION",
+]);
+
+export function isRetiredRenderType(renderType: string | null | undefined): boolean {
+  return RETIRED_RENDER_TYPES.has(String(renderType ?? "").toUpperCase());
+}
+
+/** The one label every render type is displayed through. */
+export function renderTypeLabel(renderType: string | null | undefined): string {
+  if (renderType === null || renderType === undefined || renderType === "") return "尚未决定";
+  const key = String(renderType).toUpperCase();
+  if (isRetiredRenderType(key)) return "计划方式已停用";
+  return RENDER_TYPE_LABELS[key] ?? String(renderType);
+}
+
+/** What an outdated (retired) stored value must be replaced with. */
+export const RETIRED_RENDER_TYPE_NOTE = "计划方式已停用：必须改为 AI 动态（图生视频），旧的静图推拉/视差方式已不再生产。";
 
 export const STATEMENT_TYPE_LABELS: Record<string, string> = {
   FACT: "事实",
@@ -100,10 +131,26 @@ export function isStepTerminal(step: ExplainerStep): boolean {
   return ["SUCCEEDED", "SKIPPED_WITH_REASON", "TERMINAL_FAILED", "CANCELLED"].includes(step.status);
 }
 
-export function plannedVsActual(beat: Record<string, unknown>): { planned: string; actual: string | null; degraded: boolean } {
+/**
+ * Planned and actual are never merged.  `degraded` is a pure comparison of the two
+ * real values, so a planned `I2V` with an actual `I2V` is never degraded.  A plan
+ * that still holds a retired type (a legacy `STILL_MOTION` row) is flagged as such:
+ * it is not a legal target and has to be changed to AI 动态.
+ */
+export function plannedVsActual(beat: Record<string, unknown>): {
+  planned: string;
+  actual: string | null;
+  degraded: boolean;
+  plannedIsRetired: boolean;
+} {
   const planned = String(beat.render_type ?? "");
   const actual = beat.render_type_actual ? String(beat.render_type_actual) : null;
-  return { planned, actual, degraded: Boolean(actual && actual !== planned) };
+  return {
+    planned,
+    actual,
+    degraded: Boolean(actual && actual !== planned),
+    plannedIsRetired: isRetiredRenderType(planned),
+  };
 }
 
 export function formatSeconds(totalSeconds: number | null | undefined): string {

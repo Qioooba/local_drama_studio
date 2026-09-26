@@ -765,11 +765,6 @@ class ProjectPackageService:
                               "render_type_planned,render_type_actual,fallback_reason,technical_retry_count,"
                               "creative_repair_count,qc_summary_json,adopted,created_at,updated_at,created_by,revision,"
                               "schema_version", "explainer_media_candidates", order="video_id,beat_id,variant_no,id")
-            beat_selections = rows("id,video_id,beat_id,edition_id,candidate_id,media_asset_id,media_version_id,"
-                                   "media_sha256,source_in_us,source_out_us,adoption_authority,locked_by_human,actor,"
-                                   "decided_at,policy_decision_id,render_type_actual,fallback_reason,status,created_at,"
-                                   "updated_at,created_by,revision,schema_version", "explainer_beat_selections",
-                                   order="video_id,beat_id,created_at,id")
             media_assets = [dict(row) for row in connection.execute(
                 "SELECT id,project_id,owner_type,owner_id,purpose,media_kind,version_counter,metadata_json,"
                 "created_at,updated_at,created_by,revision,schema_version FROM media_assets "
@@ -1405,7 +1400,6 @@ class ProjectPackageService:
         claim_ids = {str(item.get("id")) for item in state["claims"]}
         segment_ids = {str(item.get("id")) for item in state["narration_segments"]}
         beat_ids = {str(item.get("id")) for item in state["visual_beats"]}
-        edition_ids = {str(item.get("id")) for item in state["editions"]}
         take_ids = {str(item.get("id")) for item in state["narration_takes"]}
         revision_ids = {str(item.get("id")) for item in state["script_revisions"]}
         composition_ids = {str(item.get("id")) for item in state["compositions"]} if "compositions" in state else {

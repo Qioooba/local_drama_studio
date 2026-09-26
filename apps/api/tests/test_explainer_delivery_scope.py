@@ -29,6 +29,7 @@ from local_drama.api.routes.explainers import (
     _start_export,
 )
 from local_drama.api.schemas.explainers import ExplainerExportRequest
+from local_drama.application.explainers.production_pipeline import _aggregate_qc_status
 from local_drama.domain.explainers.contracts import ExplainerContractError
 from local_drama.infrastructure.database.explainer_repository import ExplainerRepository
 from local_drama.infrastructure.database.sqlite import Database
@@ -85,6 +86,7 @@ def _seed(database: Database, *, key: str) -> dict[str, str]:
         "edition_id": f"ed-{key}",
         "composition_id": f"comp-{key}",
         "render_id": f"render-{key}",
+        "render_hash": key * 64,
     }
 
 
@@ -390,4 +392,56 @@ def test_render_scope_helper_is_the_single_shared_implementation() -> None:
     # export and QC paths.
     assert 'repo.find("composition_renders", payload.render_id)' not in source
     assert 'repo.find("composition_renders", render_id)' not in source
+
+
+def test_the_packaged_qc_report_lists_every_layer_and_the_worst_verdict(
+    database: Database, workspace: object
+) -> None:
+    """One report per layer, and the bundle must not present the newest as the whole.
+
+    After the 1962 film's semantic layer reported NOT_RUN, the package's
+    ``qc_report.json`` held that row even though the technical layer had PASSED the
+    same render with 3122 decoded frames and a measured loudness.  The shipped file
+    now lists every layer's verdict and an aggregate that takes the worst.
+    """
+
+    a = _seed(database, key="q")
+    with database.transaction() as connection:
+        for report_id, detector, status, created in (
+            ("report-tech", "technical_full_decode_v1", "PASS", "2026-01-01T00:00:00Z"),
+            ("report-semantic", "visual_semantic_v1", "NOT_RUN", "2026-01-01T00:10:00Z"),
+        ):
+            connection.execute(
+                "INSERT INTO explainer_qc_reports (id, project_id, video_id, edition_id, subject_kind,"
+                " subject_revision_id, subject_hash, status, coverage_json, unverified_checks_json,"
+                " detectors_json, created_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    report_id, a["project_id"], a["video_id"], a["edition_id"], "COMPOSITION_RENDER",
+                    a["render_id"], a["render_hash"], status, json.dumps({"total_frames": 250}), "[]",
+                    json.dumps([{"detector": detector}]), created,
+                ),
+            )
+    repo = _repo(database)
+    try:
+        reports = repo.qc_reports_for_subject(
+            subject_kind="COMPOSITION_RENDER",
+            subject_revision_id=a["render_id"],
+            subject_hash=a["render_hash"],
+        )
+        assert [item["id"] for item in reports] == ["report-semantic", "report-tech"]
+        latest = repo.latest_qc_report(
+            subject_kind="COMPOSITION_RENDER",
+            subject_revision_id=a["render_id"],
+            subject_hash=a["render_hash"],
+        )
+        assert latest is not None and latest["id"] == "report-semantic"
+    finally:
+        repo.connection.close()
+
+    assert _aggregate_qc_status([item["status"] for item in reports]) == "NOT_RUN"
+    # A PASS on one layer can never hide a failing or unchecked layer on another.
+    assert _aggregate_qc_status(["PASS", "FAIL"]) == "FAIL"
+    assert _aggregate_qc_status(["PASS", "BLOCKED"]) == "BLOCKED"
+    assert _aggregate_qc_status([]) == "NOT_RUN"
 

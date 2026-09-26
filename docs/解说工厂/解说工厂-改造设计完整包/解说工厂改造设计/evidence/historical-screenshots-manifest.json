@@ -1,0 +1,26 @@
+[
+  {
+    "file": "历史-故事工作区.png",
+    "origin_repo_path": "docs/visual_audit/flash_check/screenshots/06_story_workspace_full.png",
+    "source_commit": "d91a4107b6733a4783d860689fb819720463214a",
+    "sha256": "bc9a810c3c06358746aba06d8633ae3a03cd4d7ff7930b90304885c0ee6e5516",
+    "type": "HISTORICAL_REPO_SCREENSHOT",
+    "captured_this_turn": false
+  },
+  {
+    "file": "历史-导演台候选.png",
+    "origin_repo_path": "docs/visual_audit/flash_check/screenshots/19_director_desk_shot_full.png",
+    "source_commit": "d91a4107b6733a4783d860689fb819720463214a",
+    "sha256": "7a73fa04a74abe571e41704ddd1c9a27b4d024c98295b54891960533a7fbe01c",
+    "type": "HISTORICAL_REPO_SCREENSHOT",
+    "captured_this_turn": false
+  },
+  {
+    "file": "历史-导演台深色.png",
+    "origin_repo_path": "docs/visual_audit/reports/screenshots/P19_director_desk/P19_director_desk_laptop_900p_dark.png",
+    "source_commit": "d91a4107b6733a4783d860689fb819720463214a",
+    "sha256": "06382af6c7fde2a1c05de6cda269fa4b35da20a5f1f48282e6b8df9d41f27748",
+    "type": "HISTORICAL_REPO_SCREENSHOT",
+    "captured_this_turn": false
+  }
+]

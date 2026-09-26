@@ -398,3 +398,42 @@ def test_zombie_adoption_never_reports_a_healthy_managed_server(tmp_path: Path) 
     assert manager.has_owned_process_record() is False
     assert not (log_dir / "llama_server.pid").exists()
     assert manager.adopt_owned_process(_spec(launcher, port)) is False
+
+
+def test_recorded_child_is_stopped_without_a_launch_spec(tmp_path: Path) -> None:
+    """A stale PID file must be evictable even when no spec can be built.
+
+    On a machine where the managed llama.cpp runtime is no longer configured,
+    the launch spec cannot be resolved — but the PID file this manager wrote
+    still names a live child holding VRAM.  Refusing to evict it failed every
+    ComfyUI job's ``prepare()`` with ``LLAMA_SERVER_BIN_MISSING``.
+    """
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "llama_server.pid").write_text("43215", encoding="utf-8")
+    terminated: list[int] = []
+    manager = LlamaServerManager(
+        log_dir=log_dir,
+        poll_seconds=0.02,
+        terminate_grace_seconds=0.3,
+        post_exit_settle_seconds=0.0,
+        port_free_wait_seconds=0.2,
+        process_state=lambda pid: ProcessState.EXITED if terminated else ProcessState.RUNNING,
+        terminate_pid=lambda pid: terminated.append(pid) or True,
+    )
+
+    assert manager.stop_recorded_process() is True
+    assert terminated == [43215]
+    assert not (log_dir / "llama_server.pid").exists()
+    assert manager.active_spec is None
+
+
+def test_recorded_child_absent_is_reported_as_nothing_to_stop(tmp_path: Path) -> None:
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "llama_server.pid").write_text("43216", encoding="utf-8")
+    manager = _manager(tmp_path, process_state=lambda _pid: ProcessState.MISSING, terminate=lambda _pid: True)
+
+    assert manager.stop_recorded_process() is False
+    assert not (log_dir / "llama_server.pid").exists()

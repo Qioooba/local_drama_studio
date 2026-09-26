@@ -1,7 +1,7 @@
 {
   "schema_version": "localdrama.release-migration-contract.v1",
   "expected_heads": [
-    "0105_explainer_beat_plan_scope"
+    "0109_explainer_subtitle_build_stage"
   ],
   "upgrade_command": ".venv\\\\Scripts\\\\python.exe -m alembic upgrade heads",
   "rollback_policy": "restore_verified_pre_migration_backup_with_matching_code",
@@ -524,6 +524,40 @@
         "explainer_visual_beats.plan_step_binding_id",
         "beat code uniqueness scoped to the producing plan instead of the whole video",
         "unattributed legacy beats keep a partial video+code unique index and are not backfilled without evidence"
+      ]
+    },
+    {
+      "revision": "0106_explainer_visual_candidate_owners",
+      "facts": [
+        "explainer_media_candidates.entity_id and edition_id owners with exactly one owner per candidate",
+        "explainer_media_candidates variant uniqueness split into beat/entity and global/edition partial unique indexes",
+        "explainer_beat_selections.purpose separating REFERENCE, KEYFRAME and VISUAL selections",
+        "one ACTIVE selection per beat+purpose+edition with duplicate legacy rows collapsed by human lock, media availability and recency",
+        "two conflicting human locks in one scope are preserved and reported instead of guessed",
+        "run_identity_inputs and entity_identity_bindings replace UNIQUE(...,status) with ACTIVE-only partial unique indexes so reference history can accumulate"
+      ]
+    },
+    {
+      "revision": "0107_retire_still_motion_render_type",
+      "facts": [
+        "explainer_visual_beats.render_type no longer allows the retired STILL_MOTION and PARALLAX values",
+        "existing still-motion beats are re-planned as I2V because an explainer picture is a real AI image-to-video",
+        "a retired actual_fallback_type is cleared and its history kept in fallback_reason",
+        "adopted still-plus-camera-move candidates keep their honest historical label instead of being rewritten as AI generated"
+      ]
+    },
+    {
+      "revision": "0108_explainer_visual_generation_stage",
+      "facts": [
+        "job_stage_definitions.VISUAL_GENERATION so the explainer picture stage can be scheduled as a standalone job",
+        "the picture stage is no longer reachable only inside a whole-graph run"
+      ]
+    },
+    {
+      "revision": "0109_explainer_subtitle_build_stage",
+      "facts": [
+        "job_stage_definitions.SUBTITLE_BUILD so the explainer subtitle stage can be scheduled as a standalone job",
+        "an edition driven page by page can build the subtitles its declared locales need for a complete delivery package"
       ]
     }
   ]

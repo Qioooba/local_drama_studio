@@ -5,6 +5,10 @@
  * checks, and a machine may only adopt material whose required checks all passed.
  * When a content check cannot run, the operator decides — once, for the whole class
  * of beats — instead of clicking every beat (design §2.5, §6.3).
+ *
+ * §B9 keeps the two halves apart: the preview reads a plan and submits nothing (so
+ * it carries no Idempotency-Key), while the confirming call is the one operation
+ * that records HUMAN adoptions and therefore must carry a key and an actor.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -16,10 +20,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../generated/api", () => ({
   adoptExplainerGeneratedBeats: vi.fn(),
   getExplainerBeatImpact: vi.fn(),
+  getExplainerOverview: vi.fn(),
+  getExplainerWorkspaceReadiness: vi.fn(),
+  listExplainerOwnerCandidates: vi.fn(),
+  planExplainerBeatGeneration: vi.fn(),
+  preflightExplainerPlan: vi.fn(),
+  retryJob: vi.fn(),
   selectExplainerBeatCandidate: vi.fn(),
+  startExplainerRun: vi.fn(),
+  submitExplainerBeatGeneration: vi.fn(),
+  unlockExplainerSelection: vi.fn(),
 }));
 
-import { adoptExplainerGeneratedBeats } from "../../generated/api";
+vi.mock("../model-config/CapabilityPicker", () => ({
+  CapabilityPicker: ({ label }: { label?: string }) => <div>{label ?? "能力选择"}</div>,
+  useCapabilityOptions: () => ({ data: undefined, isPending: false, error: null, refetch: vi.fn() }),
+  effectiveCapabilityProfile: () => ({
+    profileVersionId: "profile-1",
+    option: { selectable: true, blockers: [], warnings: [], input_slots: [] },
+    ready: true,
+  }),
+}));
+
+import {
+  adoptExplainerGeneratedBeats,
+  getExplainerOverview,
+  getExplainerWorkspaceReadiness,
+  listExplainerOwnerCandidates,
+} from "../../generated/api";
 import { resetCommandIdCache } from "../../services/commandId";
 import { ExplainerStoryboardPage } from "./StoryboardPage";
 
@@ -28,7 +56,7 @@ const BEAT = {
   code: "B001",
   ordinal: 0,
   revision: 4,
-  render_type: "STILL_MOTION",
+  render_type: "I2V",
   render_type_actual: null,
   must_be_motion: false,
   locked_by_human: false,
@@ -36,29 +64,24 @@ const BEAT = {
   visual_intent: "画面",
   preferred_duration_ms: 3000,
   fallback_reason: null,
-  narration_links: [{ canonical_segment_id: "seg_001" }],
+  narration_links: [{ canonical_segment_id: "seg_001", display_text: "一段旁白。" }],
+  candidates: [],
   active_selection: null,
 };
 
 vi.mock("./useExplainerQueries", () => ({
   useExplainerEditions: () => ({ data: { editions: [{ id: "e1" }] }, isPending: false }),
-  useExplainerBeats: () => ({ data: { beats: [BEAT] }, isPending: false, isError: false }),
-  useExplainerBeatCandidates: () => ({
-    data: { candidates: [] },
-    isPending: false,
-    isError: false,
-    isSuccess: true,
-    refetch: vi.fn(),
-  }),
+  useExplainerBeats: () => ({ data: { beats: [BEAT] }, isPending: false, isError: false, error: null, refetch: vi.fn() }),
+  useExplainerAssets: () => ({ data: { entities: [] }, isPending: false, isError: false, error: null, refetch: vi.fn() }),
 }));
 
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/p/p1/explainers/storyboard"]}>
+      <MemoryRouter initialEntries={["/explainers/p1/storyboard"]}>
         <Routes>
-          <Route path="/p/:projectId/explainers/storyboard" element={<ExplainerStoryboardPage />} />
+          <Route path="/explainers/:projectId/storyboard" element={<ExplainerStoryboardPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -68,7 +91,24 @@ function mount() {
 describe("explainer batch picture adoption", () => {
   beforeEach(() => {
     resetCommandIdCache();
-    vi.mocked(adoptExplainerGeneratedBeats).mockReset();
+    vi.clearAllMocks();
+    vi.mocked(listExplainerOwnerCandidates).mockResolvedValue({
+      project_id: "p1",
+      owner_kind: "BEAT",
+      owner_id: "beat-1",
+      purpose: "KEYFRAME",
+      edition_id: null,
+      candidates: [],
+      counts: { REFERENCE: 0, KEYFRAME: 0, VISUAL: 0 },
+      active_selection: null,
+      empty_state: "NO_CANDIDATES_YET",
+      candidates_newest_first: true,
+      read_error_keeps_known_selection: true,
+    } as never);
+    vi.mocked(getExplainerOverview).mockResolvedValue({
+      capability_snapshot: { probed: true, capabilities: [], unknown_count: 0, unavailable_count: 0 },
+    } as never);
+    vi.mocked(getExplainerWorkspaceReadiness).mockResolvedValue({ steps: [] } as never);
   });
 
   afterEach(() => {

@@ -43,6 +43,7 @@ What this module deliberately does NOT do:
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, ClassVar, Mapping, Protocol, Sequence
@@ -135,6 +136,26 @@ UNCLASSIFIED_FINDING_SEVERITY = Severity.MAJOR.value
 
 def _detector_version(detector: str) -> str:
     return DETECTOR_VERSIONS.get(detector, "")
+
+
+def _error_detail_text(error: BaseException, *, limit: int = 300) -> str:
+    """A provider error's message plus its structured details, bounded.
+
+    A capability adapter reports the *reason* in ``error.details`` (the exception
+    class of the underlying call, the endpoint it could not reach).  Recording only
+    the message left an operator with "the multimodal call failed" and no way to tell
+    a stopped model server from an unreadable frame.
+    """
+
+    message = str(error)
+    details = getattr(error, "details", None)
+    if isinstance(details, Mapping) and details:
+        try:
+            rendered = json.dumps({str(key): item for key, item in details.items()}, ensure_ascii=False)
+        except (TypeError, ValueError):
+            rendered = str(details)
+        message = f"{message} {rendered}"
+    return message[:limit]
 
 
 #: Which coverage layer a detector belongs to; used when a caller omits ``layer``.
@@ -1703,7 +1724,12 @@ class ExplainerQualityService:
             if len(findings_raw) != len(result):
                 raise TypeError("check_frames returned a non-mapping finding")
         except Exception as exc:  # noqa: BLE001 - a failing provider is UNCHECKED, never a pass
-            provider_error = f"VISUAL_QC_PROVIDER_ERROR:{type(exc).__name__}"
+            # The class name alone told an operator nothing: a configured provider
+            # that cannot read the frames and one that is missing a model both
+            # surfaced as "VISUAL_QC_PROVIDER_ERROR:ExplainerContractError".  The
+            # message and the structured details travel with it (bounded), because
+            # the next step depends on which of the two it was.
+            provider_error = f"VISUAL_QC_PROVIDER_ERROR:{type(exc).__name__}:{_error_detail_text(exc)}"
 
         if provider_error:
             unverified.append(provider_error)
@@ -2107,7 +2133,7 @@ class ExplainerQualityService:
             try:
                 result = provider.check_frames(frames=frames, questions=list(questions or ()))  # type: ignore[union-attr]
             except Exception as exc:  # noqa: BLE001 - a failing batch stays unchecked
-                error = f"VISUAL_QC_PROVIDER_ERROR:{type(exc).__name__}"
+                error = f"VISUAL_QC_PROVIDER_ERROR:{type(exc).__name__}:{_error_detail_text(exc)}"
                 unverified.append(error)
                 break
             if isinstance(result, (str, bytes)) or not isinstance(result, (list, tuple)):

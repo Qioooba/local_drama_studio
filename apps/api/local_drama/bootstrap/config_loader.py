@@ -80,18 +80,16 @@ class RuntimeConfig(BaseModel):
     explainer_generation_height: int = Field(default=480, ge=240, le=2160)
     #: Delivery height the explainer masters are super-resolved to.
     explainer_delivery_height: int = Field(default=1080, ge=480, le=4320)
-    #: Where the explainer picture track comes from.  ``LOCAL_GENERATION`` runs the
-    #: bound local image model (Qwen-Image-2.1 through ComfyUI) once per beat;
-    #: ``TYPESET_CARD`` keeps the deterministic FFmpeg/libass card.  Generation is
-    #: the product default; the card remains the declared fallback when the runtime
-    #: is unavailable or a single beat fails.
-    explainer_picture_source: Literal["LOCAL_GENERATION", "TYPESET_CARD"] = "LOCAL_GENERATION"
     #: Sampler steps for one explainer beat image.
     explainer_generation_steps: int = Field(default=20, ge=1, le=80)
     #: Wall-clock budget for ONE beat image (the whole step renews its own job lease).
     explainer_generation_timeout_seconds: float = Field(default=600.0, gt=0, le=7200)
     #: Negative prompt applied to every generated beat picture.
     explainer_generation_negative_prompt: str = ""
+    #: Wall-clock budget for ONE explainer image-to-video generation.  The explainer's
+    #: only picture route is a real AI 图生视频; a still image with a camera move is
+    #: not a produced clip and is no longer offered.
+    explainer_video_timeout_seconds: float = Field(default=1800.0, gt=0, le=7200)
     #: VoxCPM2 narration diffusion steps.  The project default stays 4; the
     #: upstream default is 10 and comparing them is a declared experiment.
     explainer_tts_inference_timesteps: int = Field(default=4, ge=1, le=64)
@@ -258,10 +256,10 @@ def settings_values(config: MachineConfig) -> dict[str, Any]:
         "latentsync_root": config.runtime.latentsync_root,
         "explainer_generation_height": config.runtime.explainer_generation_height,
         "explainer_delivery_height": config.runtime.explainer_delivery_height,
-        "explainer_picture_source": config.runtime.explainer_picture_source,
         "explainer_generation_steps": config.runtime.explainer_generation_steps,
         "explainer_generation_timeout_seconds": config.runtime.explainer_generation_timeout_seconds,
         "explainer_generation_negative_prompt": config.runtime.explainer_generation_negative_prompt,
+        "explainer_video_timeout_seconds": config.runtime.explainer_video_timeout_seconds,
         "explainer_tts_inference_timesteps": config.runtime.explainer_tts_inference_timesteps,
         "explainer_tts_max_len": config.runtime.explainer_tts_max_len,
         "tool_fallback_dirs": config.tools.fallback_dirs,

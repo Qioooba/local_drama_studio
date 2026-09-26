@@ -139,6 +139,19 @@ export function AppShell() {
   // episode catalog must not be queried and the episode switcher must not render
   // (design §5.1 / UI-05).
   const isExplainerWorkspace = routeContext.scope === "EXPLAINER";
+  // Design §B12.2: only EXPLAINER scope gets a stable mount key.  `?edition=`,
+  // `?beat=`, `?segment=`, `?claim=`, `?issue=` and `?locale=` locate an object
+  // inside a step; remounting on those changes threw away drafts.  Every other
+  // scope keeps the previous `pathname + search` behaviour untouched.
+  const outletKey = isExplainerWorkspace
+    ? `explainer:${routeContext.projectId ?? ""}:${routeContext.routeId ?? routeContext.explainerPage ?? ""}`
+    : `${location.pathname}${location.search}`;
+  // The explainer stylesheet's own classes are scoped to explainer surfaces.
+  // The factory list and the create shell live outside the workspace shell, so
+  // the content column carries the marker for them (design §B1.2 / F14).
+  const isExplainerSurface = isExplainerWorkspace
+    || routeContext.routeId === "explainers"
+    || routeContext.routeId === "explainerNew";
   const episodeCatalog = useQuery({
     queryKey: queryKeys.seasons.catalog(projectId ?? ""),
     queryFn: () => getProjectEpisodeCatalog(projectId!),
@@ -320,16 +333,16 @@ export function AppShell() {
           <span className="nav-title">工作区</span>
           <StudioNavLink icon="home" to={routes.home()} end>全局工作台</StudioNavLink>
           <StudioNavLink icon="sparkles" to={routes.quickCreate()} end>快速生成</StudioNavLink>
-          <StudioNavLink icon="grid" to={routes.explainers()} end>解说工厂</StudioNavLink>
+          {/* No `end`: the create form and every explainer workspace page are still
+              inside 解说工厂, and dropping the highlight there made the sidebar look
+              as if no section were selected. */}
+          <StudioNavLink icon="grid" to={routes.explainers()}>解说工厂</StudioNavLink>
           <StudioNavLink icon="clapperboard" to={routes.projects()} end>全部项目</StudioNavLink>
-          {isExplainerWorkspace && projectId ? <>
-            <span className="nav-title nav-section">当前解说</span>
-            <div className="sidebar-project">
-              {selectedProject?.title ?? "解说作品"}
-              <div style={{ marginTop: 8 }}><span className="badge blue">解说作品</span></div>
-            </div>
-            <StudioNavLink icon="clapperboard" to={routes.explainerOverview(projectId)}>返回当前作品</StudioNavLink>
-          </> : null}
+          {/*
+            * Design §B1.1 item 1: the sidebar keeps the five product entries and
+            * never repeats the production steps, and it has no second flow entry
+            * ("返回当前作品") — the workspace shell owns that navigation now.
+            */}
           {projectId && !isExplainerWorkspace ? <>
             <span className="nav-title nav-section">当前项目</span>
             <StudioNavLink icon="clapperboard" to={routes.projectHome(projectId)} end>项目首页</StudioNavLink>
@@ -355,13 +368,13 @@ export function AppShell() {
           </details>
         </div>
       </nav>
-      <section ref={workspaceRef} className={`content v2-content${isStudioShotDesk ? " studio-desk-mode" : ""}`} id="v2-workspace-content" tabIndex={-1}>
+      <section ref={workspaceRef} className={`content v2-content${isStudioShotDesk ? " studio-desk-mode" : ""}${isExplainerSurface ? " explainer-surface" : ""}`} id="v2-workspace-content" tabIndex={-1}>
         {breadcrumbs.length > 1 && <nav className="workspace-breadcrumbs" aria-label="当前位置"><ol>{breadcrumbs.map((item, index) => <li key={`${item.label}-${index}`}>{index > 0 && <BreadcrumbSeparatorIcon />}{item.to && !item.isCurrent ? <Link to={item.to} title={item.label}>{item.label}</Link> : <span aria-current={item.isCurrent ? "page" : undefined} title={item.label}>{item.label}</span>}</li>)}</ol></nav>}
         {projectId && episodeId && <EpisodeContextBar projectId={projectId} episodeId={episodeId} seasons={seasons} pathname={location.pathname} onEpisodeChange={(nextEpisodeId) => {
           rememberEpisode(projectId, nextEpisodeId);
           navigate(episodeStagePath(projectId, nextEpisodeId, location.pathname));
         }} />}
-        <Outlet key={`${location.pathname}${location.search}`} />
+        <Outlet key={outletKey} />
       </section>
     </div>
     <Dialog open={blocker.state === "blocked"} title="当前页面有未保存内容" onClose={() => { if (!draftActionPending) blocker.reset?.(); }} footer={<><button type="button" className="secondary" disabled={draftActionPending !== null} onClick={() => blocker.reset?.()}>取消切换</button><button type="button" className="secondary danger-outline" disabled={draftActionPending !== null || draftSnapshot.some((owner) => owner.dirty && !owner.discard)} onClick={() => void finishBlockedNavigation("discard")}>{draftActionPending === "discard" ? "正在放弃…" : "放弃并切换"}</button><button type="button" className="primary-action" disabled={draftActionPending !== null || draftSnapshot.some((owner) => owner.dirty && !owner.save)} onClick={() => void finishBlockedNavigation("save")}>{draftActionPending === "save" ? "正在保存…" : "保存并切换"}</button></>}>

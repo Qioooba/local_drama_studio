@@ -93,6 +93,10 @@ def test_release_migration_contract_matches_graph_and_package_authority() -> Non
         "0103_outbox_claim_token",
         "0104_pipeline_apply_watermark",
         "0105_explainer_beat_plan_scope",
+        "0106_explainer_visual_candidate_owners",
+        "0107_retire_still_motion_render_type",
+        "0108_explainer_visual_generation_stage",
+        "0109_explainer_subtitle_build_stage",
     ]
     graph = {revision.revision for revision in scripts.walk_revisions()}
     assert set(revisions).issubset(graph)

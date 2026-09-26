@@ -27,7 +27,11 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from local_drama.application.explainers.aligner_timestamps import normalize_aligner_timestamps
+from local_drama.application.explainers.aligner_timestamps import (
+    declared_aligner_sample_rate,
+    normalize_aligner_timestamps,
+)
+from local_drama.application.explainers.candidate_qc import build_candidate_checker
 from local_drama.application.explainers.media_qc import build_media_qc_readers
 from local_drama.application.explainers.quality import ExplainerQualityService
 from local_drama.application.explainers.schedules import ExplainerScheduleService
@@ -170,6 +174,9 @@ class MediaServiceNarrationPort:
             media_kind="AUDIO",
             stage="NARRATION",
             actor="local-user",
+            # Narration is played back from the immutable source and the take list
+            # shows an explicit duration rather than a decorative waveform, so no
+            # derived artefact is queued here.
             schedule_derivatives=False,
         )
         return {
@@ -254,6 +261,10 @@ class LocalForcedAlignerAdapter:
             "detector_version": "qwen3-forced-aligner-0.6b-hf",
             "media_sha256": media_sha256,
             "sample_offset": int(sample_offset),
+            # The rate the positions above are in.  The handler converts them to the
+            # take's rate; without this the revision declared 48 kHz over a 16 kHz
+            # clock and every cue window came out three times too short.
+            "aligner_sample_rate_hz": declared_aligner_sample_rate(timestamps),
             "network_used": bool(payload.get("network_used", False)),
             "model": payload.get("model"),
         }
@@ -441,6 +452,7 @@ def build_explainer_task_handlers(
     visual_provider: Any | None = None,
     technical_reader: Callable[..., Any] | None = None,
     sampling_reader: Callable[..., Any] | None = None,
+    candidate_checker: Callable[..., Any] | None = None,
 ) -> dict[str, Callable[[dict[str, Any], Mapping[str, Any]], Any]]:
     """Business handlers for the explainer stages that have a first-party path.
 
@@ -476,6 +488,7 @@ def build_explainer_task_handlers(
             # adopter is the pipeline's single-entry command, not a second adoption
             # path (audit A06).
             candidate_adopter=_candidate_adopter(),
+            candidate_checker=candidate_checker,
             **build_qc_readers(),
         )
     )
@@ -519,6 +532,15 @@ def build_media_qc_handlers(
         frame_root=settings.explainer_frames_root,
         content_path=media_content_path or _unavailable_content_path,
     )
+    # The per-candidate picture/content check is built from the same injected ports
+    # the rest of the QC layers use.  Without this binder the check could never run
+    # in production, so a clip had no content verdict and therefore could never be
+    # machine-adopted after its checks.
+    candidate_checker = build_candidate_checker(
+        provider=visual_provider,
+        extract_frames=readers["extract_frames"],
+        media_path=media_content_path or _unavailable_content_path,
+    )
     handlers = build_explainer_task_handlers(
         planner_factory=planner_factory,
         repo_factory=repo_factory,
@@ -526,6 +548,7 @@ def build_media_qc_handlers(
         visual_provider=visual_provider,
         technical_reader=readers["technical_reader"],
         sampling_reader=readers["sampling_reader"],
+        candidate_checker=candidate_checker,
     )
     if extra_handlers:
         handlers.update(dict(extra_handlers))

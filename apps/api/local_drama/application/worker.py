@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import sqlite3
 import subprocess
 import threading
 import traceback
@@ -19,6 +20,7 @@ from local_drama.application.configuration import ConfigurationService
 from local_drama.application.dialogue import DialogueService
 from local_drama.application.episode_front_half_actions import EpisodeFrontHalfActionService
 from local_drama.application.episode_worker_actions import EpisodeWorkerActionService
+from local_drama.application.explainers.motion_generation import ExplainerMotionGenerationRuntime
 from local_drama.application.explainers.picture_generation import ExplainerPictureGenerationRuntime
 from local_drama.application.explainers.production_pipeline import build_explainer_pipeline_handlers
 from local_drama.application.explainers.runtime_adapters import (
@@ -32,6 +34,9 @@ from local_drama.application.explainers.runtime_adapters import (
     build_media_qc_handlers,
     build_planner_factory,
 )
+from local_drama.application.explainers.visual_generation_completion import (
+    build_explainer_visual_completion_service,
+)
 from local_drama.application.explainers.visual_qc import build_visual_qc_provider
 from local_drama.application.explainers.workflow_bridge import (
     is_explainer_workflow_item,
@@ -41,7 +46,6 @@ from local_drama.application.generation import GenerationService
 from local_drama.application.job_resources import GpuRuntime, gpu_runtime_for_job
 from local_drama.application.jobs import JobService
 from local_drama.application.local_llm import LocalLLMService
-from local_drama.logging_setup import get_logger
 from local_drama.application.media import MediaService
 from local_drama.application.production_choices import ProductionChoiceService
 from local_drama.application.production_identity_inputs import (
@@ -81,6 +85,7 @@ from local_drama.infrastructure.service_composition import (
     build_pipeline_orchestrator,
     build_shot_keyframe_completion,
 )
+from local_drama.logging_setup import get_logger
 from local_drama.model_platform.application.comfy_capability_smoke_execution import ComfyCapabilitySmokeWorker
 from local_drama.model_platform.application.execution_job_links import ExecutionJobLinkService, WorkerExecutionSnapshot
 from local_drama.model_platform.application.production_execution_registry import production_worker_execution_handlers
@@ -274,6 +279,17 @@ def _automation_item_payload(job: dict[str, Any], database: Any) -> dict[str, An
     return dict(payload) if isinstance(payload, Mapping) else {}
 
 
+def _is_database_lock_error(error: BaseException) -> bool:
+    """Whether a failure is the local database's transient single-writer contention."""
+
+    if isinstance(error, sqlite3.OperationalError):
+        return "locked" in str(error).lower()
+    # The job service may wrap the driver error; the message is then the only signal,
+    # and a wrapped "database is locked" is still contention rather than a lost lease.
+    text = f"{error} {getattr(error, 'message', '')}".lower()
+    return "database is locked" in text
+
+
 def _make_explainer_task_provider(
     worker: LocalMediaWorker,
 ) -> Callable[[dict[str, Any], Path], tuple[str, str, dict[str, Any], int]]:
@@ -321,6 +337,11 @@ def _make_explainer_task_provider(
                     asr=LocalAsrAdapter(worker.voxcpm_runtime),
                     work_root=worker.settings.work_root,
                     picture_runtime=ExplainerPictureGenerationRuntime(
+                        worker.database,
+                        worker.settings,
+                        gpu_coordinator=worker.gpu_coordinator,
+                    ),
+                    motion_runtime=ExplainerMotionGenerationRuntime(
                         worker.database,
                         worker.settings,
                         gpu_coordinator=worker.gpu_coordinator,
@@ -654,8 +675,20 @@ class LocalMediaWorker:
             lease_seconds,
             interval_seconds,
         )
+        # A transient ``database is locked`` on this renewal must not end it.  The
+        # local database has one writer: another job of the same worker (a media
+        # derivative import, a render) can hold a write transaction for longer than
+        # the connection's busy timeout, and the renewal used to give up on the first
+        # such error — the 1962 film's COMPOSITION_QC was orphaned three times in a
+        # row with WORKER_LEASE_EXPIRED because of exactly that.  Lock contention is
+        # retried with a short backoff; every other error (a lost lease, a cancelled
+        # attempt) still stops the thread immediately.
+        lock_retry_seconds = 3.0
+        max_lock_retries = 12
+        lock_retries = 0
+        next_heartbeat = monotonic() + float(interval_seconds)
         try:
-            while not finished.wait(interval_seconds):
+            while not finished.wait(max(0.25, next_heartbeat - monotonic())):
                 try:
                     heartbeat = self.jobs.heartbeat(
                         attempt_id,
@@ -671,7 +704,13 @@ class LocalMediaWorker:
                         attempt_id,
                         f"{type(error).__name__}: {getattr(error, 'code', '')} {getattr(error, 'message', error)}",
                     )
-                    break
+                    if not _is_database_lock_error(error) or lock_retries >= max_lock_retries:
+                        break
+                    lock_retries += 1
+                    next_heartbeat = monotonic() + lock_retry_seconds
+                    continue
+                lock_retries = 0
+                next_heartbeat = monotonic() + float(interval_seconds)
                 if heartbeat.get("cancel_requested"):
                     # The handler observes cancellation through its own port; the
                     # runner only stops renewing so a cancelled job can be reclaimed.
@@ -1036,6 +1075,11 @@ class LocalMediaWorker:
                     self.settings,
                     gpu_coordinator=self.gpu_coordinator,
                 ),
+                motion_runtime=ExplainerMotionGenerationRuntime(
+                    self.database,
+                    self.settings,
+                    gpu_coordinator=self.gpu_coordinator,
+                ),
             ),
         )
 
@@ -1226,7 +1270,14 @@ class LocalMediaWorker:
         self._active_progress = {"phase": "PREPARING", "percent": 5}
         self._set_expected_duration_ms(None)
         try:
-            initial_lease_seconds = 120 if job["type"] == "SCRIPT_BREAKDOWN_LOCAL_LLM" else 60
+            # An explainer stage runs for minutes and its first lease renewal must
+            # land before the claim's lease runs out.  The claim used to hand every
+            # job a 60 s lease while the renewal thread asked for 240 s, so a single
+            # failed renewal (measured: ``database is locked`` while another job
+            # held a write transaction) orphaned the whole stage.
+            initial_lease_seconds = (
+                120 if job["type"] in {"SCRIPT_BREAKDOWN_LOCAL_LLM", "EXPLAINER_TASK"} else 60
+            )
             self.jobs.heartbeat(
                 attempt_id,
                 token,
@@ -1283,6 +1334,13 @@ class LocalMediaWorker:
                 identity_completion.finalize_job(str(job["id"]), artifacts)
             except DomainRuleError as error:
                 identity_completion.record_failure(str(job["id"]), error)
+            # Explainer candidate projection.  A miss is the normal answer for every
+            # job that is not an explainer candidate, so it returns None quietly.
+            explainer_completion = build_explainer_visual_completion_service(self.database, self.settings)
+            try:
+                explainer_completion.finalize_job(str(job["id"]), artifacts)
+            except DomainRuleError as error:
+                explainer_completion.record_failure(str(job["id"]), error)
             advance_error: str | None = None
             if execution.report is not None:
                 advance_error = advance_automation_run(

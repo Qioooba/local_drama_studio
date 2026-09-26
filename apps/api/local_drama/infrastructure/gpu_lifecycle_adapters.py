@@ -23,6 +23,17 @@ from local_drama.infrastructure.comfy import ComfyClient
 from local_drama.infrastructure.llama_server_manager import LlamaServerLaunchSpec, LlamaServerManager, llama_launch_spec_from_settings
 from local_drama.infrastructure.ollama_runtime import OllamaRuntimeClient
 
+#: Launch-spec failures that mean "this installation cannot build a llama.cpp
+#: spec right now", not "the running child is unknown".  A live PID file still
+#: proves ownership, so eviction may proceed without a spec.
+_UNBUILDABLE_LLAMA_SPEC_CODES = frozenset(
+    {
+        "LLAMA_SERVER_BIN_MISSING",
+        "LLAMA_SERVER_MODEL_MISSING",
+        "LLAMA_SERVER_MODEL_LOCATOR_INVALID",
+    }
+)
+
 
 def _queue_is_empty(queue: dict[str, Any]) -> bool:
     return not list(queue.get("queue_running") or []) and not list(queue.get("queue_pending") or [])
@@ -57,6 +68,12 @@ class ComfyGpuLifecycleAdapter:
                 raise DomainRuleError("GPU_RUNTIME_COMFY_STILL_BUSY", "ComfyUI 任务未终止，不能释放模型")
         self.comfy.free_memory(unload_models=True, free_memory=True)
         return True
+
+    def release_cached_state(self) -> bool:
+        # The same ownership boundary as a cross-runtime switch: unload this
+        # instance's own cached weights, tolerate a stopped service, and refuse
+        # while it is genuinely rendering.
+        return self.evict(GpuEvictMode.SWITCH)
 
 
 class GpuMemoryProbe(Protocol):
@@ -186,6 +203,10 @@ class OllamaGpuLifecycleAdapter:
             return False
         return True
 
+    def release_cached_state(self) -> bool:
+        # Anything Ollama still serves is exactly what would block the gate.
+        return self.evict(GpuEvictMode.SWITCH)
+
 
 class PytorchProcessGpuLifecycleAdapter:
     """No external eviction: one-shot child processes release VRAM on exit."""
@@ -195,6 +216,9 @@ class PytorchProcessGpuLifecycleAdapter:
     def activate(self, context: Mapping[str, object] | None = None) -> None:
         del context
         return None
+
+    def release_cached_state(self) -> bool:
+        return False
 
     def evict(self, mode: GpuEvictMode) -> bool:
         del mode
@@ -227,10 +251,30 @@ class ManagedLlamaCppGpuLifecycleAdapter:
             # proof that permits a fresh worker to adopt and terminate it.
             if not self.manager.has_owned_process_record():
                 return False
-            if not self.manager.adopt_owned_process(self.spec_provider(None)):
+            try:
+                spec = self.spec_provider(None)
+            except DomainRuleError as error:
+                if error.code not in _UNBUILDABLE_LLAMA_SPEC_CODES:
+                    raise
+                # The machine configuration can no longer build a launch spec
+                # (typically the managed llama.cpp binary or GGUF path was
+                # unset after a run), yet a live llama-server child this
+                # manager started is still holding the device.  Ownership comes
+                # from the PID file, not from the current configuration, so
+                # evict it by PID instead of failing the whole switch with an
+                # unrelated LLAMA error — measured: every ComfyUI job on this
+                # machine died with LLAMA_SERVER_BIN_MISSING at prepare(),
+                # before any image work started.
+                return self.manager.stop_recorded_process()
+            if not self.manager.adopt_owned_process(spec):
                 return False
         self.manager.stop()
         return True
+
+    def release_cached_state(self) -> bool:
+        # A live managed child holds its weights until it exits; ``activate``
+        # re-starts it (or adopts a healthy one) right after this.
+        return self.evict(GpuEvictMode.SWITCH)
 
 
 @dataclass(frozen=True, slots=True)

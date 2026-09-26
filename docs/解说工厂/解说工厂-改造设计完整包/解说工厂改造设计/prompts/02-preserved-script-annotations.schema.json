@@ -1,0 +1,161 @@
+{
+  "$defs": {
+    "Annotation": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_segment_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Canonical Segment Id",
+          "type": "string"
+        },
+        "claim_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Claim Ids",
+          "type": "array"
+        },
+        "entity_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Entity Ids",
+          "type": "array"
+        },
+        "statement_type": {
+          "enum": [
+            "FACT",
+            "ORIGINAL_EXPLANATION",
+            "TRANSITION",
+            "FICTION",
+            "QUESTION"
+          ],
+          "title": "Statement Type",
+          "type": "string"
+        },
+        "pronunciation_suggestions": {
+          "items": {
+            "$ref": "#/$defs/Pronunciation"
+          },
+          "maxItems": 64,
+          "title": "Pronunciation Suggestions",
+          "type": "array"
+        },
+        "pause_after_ms": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Pause After Ms",
+          "type": "integer"
+        },
+        "unverified_phrases": {
+          "items": {
+            "$ref": "#/$defs/UnverifiedPhrase"
+          },
+          "maxItems": 32,
+          "title": "Unverified Phrases",
+          "type": "array"
+        }
+      },
+      "required": [
+        "canonical_segment_id",
+        "claim_ids",
+        "entity_ids",
+        "statement_type",
+        "pronunciation_suggestions",
+        "pause_after_ms",
+        "unverified_phrases"
+      ],
+      "title": "Annotation",
+      "type": "object"
+    },
+    "Pronunciation": {
+      "additionalProperties": false,
+      "properties": {
+        "display": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Display",
+          "type": "string"
+        },
+        "spoken": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Spoken",
+          "type": "string"
+        }
+      },
+      "required": [
+        "display",
+        "spoken"
+      ],
+      "title": "Pronunciation",
+      "type": "object"
+    },
+    "UnverifiedPhrase": {
+      "additionalProperties": false,
+      "properties": {
+        "phrase": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Phrase",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 2000,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phrase",
+        "reason"
+      ],
+      "title": "UnverifiedPhrase",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "localdrama.explainer.preserved-script-annotations.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "annotations": {
+      "items": {
+        "$ref": "#/$defs/Annotation"
+      },
+      "maxItems": 320,
+      "minItems": 1,
+      "title": "Annotations",
+      "type": "array"
+    },
+    "chapter_break_before_segment_ids": {
+      "items": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 256,
+      "title": "Chapter Break Before Segment Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "annotations",
+    "chapter_break_before_segment_ids"
+  ],
+  "title": "PreservedScript",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:localdrama:explainer:design:02-preserved-script-annotations",
+  "description": "Design contract, not yet integrated. Static validation does not establish reference membership, project ownership, coverage, factuality or approval. Apply README service checks."
+}

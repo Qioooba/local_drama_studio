@@ -135,7 +135,11 @@ export type WebhookDelivery = { id: string; subscription_id: string; event_id: n
 export type WebhookDeliveryResult = { status: 'DELIVERED' | 'RETRYING' | 'DEAD_LETTER' | 'NO_EVENTS'; client_id: string; delivered_delivery_ids: string[]; delivered_count: number; failed: Array<Record<string, unknown>>; dead_letter_delivery_ids: string[]; max_attempts: number; max_batch_size: number; retry_backoff_seconds: { base: number; max: number }; bounded: true; loopback_only: true; remote_transport_allowed: false; runtime_contacted: false; network_contacted: false; mutated: boolean };
 export type AutomationWorkflow = { id: string; project_id: string; code: string; title: string; mode: 'MANUAL' | 'ASSISTED' | 'BATCH_AUTOMATED'; status: 'ACTIVE' | 'ARCHIVED'; version_no?: number; template_code?: string | null; source_fingerprint?: string | null; definition: Record<string, unknown>; plan_hash: string; local_only: true; network_contacted: false; ai_approval_allowed: false; idempotent_replay?: boolean };
 export type AutomationWorkflowPlan = { workflow_id: string; project_id: string; plan_hash: string; mode: string; batch_count: number; estimated_iterations: number; estimated_tasks: number; estimated_disk_bytes: number; max_iterations: number; max_tasks: number; max_disk_bytes: number; human_gate: string; node_gate: boolean; conditions: Array<Record<string, unknown>>; requires_human_confirmation: true; ai_scores_can_approve: false; network_contacted: false; local_only: true };
-export type AutomationWorkflowRun = { id: string; workflow_id: string; project_id: string; status: 'RUNNING' | 'PAUSED_HITL' | 'SUCCEEDED' | 'STOPPED' | 'FAILED' | 'CANCELLED' | 'LIMIT_REACHED'; plan_hash: string; iteration_count: number; task_count: number; disk_bytes: number; limits: { max_iterations: number; max_tasks: number; max_disk_bytes: number }; pending_gate: Record<string, unknown>; machine_context: Record<string, unknown>; ai_scores: Record<string, unknown>; human_approval_status: string; tasks: Array<Record<string, unknown>>; events: Array<Record<string, unknown>>; local_only: true; network_contacted: false; ai_scores_can_approve: false };
+export type AutomationWorkflowRunStall = { stalled: boolean; reason: string | null; run_status: string | null; task_id: string | null; task_key: string | null; job_id: string | null; job_state: string | null; next_step: 'REQUEUE_TASK_JOB' | 'FAIL_RUN' | null; attempts_used: number; max_attempts: number; recoverable: boolean };
+export type AutomationWorkflowRunRecovery = { outcome: 'JOB_REQUEUED' | 'RUN_FAILED'; run_id: string; task_id: string; task_key: string; job_id: string; previous_job_state: string; job_state: string; attempts_used: number; max_attempts: number; actor: string };
+// ``stall`` is optional so an existing caller's fixture literal stays valid: the
+// server always sends it, and ``stalled`` is the only field a browser must read.
+export type AutomationWorkflowRun = { id: string; workflow_id: string; project_id: string; status: 'RUNNING' | 'PAUSED_HITL' | 'SUCCEEDED' | 'STOPPED' | 'FAILED' | 'CANCELLED' | 'LIMIT_REACHED'; plan_hash: string; iteration_count: number; task_count: number; disk_bytes: number; limits: { max_iterations: number; max_tasks: number; max_disk_bytes: number }; pending_gate: Record<string, unknown>; machine_context: Record<string, unknown>; ai_scores: Record<string, unknown>; human_approval_status: string; stall?: AutomationWorkflowRunStall; tasks: Array<Record<string, unknown>>; events: Array<Record<string, unknown>>; local_only: true; network_contacted: false; ai_scores_can_approve: false };
 export type TimelineStatus = { episode: { id: string; code: string; title: string; project_id: string }; timeline: { revision_count: number; latest: Record<string, unknown> | null; latest_frozen: Record<string, unknown> | null }; subtitles: { revision_count: number; latest: Record<string, unknown> | null }; audio: { binding_count: number; verified_local_count: number; required_tracks?: string[]; requirements?: Record<string, number>; subtitle_required?: boolean; requirement_source?: string }; renders: { count: number; verified_count: number; latest: Record<string, unknown> | null }; delivery: { count: number; verified_count: number; latest: Record<string, unknown> | null }; observed_at: string; read_only: true; runtime_contacted: false; network_contacted: false; mutated: false };
 export type TimelineItemRequest = { track_type?: string; media_version_id?: string | null; start_us: number; end_us: number; parameters?: Record<string, unknown> };
 export type TimelineRevision = { id: string; episode_id: string; revision_no: number; status: string; input_snapshot: Record<string, unknown>; items: Array<Record<string, unknown>>; [key: string]: unknown };
@@ -2223,7 +2227,6 @@ export type ExplainerWorkspace = {
   research_mode: string;
   current_script_revision_id: string | null;
   revision: number;
-  story_text?: string;
   [key: string]: unknown;
 };
 
@@ -2292,6 +2295,8 @@ export type ExplainerRun = {
   steps: ExplainerStep[];
   step_statuses: Record<string, ExplainerStepStatus>;
   workflow_run: { id: string | null; status: string | null; human_approval_status: string | null; pending_gate: Record<string, unknown> | null } | null;
+  /** Why the linked workflow run is not progressing; ``stalled`` is the flag to read. */
+  stall?: AutomationWorkflowRunStall | null;
   execution_authority: { source_of_truth: string; explainer_runs_is_projection: boolean; second_claim_queue: boolean };
   [key: string]: unknown;
 };
@@ -2406,8 +2411,27 @@ export type ExplainerQcCoverage = {
   automatic_pass_does_not_mean_human_review: true;
 };
 
-export type ExplainerSchedule = {
-  id: string;
+export interface ExplainerBreakdownStoryPayload {
+  story_text: string;
+  profile_version_id?: string | null;
+  target_seconds?: number | null;
+  style?: string | null;
+  title?: string | null;
+}
+
+export interface ExplainerBreakdownStoryResponse {
+  status: string;
+  script_revision: Record<string, unknown>;
+  outline: string[];
+  segments: ExplainerSegment[];
+  segment_count: number;
+  character_count: number;
+  model_used: string;
+  provider: string;
+  profile_version_id?: string | null;
+}
+
+export type ExplainerSchedule = {  id: string;
   project_id: string | null;
   code: string;
   title: string;
@@ -2418,6 +2442,234 @@ export type ExplainerSchedule = {
   next_occurrence_at: string | null;
   revision: number;
   [key: string]: unknown;
+};
+
+/** Which layer of the pipeline a candidate or selection belongs to (spec D2.2). */
+export type ExplainerCandidatePurpose = 'REFERENCE' | 'KEYFRAME' | 'VISUAL';
+/** The executable generation mode. A composable moving clip can only come from a real
+ * image-to-video generation: the retired deterministic still-image mode is gone (spec D4.1). */
+export type ExplainerGenerationMode = 'TEXT_TO_IMAGE' | 'IMAGE_EDIT' | 'IMAGE_TO_VIDEO';
+export type ExplainerGenerationOwnerKind = 'BEAT' | 'ENTITY';
+/** Candidate lifecycle. PENDING means reserved with a real queued job, never "already generated" (spec D7.1). */
+export type ExplainerCandidateStatus = 'PENDING' | 'GENERATING' | 'READY' | 'REJECTED' | 'FAILED' | 'SUPERSEDED';
+
+/**
+ * Neutral candidate view for every explainer owner. Field meaning is fixed by spec B10:
+ * `selected` is the adopted working version, `locked` is an explicit human lock, and
+ * `stale` means the upstream input changed but the media is still viewable.
+ */
+export type ExplainerMediaCandidate = {
+  id: string;
+  candidate_kind: string;
+  purpose: ExplainerCandidatePurpose;
+  owner_kind: ExplainerGenerationOwnerKind;
+  owner_id: string;
+  beat_id: string | null;
+  entity_id: string | null;
+  edition_id: string | null;
+  variant_no: number;
+  media_kind: 'IMAGE' | 'VIDEO' | null;
+  media_version_id: string | null;
+  media_sha256: string | null;
+  thumbnail_url: string | null;
+  preview_url: string | null;
+  playback_url: string | null;
+  duration_ms: number | null;
+  width: number | null;
+  height: number | null;
+  status: ExplainerCandidateStatus;
+  render_type_planned: string | null;
+  render_type_actual: string | null;
+  fallback_reason: string | null;
+  selected: boolean;
+  locked: boolean;
+  stale: boolean;
+  adopted: boolean;
+  job_id: string | null;
+  job_state: string | null;
+  seed: number | null;
+  parent_candidate_id: string | null;
+  prompt: string | null;
+  negative_prompt: string | null;
+  reference_media_version_ids: string[];
+  short_label: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  retryable: boolean;
+  created_at: string | null;
+  [key: string]: unknown;
+};
+
+export type ExplainerCandidatePage = {
+  project_id: string;
+  owner_kind: ExplainerGenerationOwnerKind;
+  owner_id: string;
+  purpose: ExplainerCandidatePurpose | null;
+  edition_id: string | null;
+  candidates: ExplainerMediaCandidate[];
+  counts: Record<string, number>;
+  active_selection: Record<string, unknown> | null;
+  empty_state: string | null;
+  candidates_newest_first: true;
+  read_error_keeps_known_selection: true;
+};
+
+/** Read-only generation plan. It never creates media or jobs (spec D7). */
+export type ExplainerGenerationPlan = {
+  status: 'EXECUTABLE' | 'BLOCKED';
+  owner_kind: ExplainerGenerationOwnerKind;
+  owner_id: string;
+  purpose: ExplainerCandidatePurpose;
+  mode: ExplainerGenerationMode;
+  candidate_count: number;
+  plan_hash: string;
+  candidate_seeds: number[];
+  execution_profile_version_id: string | null;
+  profile_title: string | null;
+  expected_resolution_hash: string | null;
+  media_kind: 'IMAGE' | 'VIDEO';
+  render_type_actual: string | null;
+  render_type_planned: string | null;
+  prompt: string;
+  negative_prompt: string | null;
+  reference_capacity: { max_image_references: number | null; resolved_image_references: number };
+  resolved_references: Array<Record<string, unknown>>;
+  frozen_inputs: Record<string, unknown>;
+  blockers: Array<{ code: string; message: string; retryable?: boolean; details?: Record<string, unknown> }>;
+  budget: Record<string, unknown> | null;
+  planned_duration_ms: number | null;
+  allowed_durations_ms: number[] | null;
+  [key: string]: unknown;
+};
+
+export type ExplainerGenerationRequest = {
+  operation_id: string;
+  edition_id?: string | null;
+  purpose: ExplainerCandidatePurpose;
+  mode: ExplainerGenerationMode;
+  candidate_count?: number;
+  parent_candidate_id?: string | null;
+  expected_beat_revision?: number | null;
+  expected_entity_revision?: number | null;
+  expected_selection_id?: string | null;
+  expected_reference_id?: string | null;
+  entity_state_revision_id?: string | null;
+  reference_selections?: Array<{ entity_id: string; entity_state_revision_id?: string | null; reference_id: string }>;
+  input_keyframe_selection_id?: string | null;
+  prompt_override?: string | null;
+  motion_prompt?: string | null;
+  camera_movement?: string | null;
+  run_overrides?: Record<string, unknown>;
+  expected_plan_hash?: string | null;
+  candidate_seeds?: number[] | null;
+  execution_profile_version_id?: string | null;
+  expected_resolution_hash?: string | null;
+};
+
+export type ExplainerGenerationReceipt = {
+  operation_id: string;
+  status: 'ACCEPTED' | 'PARTIALLY_ACCEPTED' | 'REJECTED';
+  requested_count: number;
+  accepted_count: number;
+  items: Array<{
+    ordinal: number;
+    submission_status: 'ACCEPTED' | 'NOT_SUBMITTED' | 'REPLAYED';
+    candidate_id: string | null;
+    candidate_status: ExplainerCandidateStatus | null;
+    job_id: string | null;
+    job_state: string | null;
+    seed: number | null;
+    error: { code: string; message?: string; retryable?: boolean } | null;
+  }>;
+  idempotent_replay: boolean;
+  [key: string]: unknown;
+};
+
+/** The single per-step readiness projection the six-step shell renders (spec F2.1). */
+export type ExplainerStepReadiness = {
+  step_code: string;
+  page: string;
+  label: string;
+  status: 'NOT_STARTED' | 'RUNNING' | 'NEEDS_SELECTION' | 'DONE' | 'NEEDS_UPDATE' | 'FAILED';
+  produced: number;
+  required: number;
+  blocked_reason: string | null;
+  next_action: string | null;
+  step_binding_id: string | null;
+};
+
+export type ExplainerWorkspaceReadiness = {
+  video_id: string;
+  project_id: string;
+  revision: number;
+  steps: ExplainerStepReadiness[];
+  first_actionable_page: string | null;
+  blocking_step_code: string | null;
+  blocking_reason: string | null;
+  one_click_route: {
+    mode: 'ONE_CLICK' | 'STEPWISE';
+    /** There is exactly one picture route left: real AI 图生视频. */
+    visual_route: 'I2V';
+    script_policy: 'PRESERVE_ORIGINAL' | 'ADAPT_SOURCES' | 'CREATE_FROM_TOPIC';
+    summary: string;
+  };
+  [key: string]: unknown;
+};
+
+export type ExplainerVisualPreferences = {
+  schema_version: 'localdrama.explainer.visual-preferences.v1';
+  style_prompt_override: string | null;
+  negative_prompt_override: string | null;
+  image_candidate_count: number;
+  video_candidate_count: number;
+  [key: string]: unknown;
+};
+
+export type ExplainerEntityAsset = {
+  entity_id: string;
+  code: string;
+  name: string;
+  entity_type: string;
+  asset_kind: 'CHARACTER' | 'SCENE' | 'PROP' | null;
+  fictional: boolean;
+  story_asset_id: string | null;
+  appearance_beat_count: number;
+  reference_binding_status: 'NO_REFERENCE' | 'ADOPTED_REFERENCE' | 'NEEDS_UPDATE';
+  identity_input_status: string | null;
+  reference: Record<string, unknown> | null;
+  state_revisions: Array<Record<string, unknown>>;
+  missing_reason: string | null;
+  candidate_counts: { REFERENCE: number; KEYFRAME: number; VISUAL: number };
+  [key: string]: unknown;
+};
+
+export type ExplainerAssetView = {
+  video_id: string;
+  project_id: string;
+  entities: ExplainerEntityAsset[];
+  entity_counts: Record<string, number>;
+  missing_reference_count: number;
+  channel_profile_version: Record<string, unknown> | null;
+  channel_profile_is_frozen_snapshot: true;
+  three_view_is_display_only: true;
+  visual_preferences: ExplainerVisualPreferences | null;
+  resolved_style: Record<string, unknown> | null;
+  unresolved_constraints: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+};
+
+export type ExplainerCollectionContinueReceipt = {
+  run_id: string;
+  step_binding_id: string;
+  task_code: string;
+  status: 'REPLACED' | 'NO_OP' | 'BLOCKED';
+  replacement_job_id: string | null;
+  previous_job_id: string | null;
+  selected_candidate_ids: string[];
+  failed_candidate_ids: string[];
+  reason: string | null;
+  machine_policy_applied: boolean;
+  idempotent_replay: boolean;
 };
 
 export async function listExplainers(filter: { project_kind?: string; limit?: number } = {}, baseUrl = ''): Promise<{ items: Array<Record<string, unknown>>; next_cursor: string | null; product_kind_filter: string }> {
@@ -2465,26 +2717,6 @@ export async function getExplainerScript(projectId: string, filter: { locale?: s
   return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/script${suffix}`, undefined, baseUrl);
 }
 
-export interface ExplainerBreakdownStoryPayload {
-  story_text: string;
-  profile_version_id?: string | null;
-  target_seconds?: number | null;
-  style?: string | null;
-  title?: string | null;
-}
-
-export interface ExplainerBreakdownStoryResponse {
-  status: string;
-  script_revision: Record<string, unknown>;
-  outline: string[];
-  segments: ExplainerSegment[];
-  segment_count: number;
-  character_count: number;
-  model_used: string;
-  provider: string;
-  profile_version_id?: string | null;
-}
-
 export async function createExplainerScriptRevision(projectId: string, payload: Record<string, unknown>, baseUrl = ''): Promise<{ script_revision: Record<string, unknown>; immutable: true }> {
   return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/script-revisions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
@@ -2525,6 +2757,15 @@ export async function controlExplainerRun(runId: string, action: 'pause' | 'resu
   return requestJson(`/api/v2/explainer-runs/${encodeURIComponent(runId)}:${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
 }
 
+/** Recover a stalled run: re-queue its task Job, or fail the run honestly. */
+export async function recoverExplainerRun(runId: string, payload: { reason?: string; actor?: string } = {}, idempotencyKey?: string, baseUrl = ''): Promise<AutomationWorkflowRun & { recovery: AutomationWorkflowRunRecovery }> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // The key is optional for a single operator click and is forwarded when the
+  // caller has one, so a retried click stays traceable in the run events.
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+  return requestJson(`/api/v2/explainer-runs/${encodeURIComponent(runId)}:recover`, { method: 'POST', headers, body: JSON.stringify(payload) }, baseUrl);
+}
+
 export async function planExplainerRepairs(projectId: string, payload: Record<string, unknown>, idempotencyKey?: string, baseUrl = ''): Promise<Record<string, unknown>> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   // The preview call (confirm=false) submits nothing and needs no key; the
@@ -2548,8 +2789,164 @@ export async function listExplainerBeats(projectId: string, editionId?: string, 
   return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/beats${suffix}`, undefined, baseUrl);
 }
 
-export async function listExplainerBeatCandidates(projectId: string, beatId: string, baseUrl = ''): Promise<Record<string, unknown>> {
-  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/beats/${encodeURIComponent(beatId)}/candidates`, undefined, baseUrl);
+export async function listExplainerBeatCandidates(projectId: string, beatId: string, filter: { purpose?: ExplainerCandidatePurpose; edition_id?: string } = {}, baseUrl = ''): Promise<Record<string, unknown>> {
+  const params = new URLSearchParams();
+  if (filter.purpose) params.set('purpose', filter.purpose);
+  if (filter.edition_id) params.set('edition_id', filter.edition_id);
+  const suffix = params.toString() ? `?${params}` : '';
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/beats/${encodeURIComponent(beatId)}/candidates${suffix}`, undefined, baseUrl);
+}
+
+export async function listExplainerOwnerCandidates(projectId: string, ownerKind: ExplainerGenerationOwnerKind, ownerId: string, filter: { purpose?: ExplainerCandidatePurpose; edition_id?: string } = {}, baseUrl = ''): Promise<ExplainerCandidatePage> {
+  const params = new URLSearchParams();
+  if (filter.purpose) params.set('purpose', filter.purpose);
+  if (filter.edition_id) params.set('edition_id', filter.edition_id);
+  const suffix = params.toString() ? `?${params}` : '';
+  const base = ownerKind === 'ENTITY'
+    ? `/api/v2/explainers/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(ownerId)}/candidates`
+    : `/api/v2/explainers/${encodeURIComponent(projectId)}/beats/${encodeURIComponent(ownerId)}/candidates`;
+  return requestJson(`${base}${suffix}`, undefined, baseUrl);
+}
+
+export async function getExplainerWorkspaceReadiness(projectId: string, baseUrl = ''): Promise<ExplainerWorkspaceReadiness> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/readiness`, undefined, baseUrl);
+}
+
+/** Read-only plan. It never creates media or jobs, so it needs no Idempotency-Key. */
+export async function planExplainerBeatGeneration(projectId: string, beatId: string, payload: ExplainerGenerationRequest, baseUrl = ''): Promise<ExplainerGenerationPlan> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/beats/${encodeURIComponent(beatId)}/generations:plan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function submitExplainerBeatGeneration(projectId: string, beatId: string, payload: ExplainerGenerationRequest, idempotencyKey: string, baseUrl = ''): Promise<ExplainerGenerationReceipt> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/beats/${encodeURIComponent(beatId)}/generations`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function planExplainerReferenceGeneration(projectId: string, entityId: string, payload: ExplainerGenerationRequest, baseUrl = ''): Promise<ExplainerGenerationPlan> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(entityId)}/reference-generations:plan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function submitExplainerReferenceGeneration(projectId: string, entityId: string, payload: ExplainerGenerationRequest, idempotencyKey: string, baseUrl = ''): Promise<ExplainerGenerationReceipt> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(entityId)}/reference-generations`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+/** The picture stage as one whole-film command: real AI 图生视频 for every beat that
+ * still lacks a clip.  It reuses every human-adopted keyframe and every beat that
+ * already has a real clip, so pressing it again never re-draws accepted work.
+ * ACCEPTED means a real Job was queued; it never means the clips exist. */
+export type ExplainerVisualGenerationStatus = 'ACCEPTED' | 'BLOCKED' | 'CAPABILITY_UNAVAILABLE' | 'RECOVERY_REQUIRED';
+
+export type ExplainerVisualGenerationSubmitResult = {
+  status: ExplainerVisualGenerationStatus;
+  stage_code: string;
+  operation_id: string | null;
+  job_id: string | null;
+  job_state: string | null;
+  subject: { kind: string; id: string; snapshot_hash: string };
+  frozen_plan: Record<string, unknown>;
+  idempotent_replay: boolean;
+  durable_intent_persisted: boolean;
+  would_create_jobs: boolean;
+  blockers?: Array<{ code: string; message: string; next_step?: string }>;
+  reason?: string;
+  detail?: Record<string, unknown>;
+};
+
+export async function submitExplainerVisualGeneration(projectId: string, payload: { edition_id?: string | null; beat_ids?: string[] }, idempotencyKey: string, baseUrl = ''): Promise<ExplainerVisualGenerationSubmitResult> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/visual-generation:submit`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+/** Re-measure the forced-alignment clock of every selected take. Alignment
+ * revisions are append-only and the align stage skips takes that already have one,
+ * so a take whose stored clock is unusable can only be re-measured here. */
+export async function rerunExplainerNarrationAlign(editionId: string, idempotencyKey: string, baseUrl = ''): Promise<Record<string, unknown>> {
+  return requestJson(`/api/v2/explainer-editions/${encodeURIComponent(editionId)}/narration:align`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey } }, baseUrl);
+}
+
+/** The technical/session QC layer for a rendered film as one command. The delivery
+ * package ships the report of the render it was built from; without this command a
+ * page-by-page film shipped `qc_report.json` reading NOT_RUN. `render_id` pins the
+ * subject; an empty value resolves the newest verified render of the edition. */
+export async function runExplainerCompositionQc(editionId: string, options: { render_id?: string } = {}, idempotencyKey?: string, baseUrl = ''): Promise<ExplainerVisualGenerationSubmitResult> {
+  const query = options.render_id ? `?render_id=${encodeURIComponent(options.render_id)}` : '';
+  return requestJson(`/api/v2/explainer-editions/${encodeURIComponent(editionId)}/qc:run${query}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) } }, baseUrl);
+}
+
+export async function listExplainerEntityCandidates(projectId: string, entityId: string, filter: { edition_id?: string } = {}, baseUrl = ''): Promise<ExplainerCandidatePage> {
+  return listExplainerOwnerCandidates(projectId, 'ENTITY', entityId, { purpose: 'REFERENCE', ...filter }, baseUrl);
+}
+
+/** Adopt or adopt-and-lock an entity reference candidate. `lock=false` never implies a human lock (spec B9). */
+export async function adoptExplainerEntityReference(projectId: string, entityId: string, payload: { candidate_id?: string; media_version_id?: string; expected_entity_revision?: number | null; expected_reference_id?: string | null; entity_state_revision_id?: string | null; lock?: boolean; actor?: string }, baseUrl = ''): Promise<Record<string, unknown>> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(entityId)}/references`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function unlockExplainerSelection(projectId: string, beatId: string, payload: { expected_revision?: number | null; selection_id: string; purpose?: ExplainerCandidatePurpose; edition_id?: string | null; actor?: string }, baseUrl = ''): Promise<Record<string, unknown>> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/beats/${encodeURIComponent(beatId)}/selections:unlock`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+/** Unlock an adopted entity reference without deleting the current image (spec B9 item 7). */
+export async function unlockExplainerEntityReference(projectId: string, entityId: string, payload: { selection_id?: string; reference_id?: string; expected_entity_revision?: number | null; actor?: string }, baseUrl = ''): Promise<Record<string, unknown>> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(entityId)}/references:unlock`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+/** Narrow merge of this film's style and visual strategy; never accepts a client-supplied render type (spec D3.1). */
+export async function patchExplainerVisualPreferences(projectId: string, payload: { expected_revision: number; visual_preferences?: Partial<ExplainerVisualPreferences>; channel_profile_version_id?: string | null }, baseUrl = ''): Promise<{ video_id: string; revision: number; visual_preferences: ExplainerVisualPreferences }> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/visual-preferences`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+export async function getExplainerAssets(projectId: string, baseUrl = ''): Promise<ExplainerAssetView> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/assets`, undefined, baseUrl);
+}
+
+/** "Use the available results and continue": replaces the blocked collect job for the same task (spec D5.1). */
+export async function adoptExplainerNarrationTake(editionId: string, takeId: string, payload: { actor?: string; reason?: string | null } = {}, baseUrl = ''): Promise<Record<string, unknown>> {
+  return requestJson(`/api/v2/explainer-editions/${encodeURIComponent(editionId)}/narration/${encodeURIComponent(takeId)}:adopt`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+/** "Use the available results and continue": replaces the blocked collect job for the same task (spec D5.1). */
+export async function continueExplainerCollection(runId: string, stepBindingId: string, payload: { expected_task_revision?: number | null; expected_old_job_id?: string | null; selected_candidate_ids: string[]; failed_candidate_ids?: string[]; actor?: string; reason?: string }, idempotencyKey: string, baseUrl = ''): Promise<ExplainerCollectionContinueReceipt> {
+  return requestJson(`/api/v2/explainer-runs/${encodeURIComponent(runId)}/collections/${encodeURIComponent(stepBindingId)}:continue`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+/** 「不采用」: stop offering a candidate while keeping its media (design §B5.3). */
+export async function archiveExplainerCandidate(projectId: string, beatId: string, candidateId: string, payload: { actor?: string; reason?: string | null } = {}, baseUrl = ''): Promise<Record<string, unknown>> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/beats/${encodeURIComponent(beatId)}/candidates/${encodeURIComponent(candidateId)}:archive`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+/** Save this beat's own description / presentation (design §B5.2, §B5.3, §B6.1). */
+export async function patchExplainerBeat(projectId: string, beatId: string, payload: {
+  expected_revision?: number | null;
+  visual_intent?: string | null;
+  prompt_intent?: string | null;
+  negative_prompt?: string | null;
+  camera_movement?: string | null;
+  on_screen_text?: string[] | null;
+  continuity_note?: string | null;
+  render_type?: 'I2V' | 'INFOGRAPHIC' | 'LICENSED_MEDIA' | null;
+  preferred_duration_ms?: number | null;
+  must_be_motion?: boolean | null;
+  actor?: string;
+}, baseUrl = ''): Promise<Record<string, unknown>> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/beats/${encodeURIComponent(beatId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+/** Register uploaded / media-library media as a candidate (never as the adopted choice). */
+export async function registerExplainerCandidateFromMedia(projectId: string, beatId: string, payload: { media_version_id: string; purpose?: 'KEYFRAME' | 'VISUAL'; note?: string | null; actor?: string }, baseUrl = ''): Promise<Record<string, unknown>> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/beats/${encodeURIComponent(beatId)}/candidates:register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+/** 从主题创作原创虚构：生成有边界的设定资料（design §C4.5）；仅 CREATE_FROM_TOPIC + ORIGINAL_FICTION。 */
+export async function createExplainerStorySeed(projectId: string, payload: { revision_request?: string | null; creative_scope?: Record<string, unknown> | null } = {}, baseUrl = ''): Promise<Record<string, unknown>> {
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/story-seed`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, baseUrl);
+}
+
+/** Deterministic, read-only setting prompt for one entity's reference image (design §C4.4). */
+export async function getExplainerReferenceDesign(projectId: string, entityId: string, filter: { reference_kind?: string; allow_creative_choices?: boolean } = {}, baseUrl = ''): Promise<Record<string, unknown>> {
+  const params = new URLSearchParams();
+  if (filter.reference_kind) params.set('reference_kind', filter.reference_kind);
+  if (filter.allow_creative_choices) params.set('allow_creative_choices', 'true');
+  const suffix = params.toString() ? `?${params}` : '';
+  return requestJson(`/api/v2/explainers/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(entityId)}/reference-design${suffix}`, undefined, baseUrl);
 }
 
 export async function selectExplainerBeatCandidate(projectId: string, beatId: string, payload: Record<string, unknown>, baseUrl = ''): Promise<Record<string, unknown>> {

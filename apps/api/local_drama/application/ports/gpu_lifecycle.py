@@ -52,6 +52,21 @@ class GpuLifecycleAdapter(Protocol):
         ownership cannot be proven.
         """
 
+    def release_cached_state(self) -> bool:
+        """Drop this runtime's *own* cached weights before a fresh activation.
+
+        Distinct from cross-runtime eviction: the runtime about to be activated
+        can still own VRAM from an earlier session whose recorded residency went
+        stale (a failed job deliberately keeps its weights warm for the retry).
+        The coordinator's release gate measures *device-wide* free memory, so
+        that stale cache is indistinguishable from a foreign process and every
+        later switch fails closed — measured ``GPU_VRAM_NOT_RELEASED`` for the
+        full 30 s window on a ComfyUI job whose previously loaded Qwen-Image
+        weights were still resident.  Implementations tolerate an unreachable
+        service (it owns no VRAM) and must still refuse when the runtime is
+        actively busy.
+        """
+
 
 class GpuLifecycleAdapterRegistry:
     """Immutable runtime-to-adapter map with deterministic eviction order.

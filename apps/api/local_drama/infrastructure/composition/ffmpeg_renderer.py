@@ -37,6 +37,7 @@ What this module deliberately does NOT do:
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shlex
 import shutil
@@ -52,10 +53,7 @@ from local_drama.application.composition.manifest import (
     Ratio,
     RenderManifest,
 )
-from local_drama.application.composition.slices import (
-    ClipSlicePlan,
-    compute_chunk_slices,
-)
+from local_drama.application.composition.slices import compute_chunk_slices
 from local_drama.application.composition.validation import concat_compatibility
 from local_drama.domain.explainers.contracts import ExplainerContractError, content_hash
 
@@ -90,6 +88,8 @@ __all__ = [
     "atomic_render",
     "build_chunk_command",
     "build_concat_command",
+    "build_loudness_measure_command",
+    "build_loudness_normalise_command",
     "build_mix_command",
     "build_subtitle_burn_command",
     "classify_process_failure",
@@ -98,6 +98,7 @@ __all__ = [
     "escape_concat_quote",
     "escape_drawtext_text",
     "escape_filter_value",
+    "parse_loudness_measurement",
     "publish_atomically",
 ]
 
@@ -116,6 +117,13 @@ VIDEO_TIMEBASE = "AVTB"
 DEFAULT_LOUDNESS_TARGET_LUFS = -16.0
 DEFAULT_TRUE_PEAK_DBTP = -1.0
 DEFAULT_LOUDNESS_LRA = 11.0
+
+#: Head-room subtracted from the loudnorm true-peak target so the *delivered*
+#: lossy encode satisfies the ceiling.  Measured on the real 406 s audited film:
+#: loudnorm targeting -1.0 dBTP produced a delivered AAC true peak of -0.7 dBTP, a
+#: 0.5 dB margin reached -0.9 dBTP, and 1.0 dB reached -1.6 dBTP with an integrated
+#: loudness of -17.0 LUFS — inside the documented -16 +/-1 band on both counts.
+ENCODE_TRUE_PEAK_MARGIN_DB = 1.0
 LOUDNESS_NOTE = (
     "loudnorm 目标为产品默认值（-16 LUFS ±1、真峰值 ≤ -1 dBTP），"
     "不是任何平台的标准；平台档位必须由调用方显式覆盖"
@@ -504,7 +512,7 @@ class FfmpegFilterGraph:
                     "SCHEMA_INVALID",
                     "atrim 不能同时给出 sample_count 与 start_sample/end_sample",
                 )
-            parts.append(f"start_sample=0")
+            parts.append("start_sample=0")
             parts.append(f"end_sample={int(sample_count)}")
         if not parts:
             raise _domain_error("SCHEMA_INVALID", "atrim 至少需要一个参数")
@@ -960,7 +968,6 @@ def build_chunk_command(
         )
     target_frames = output_frames
     target_seconds = fps.seconds_for_frames(target_frames)
-    decode_span_frames = decode_end - decode_start
     width, height = int(manifest.width), int(manifest.height)
     sample_rate = int(manifest.audio_sample_rate_hz)
 
@@ -1563,11 +1570,28 @@ def build_mix_command(
     voice_label: str | None = None
     if len(narration_labels) > 1:
         voice_label = graph.label("voice")
-        graph.chain(
-            narration_labels,
-            [FfmpegFilterGraph.concat(inputs=len(narration_labels), video=False, audio=True)],
-            [voice_label],
-        )
+        if declared_audio:
+            # Every declared clip already carries its own absolute placement
+            # (``adelay`` to ``sample_start``), so the placed tracks must be
+            # *summed*.  Concatenating them re-applied each clip's absolute offset
+            # on top of the previous clips' spans: measured on a real 406 s film,
+            # only 9 of 52 narration takes were audible and 82 % of the film was
+            # digital silence although all 52 source WAVs carried continuous
+            # speech.  ``amix`` keeps each take at its declared sample position and
+            # ``duration=longest`` keeps the tail of the film.
+            graph.chain(
+                narration_labels,
+                [FfmpegFilterGraph.amix(inputs=len(narration_labels), duration="longest", normalize=False)],
+                [voice_label],
+            )
+        else:
+            # The legacy path hands over unplaced whole files, one per sentence, so
+            # their order *is* their layout and concatenation is correct.
+            graph.chain(
+                narration_labels,
+                [FfmpegFilterGraph.concat(inputs=len(narration_labels), video=False, audio=True)],
+                [voice_label],
+            )
     elif narration_labels:
         # A single narration input is used directly; an empty chain would not be
         # a valid filtergraph.
@@ -1649,12 +1673,23 @@ def build_mix_command(
     else:
         mixed_source = mix_inputs[0]
     mixout_label = graph.label("mixout")
+    # ``loudnorm`` bounds its own output to the true-peak target, but the lossy
+    # encode that follows adds inter-sample peaks: the delivered 1080p film measured
+    # -0.7 dBTP against the declared <= -1.0 dBTP ceiling, on a mix whose loudnorm
+    # target was exactly -1.0.  The margin is applied to the normaliser only, so the
+    # documented ceiling is what the *delivered* file satisfies rather than what the
+    # intermediate PCM satisfied.  The mix command is PCM, so the margin is only
+    # needed when the artefact will be encoded lossily — which every delivery is.
     graph.chain(
         [mixed_source],
         [
             FfmpegFilterGraph.apad(whole_duration=total_seconds),
             FfmpegFilterGraph.atrim(duration=total_seconds),
-            FfmpegFilterGraph.loudnorm(i=loudness_target_lufs, tp=true_peak_dbtp, lra=loudness_lra),
+            FfmpegFilterGraph.loudnorm(
+                i=loudness_target_lufs,
+                tp=float(true_peak_dbtp) - ENCODE_TRUE_PEAK_MARGIN_DB,
+                lra=loudness_lra,
+            ),
             FfmpegFilterGraph.aformat(sample_rates=sample_rate),
         ],
         [mixout_label],
@@ -1675,6 +1710,134 @@ def build_mix_command(
         f"起点 0 采样（非零偏移不受支持，会被拒绝）；禁止 -shortest"
     )
     return FfmpegCommand(args=tuple(args), purpose="MIX", chunk_no=None, note=note)
+
+
+def build_loudness_measure_command(
+    *,
+    input_path: Path,
+    target_lufs: float,
+    true_peak_dbtp: float,
+    lra: float,
+) -> FfmpegCommand:
+    """Analyse one audio file with ``loudnorm`` and print its measurement as JSON.
+
+    ``loudnorm`` in single-pass mode is a dynamic normaliser: on this project's
+    125 s mix it delivered -18.0 LUFS against a -16.0 target, outside the -16 +/-1
+    LUFS band the product declares and the QC layer checks.  The measurement pass
+    exists so the *delivered* file can be brought onto the band with a second,
+    linear pass instead of hoping the dynamic one lands there.
+    """
+
+    return FfmpegCommand(
+        args=(
+            *_base_args(),
+            "-i", str(input_path),
+            "-af", FfmpegFilterGraph.loudnorm(
+                i=float(target_lufs),
+                tp=float(true_peak_dbtp),
+                lra=float(lra),
+                print_format="json",
+            ),
+            "-f", "null",
+            "-",
+        ),
+        purpose="LOUDNESS_MEASURE",
+        chunk_no=None,
+        note="只测量不改写：读取 loudnorm 的输入响度、真峰值与 LRA，供线性校正使用",
+    )
+
+
+def build_loudness_normalise_command(
+    *,
+    input_path: Path,
+    output_path: Path,
+    target_lufs: float,
+    true_peak_dbtp: float,
+    lra: float,
+    measured: Mapping[str, Any],
+    duration_seconds: float,
+    sample_rate: int,
+) -> FfmpegCommand:
+    """Apply the measured ``loudnorm`` values as a *linear* gain correction.
+
+    Linear mode computes one constant gain (plus a limiter only when the required
+    gain would push the true peak past the ceiling), so the film's dynamics are
+    preserved and the integrated loudness lands on the declared target.
+    """
+
+    required = ("measured_I", "measured_TP", "measured_LRA", "measured_thresh", "offset")
+    missing = [key for key in required if measured.get(key) in (None, "")]
+    if missing:
+        raise _domain_error(
+            "SCHEMA_INVALID",
+            "线性响度校正缺少 loudnorm 测量值",
+            {"missing": missing, "measured": dict(measured)},
+        )
+    parts = [
+        FfmpegFilterGraph.loudnorm(
+            i=float(target_lufs),
+            tp=float(true_peak_dbtp),
+            lra=float(lra),
+            print_format="summary",
+        ),
+        f"measured_I={_fmt_number(float(measured['measured_I']))}",
+        f"measured_TP={_fmt_number(float(measured['measured_TP']))}",
+        f"measured_LRA={_fmt_number(float(measured['measured_LRA']))}",
+        f"measured_thresh={_fmt_number(float(measured['measured_thresh']))}",
+        f"offset={_fmt_number(float(measured['offset']))}",
+        "linear=true",
+    ]
+    filter_value = ":".join(parts)
+    return FfmpegCommand(
+        args=(
+            *_base_args(),
+            "-i", str(input_path),
+            "-af", filter_value,
+            "-t", _fmt_number(float(duration_seconds)),
+            "-c:a", "pcm_s16le",
+            "-ar", str(int(sample_rate)),
+            "-ac", "2",
+            str(output_path),
+        ),
+        purpose="LOUDNESS_NORMALISE",
+        chunk_no=None,
+        note="按测量值做线性响度校正：保持动态，只施加常数增益，长度与采样率不变",
+    )
+
+
+def parse_loudness_measurement(stderr: str) -> dict[str, Any]:
+    """The ``loudnorm ... print_format=json`` block at the end of FFmpeg's stderr.
+
+    Returns ``{}`` when the block is absent *or* incomplete: a partial block cannot
+    drive the linear correction, and an unparsable measurement must never be
+    replaced by an invented one.
+    """
+
+    required = ("input_i", "input_tp", "input_lra", "input_thresh", "target_offset")
+    text = str(stderr or "")
+    start = text.rfind("{")
+    while start != -1:
+        candidate = text[start:]
+        end = candidate.rfind("}")
+        if end != -1:
+            try:
+                payload = json.loads(candidate[: end + 1])
+            except ValueError:
+                payload = None
+            if isinstance(payload, Mapping) and all(payload.get(key) is not None for key in required):
+                return {
+                    "measured_I": payload.get("input_i"),
+                    "measured_TP": payload.get("input_tp"),
+                    "measured_LRA": payload.get("input_lra"),
+                    "measured_thresh": payload.get("input_thresh"),
+                    "offset": payload.get("target_offset"),
+                    "input_i": payload.get("input_i"),
+                    "input_tp": payload.get("input_tp"),
+                    "input_lra": payload.get("input_lra"),
+                    "normalization_type": payload.get("normalization_type"),
+                }
+        start = text.rfind("{", 0, start)
+    return {}
 
 
 def build_subtitle_burn_command(
@@ -2241,6 +2404,113 @@ class FfmpegRunner:
             "log_truncated": outcome.get("truncated"),
         }
 
+    # -------------------------------------------------------- loudness pass
+    def measure_loudness(
+        self,
+        path: Path,
+        *,
+        target_lufs: float = DEFAULT_LOUDNESS_TARGET_LUFS,
+        true_peak_dbtp: float = DEFAULT_TRUE_PEAK_DBTP,
+        lra: float = DEFAULT_LOUDNESS_LRA,
+    ) -> dict[str, Any]:
+        """Measure one file's integrated loudness, true peak and LRA.
+
+        The numbers come from ``loudnorm``'s own analysis pass on this machine; an
+        unparsable pass is reported as ``UNMEASURED`` and never replaced by an
+        invented value.
+        """
+
+        command = build_loudness_measure_command(
+            input_path=Path(path),
+            target_lufs=float(target_lufs),
+            true_peak_dbtp=float(true_peak_dbtp),
+            lra=float(lra),
+        )
+        executable = self._resolve(self.ffmpeg)
+        if executable is None:
+            return _unavailable("FFMPEG_NOT_FOUND", executable=self.ffmpeg, purpose=command.purpose)
+        outcome = self._invoke([executable, *command.to_argv()], cwd=None)
+        self.calls.append({"argv": [executable, *command.to_argv()], "purpose": command.purpose})
+        measured = parse_loudness_measurement(_as_text(outcome.get("stderr")))
+        if outcome.get("returncode") != 0 or not measured:
+            return {
+                "status": "UNMEASURED",
+                "reason": "LOUDNESS_MEASUREMENT_UNAVAILABLE",
+                "measured": measured or None,
+                "returncode": outcome.get("returncode"),
+                "stderr_tail": _tail(_as_text(outcome.get("stderr")), self.tail_bytes),
+            }
+        return {"status": "OK", "measured": measured}
+
+    def normalise_loudness(
+        self,
+        *,
+        input_path: Path,
+        output_path: Path,
+        target_lufs: float = DEFAULT_LOUDNESS_TARGET_LUFS,
+        true_peak_dbtp: float = DEFAULT_TRUE_PEAK_DBTP,
+        lra: float = DEFAULT_LOUDNESS_LRA,
+        duration_seconds: float,
+        sample_rate: int,
+        tolerance_lu: float = 0.5,
+    ) -> dict[str, Any]:
+        """Bring a mixed PCM file onto the declared loudness band, in two passes.
+
+        The first pass only measures; the second applies the measurement as a
+        linear gain.  When the mix already sits inside ``tolerance_lu`` of the
+        target the second pass is skipped and ``input_path`` is returned as the
+        deliverable, so an already-correct mix never pays for a rewrite.
+        """
+
+        measurement = self.measure_loudness(
+            Path(input_path),
+            target_lufs=float(target_lufs),
+            true_peak_dbtp=float(true_peak_dbtp),
+            lra=float(lra),
+        )
+        if str(measurement.get("status")) != "OK":
+            return {**measurement, "reason": measurement.get("reason") or "LOUDNESS_MEASUREMENT_UNAVAILABLE"}
+        measured = dict(measurement["measured"])
+        try:
+            integrated = float(measured["measured_I"])
+        except (KeyError, TypeError, ValueError):
+            return {"status": "UNMEASURED", "reason": "LOUDNESS_MEASUREMENT_UNPARSABLE", "measured": measured}
+        if abs(integrated - float(target_lufs)) <= float(tolerance_lu):
+            return {
+                "status": "WITHIN_TOLERANCE",
+                "measured": measured,
+                "output_path": str(input_path),
+                "target_lufs": float(target_lufs),
+                "delta_lu": round(integrated - float(target_lufs), 3),
+            }
+        normalise_command = build_loudness_normalise_command(
+            input_path=Path(input_path),
+            output_path=Path(output_path),
+            target_lufs=float(target_lufs),
+            true_peak_dbtp=float(true_peak_dbtp),
+            lra=float(lra),
+            measured=measured,
+            duration_seconds=float(duration_seconds),
+            sample_rate=int(sample_rate),
+        )
+        correction = self.run(normalise_command)
+        if str(correction.get("status")) != "SUCCEEDED":
+            return {
+                "status": "FAILED",
+                "reason": str(correction.get("reason") or "LOUDNESS_CORRECTION_FAILED"),
+                "measured": measured,
+                "detail": correction,
+            }
+        return {
+            "status": "CORRECTED",
+            "measured": measured,
+            "output_path": str(output_path),
+            "target_lufs": float(target_lufs),
+            "before_lufs": integrated,
+            "delta_lu": round(integrated - float(target_lufs), 3),
+            "argv": correction.get("argv"),
+        }
+
     # ----------------------------------------------------------------- probe
     def probe(self, path: Path) -> dict[str, Any]:
         """Probe a file: frames, fps, duration, sample rate, codec, pix_fmt, timebase.
@@ -2532,7 +2802,7 @@ def _hash_file(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
 # orchestration
 # --------------------------------------------------------------------------- #
 def _empty_totals() -> dict[str, int]:
-    return {"chunks_rendered": 0, "chunks_missing_media": 0, "published": 0, "failed": 0}
+    return {"chunks_rendered": 0, "chunks_missing_media": 0, "published": 0, "failed": 0, "degraded": 0}
 
 
 @dataclass
@@ -2566,6 +2836,8 @@ def atomic_render(
     chunk_builder: Callable[..., FfmpegCommand] = build_chunk_command,
     concat_builder: Callable[..., FfmpegCommand] = build_concat_command,
     signature: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+    loudness_normaliser: Callable[..., Mapping[str, Any]] | None = None,
+    loudness_target_lufs: float = DEFAULT_LOUDNESS_TARGET_LUFS,
 ) -> dict[str, Any]:
     """Render every chunk, validate each, concat, probe, full-decode, hash, publish.
 
@@ -2748,12 +3020,41 @@ def atomic_render(
                 "steps": state.steps,
                 **state.totals,
             }
+        # Single-pass ``loudnorm`` is a dynamic normaliser and does not land on its
+        # target: the delivered 1962 film measured -18.0 LUFS against a -16.0
+        # target, one full LU outside the declared band.  The mix is therefore
+        # measured and, when it misses, corrected with a second *linear* pass.  The
+        # same true-peak head-room the mix pass used is applied here, because the
+        # file being corrected is that mix and the delivered encode adds
+        # inter-sample peaks on top of it.
+        audio_for_mux = mixed
+        if loudness_normaliser is not None:
+            corrected = dict(
+                loudness_normaliser(
+                    input_path=mixed,
+                    output_path=temp_dir / "mix-normalized.wav",
+                    target_lufs=float(loudness_target_lufs),
+                    true_peak_dbtp=float(DEFAULT_TRUE_PEAK_DBTP) - ENCODE_TRUE_PEAK_MARGIN_DB,
+                    lra=float(DEFAULT_LOUDNESS_LRA),
+                    duration_seconds=float(manifest.total_samples) / max(1, int(manifest.audio_sample_rate_hz)),
+                    sample_rate=int(manifest.audio_sample_rate_hz),
+                )
+            )
+            state.steps.append({"stage": "loudness", **corrected})
+            if str(corrected.get("status")) == "CORRECTED" and corrected.get("output_path"):
+                audio_for_mux = Path(str(corrected["output_path"]))
+            elif str(corrected.get("status")) == "FAILED":
+                # The mix is already loudnorm-normalised, so a failed *correction*
+                # must not throw away a finished film — but it is recorded as a
+                # degraded step, never as a pass, and the QC stage measures the
+                # delivered file independently.
+                state.totals["degraded"] = int(state.totals.get("degraded", 0)) + 1
         muxed = temp_dir / "muxed.mp4"
         mux_command = FfmpegCommand(
             args=(
                 *_base_args(),
                 "-i", str(rendered),
-                "-i", str(mixed),
+                "-i", str(audio_for_mux),
                 "-map", "0:v:0",
                 "-map", "1:a:0",
                 "-c:v", "copy",

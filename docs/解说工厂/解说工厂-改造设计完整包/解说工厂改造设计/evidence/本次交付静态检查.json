@@ -1,0 +1,75 @@
+{
+  "scope": "DESIGN_DELIVERY_ONLY",
+  "checks": {
+    "code_citation_paths": {
+      "status": "PASS",
+      "links": 32,
+      "unique_files": 18
+    },
+    "main_document": {
+      "status": "PASS",
+      "characters": 107658,
+      "lines": 1823,
+      "json_examples": 9,
+      "code_fences": "balanced",
+      "legacy_api_prefix": "none"
+    },
+    "prompt_artifacts": {
+      "status": "PASS",
+      "sets": 7,
+      "json_files_parse": true,
+      "schema_example_validator": "Pydantic 2.13.5 model_validate; schemas generated from the same strict extra=forbid models",
+      "positive_examples": 7,
+      "negative_examples_rejected": 17,
+      "verification": "Pydantic design contracts, no model calls"
+    },
+    "prototype_syntax": {
+      "status": "PASS",
+      "javascript": "node --check",
+      "external_assets": 0,
+      "network_calls": 0,
+      "ui_browser_test": false
+    },
+    "prototype_state_logic": {
+      "status": "passed",
+      "steps": 6,
+      "buttonActions": 52,
+      "checks": [
+        "all 6 page render functions execute",
+        "image candidate appends",
+        "preview does not adopt",
+        "adoption marks video stale",
+        "lock prevents changing chosen image",
+        "video reroll preserves image",
+        "two primary input modes",
+        "source input submodes",
+        "original-script mode has no target duration",
+        "all action identifiers have event cases",
+        "asset lock prevents replacement and survives one-click",
+        "step 5 pauses on locked stale video",
+        "one-click pauses on locked stale video",
+        "explicit keep-old retains stale provenance and source",
+        "explicit unlock rebuilds and appends history",
+        "conflict introduced during run pauses before completion"
+      ],
+      "limitation": "VM DOM stub only; not a browser layout or end-to-end test"
+    },
+    "design_figure": {
+      "status": "PASS",
+      "svg_xml": "valid",
+      "png_dimensions": [
+        1440,
+        1000
+      ],
+      "method": "SVG rendered with Inkscape, visually reviewed",
+      "is_app_screenshot": false
+    },
+    "production_repository": {
+      "status": "PASS",
+      "tracked_changes": 0
+    }
+  },
+  "runtime_ui_screenshots": 0,
+  "browser_ui_validation": "BLOCKED",
+  "real_model_generation": "NOT_RUN"
+}

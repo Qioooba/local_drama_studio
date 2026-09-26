@@ -1,0 +1,516 @@
+{
+  "$defs": {
+    "Ambiguity": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "ALIAS",
+            "SAME_NAME",
+            "PRONOUN",
+            "FACT_CONFLICT",
+            "STATE_CONFLICT",
+            "MISSING_EVIDENCE"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "entity_indexes": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 256,
+          "title": "Entity Indexes",
+          "type": "array"
+        },
+        "claim_indexes": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 256,
+          "title": "Claim Indexes",
+          "type": "array"
+        },
+        "source_span_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Source Span Ids",
+          "type": "array"
+        },
+        "reason": {
+          "maxLength": 2000,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "entity_indexes",
+        "claim_indexes",
+        "source_span_ids",
+        "reason"
+      ],
+      "title": "Ambiguity",
+      "type": "object"
+    },
+    "Appearance": {
+      "additionalProperties": false,
+      "properties": {
+        "attribute": {
+          "maxLength": 300,
+          "title": "Attribute",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 300,
+          "title": "Value",
+          "type": "string"
+        },
+        "source_span_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Source Span Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "attribute",
+        "value",
+        "source_span_ids"
+      ],
+      "title": "Appearance",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "source_span_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Source Span Id",
+          "type": "string"
+        },
+        "stance": {
+          "enum": [
+            "SUPPORTS",
+            "REFUTES",
+            "CONTEXT"
+          ],
+          "title": "Stance",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_span_id",
+        "stance"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "ExtractedClaim": {
+      "additionalProperties": false,
+      "properties": {
+        "statement": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        },
+        "statement_kind": {
+          "enum": [
+            "FACT",
+            "ORIGINAL_EXPLANATION",
+            "TRANSITION",
+            "FICTION",
+            "QUESTION"
+          ],
+          "title": "Statement Kind",
+          "type": "string"
+        },
+        "importance": {
+          "enum": [
+            "CORE",
+            "KEY",
+            "SUPPORTING"
+          ],
+          "title": "Importance",
+          "type": "string"
+        },
+        "entity_indexes": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 256,
+          "title": "Entity Indexes",
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "maxItems": 128,
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "statement",
+        "statement_kind",
+        "importance",
+        "entity_indexes",
+        "evidence"
+      ],
+      "title": "ExtractedClaim",
+      "type": "object"
+    },
+    "ExtractedEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "entity_type": {
+          "enum": [
+            "REAL_PERSON",
+            "FICTIONAL_CHARACTER",
+            "GROUP",
+            "LOCATION",
+            "PROP",
+            "ORGANIZATION",
+            "CONCEPT"
+          ],
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "same_as_entity_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Same As Entity Id"
+        },
+        "aliases": {
+          "items": {
+            "maxLength": 300,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Aliases",
+          "type": "array"
+        },
+        "source_span_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Source Span Ids",
+          "type": "array"
+        },
+        "known_appearance": {
+          "items": {
+            "$ref": "#/$defs/Appearance"
+          },
+          "maxItems": 32,
+          "title": "Known Appearance",
+          "type": "array"
+        },
+        "unknown_attributes": {
+          "items": {
+            "maxLength": 300,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Unknown Attributes",
+          "type": "array"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/State"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ambiguity": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ambiguity"
+        }
+      },
+      "required": [
+        "name",
+        "entity_type",
+        "same_as_entity_id",
+        "aliases",
+        "source_span_ids",
+        "known_appearance",
+        "unknown_attributes",
+        "state",
+        "ambiguity"
+      ],
+      "title": "ExtractedEntity",
+      "type": "object"
+    },
+    "ExtractedEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "maxLength": 300,
+          "title": "Title",
+          "type": "string"
+        },
+        "story_time_start": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Story Time Start"
+        },
+        "story_time_end": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Story Time End"
+        },
+        "place_entity_index": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Place Entity Index"
+        },
+        "participant_entity_indexes": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 256,
+          "title": "Participant Entity Indexes",
+          "type": "array"
+        },
+        "claim_indexes": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 256,
+          "title": "Claim Indexes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "story_time_start",
+        "story_time_end",
+        "place_entity_index",
+        "participant_entity_indexes",
+        "claim_indexes"
+      ],
+      "title": "ExtractedEvent",
+      "type": "object"
+    },
+    "State": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "maxLength": 300,
+          "title": "Label",
+          "type": "string"
+        },
+        "age": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Age"
+        },
+        "wardrobe": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Wardrobe"
+        },
+        "condition": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Condition"
+        },
+        "valid_from_story_time": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Valid From Story Time"
+        },
+        "valid_to_story_time": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Valid To Story Time"
+        },
+        "carried_prop_entity_indexes": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 256,
+          "title": "Carried Prop Entity Indexes",
+          "type": "array"
+        },
+        "source_span_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Source Span Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "label",
+        "age",
+        "wardrobe",
+        "condition",
+        "valid_from_story_time",
+        "valid_to_story_time",
+        "carried_prop_entity_indexes",
+        "source_span_ids"
+      ],
+      "title": "State",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "localdrama.explainer.content-extract.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "entities": {
+      "items": {
+        "$ref": "#/$defs/ExtractedEntity"
+      },
+      "maxItems": 160,
+      "title": "Entities",
+      "type": "array"
+    },
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/ExtractedClaim"
+      },
+      "maxItems": 256,
+      "title": "Claims",
+      "type": "array"
+    },
+    "events": {
+      "items": {
+        "$ref": "#/$defs/ExtractedEvent"
+      },
+      "maxItems": 160,
+      "title": "Events",
+      "type": "array"
+    },
+    "ambiguities": {
+      "items": {
+        "$ref": "#/$defs/Ambiguity"
+      },
+      "maxItems": 160,
+      "title": "Ambiguities",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "entities",
+    "claims",
+    "events",
+    "ambiguities"
+  ],
+  "title": "ContentExtract",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:localdrama:explainer:design:01-content-extract",
+  "description": "Design contract, not yet integrated. Static validation does not establish reference membership, project ownership, coverage, factuality or approval. Apply README service checks."
+}

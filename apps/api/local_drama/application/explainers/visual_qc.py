@@ -118,6 +118,10 @@ class LocalLlmVisualQcProvider:
         model_revision: str = "",
         reads_video: bool = False,
         batch_size: int = MAX_FRAMES_PER_BATCH,
+        strict_review: Mapping[str, Any] | None = None,
+        strict_required: bool = False,
+        strict_review_factory: Callable[[Mapping[str, Any], Sequence[Mapping[str, Any]]], Mapping[str, Any]]
+        | None = None,
     ) -> None:
         self._client_factory = client_factory
         self._frame_path_resolver = frame_path_resolver
@@ -126,6 +130,16 @@ class LocalLlmVisualQcProvider:
         self.model_revision = model_revision
         self.reads_video = reads_video
         self.batch_size = max(1, min(int(batch_size), MAX_FRAMES_PER_BATCH))
+        # When a frozen request is supplied, the reply is validated against the strict
+        # ``candidate-review.v1`` contract before any finding is derived (design §C5.5).
+        # ``strict_required`` decides what a contract violation means: for a候选 check it
+        # means UNCHECKED (never a pass), which is why the caller asks for it.
+        self.strict_review = dict(strict_review) if strict_review else None
+        self.strict_required = bool(strict_required)
+        # The per-candidate factory is the practical form: one provider instance is
+        # reused for every candidate of a batch, and each check builds its own frozen
+        # request from the candidate id plus the frames actually sent.
+        self.strict_review_factory = strict_review_factory
 
     # ------------------------------------------------------------------ protocol
     def capability(self) -> dict[str, Any]:
@@ -175,8 +189,36 @@ class LocalLlmVisualQcProvider:
             )
         client = self._client_factory()
         findings: list[dict[str, Any]] = []
+        answered_batches = 0
+        last_error: ExplainerContractError | None = None
         for batch in _batched(list(frames), self.batch_size):
-            findings.extend(self._check_batch(client, batch=batch, questions=questions, capability=capability))
+            try:
+                findings.extend(self._check_batch(client, batch=batch, questions=questions, capability=capability))
+                answered_batches += 1
+                continue
+            except ExplainerContractError as error:
+                # A batch the model server could not answer marks *its* frames
+                # unchecked and the pass continues.  Raising here discarded the
+                # batches that had already been read: the 1962 film's 13-batch
+                # semantic pass reported NOT_RUN and zero coverage because one
+                # request met a restarting model server, while twelve batches of
+                # real observations were available.  When *no* batch was answered the
+                # layer really did not run, and that is still raised.
+                last_error = error
+                for frame in batch:
+                    findings.append(
+                        {
+                            "frame_id": frame.get("frame_id"),
+                            "frame_ref": str(frame.get("frame_ref") or frame.get("frame_id")),
+                            "issue_kind": "SEMANTIC_QC_UNCHECKED",
+                            "observed": f"该帧未被模型读到：{str(error)[:200]}",
+                            "expected": "每一帧都由真实读图模型实际检查",
+                            "confidence": None,
+                            "unknown_reason": str(getattr(error, "code", "") or "VISUAL_QC_PROVIDER_ERROR"),
+                        }
+                    )
+        if answered_batches == 0 and last_error is not None:
+            raise last_error
         return findings
 
     # ------------------------------------------------------------------ internals
@@ -233,12 +275,88 @@ class LocalLlmVisualQcProvider:
                 inference_options={"temperature": 0.1, "top_p": 0.9, "max_tokens": 2_500, "num_ctx": 32_768},
             )
         except Exception as error:  # noqa: BLE001 - a failing call is UNCHECKED, never a pass
+            # The provider reports the underlying failure's code, message and details:
+            # "the multimodal call failed" alone cannot tell an operator whether the
+            # model server is down, the payload was refused, or the reply did not
+            # match the schema — and each of those needs a different next step.
             raise ExplainerContractError(
                 "CAPABILITY_UNAVAILABLE",
                 "本地多模态审片调用失败，语义检查保持未检查",
-                {"reason": type(error).__name__},
+                {
+                    "reason": type(error).__name__,
+                    "code": str(getattr(error, "code", "") or ""),
+                    "message": str(error)[:300],
+                    "detail": str(getattr(error, "details", "") or "")[:300],
+                },
             ) from error
+        if self.strict_review is not None or self.strict_review_factory is not None:
+            request = self._strict_request_for(list(batch))
+            if self.strict_required and request is None:
+                raise ExplainerContractError(
+                    "SCHEMA_INVALID",
+                    "严格候选检查缺少冻结请求，语义检查保持未检查",
+                )
+            return unreadable + self._strict_findings(result, described=described, request=request)
         return unreadable + self._normalise(result, batch=batch, capability=capability)
+
+    def _strict_request_for(self, frames: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+        """The frozen ``candidate-review.v1`` request for these frames, if one applies."""
+
+        if self.strict_review_factory is not None:
+            candidate_id = str((frames[0] if frames else {}).get("candidate_id") or "")
+            if not candidate_id:
+                return None
+            manifest = [
+                {
+                    "frame_id": int(frame["frame_id"]),
+                    "frame_ref": str(frame.get("frame_ref") or ""),
+                    "role": str(frame.get("role") or "CANDIDATE_FRAME"),
+                }
+                for frame in frames
+            ]
+            built = self.strict_review_factory({"candidate_id": candidate_id}, manifest)
+            return dict(built) if built else None
+        return dict(self.strict_review or {}) or None
+
+    def _strict_findings(
+        self,
+        result: Any,
+        *,
+        described: Sequence[Mapping[str, Any]],
+        request: Mapping[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Validate the reply against ``candidate-review.v1`` and map it to findings.
+
+        A reply that cannot be validated is refused here.  In strict mode that refusal is
+        raised, so the caller records UNCHECKED — an unverifiable answer must never
+        become a PASS, and an unrecognised shape must never silently lose a FAIL.
+        """
+
+        from local_drama.application.explainers.candidate_review import (
+            findings_from_review,
+            validate_review_response,
+            verdicts_from_review,
+        )
+
+        frozen = dict(request or self.strict_review or {})
+        review = validate_review_response(result, request=frozen)
+        findings = findings_from_review(
+            review,
+            provider_identity={"provider_id": self.provider_id, "model_revision": self.model_revision},
+            frame_refs={int(item["frame_id"]): str(item.get("frame_ref") or "") for item in described},
+        )
+        # A criterion the review could not judge is carried as a gate state, not as a
+        # finding: only real FAILs and reported issues reach the user as problems.
+        validated = verdicts_from_review(review)
+        self.last_verdicts = {
+            "checked": bool(validated.get("checked")),
+            "reason": str(validated.get("reason") or ""),
+            "verdicts": dict(validated.get("verdicts") or {}),
+            "check_states": dict(validated.get("check_states") or {}),
+            "issue_kinds": list(validated.get("issue_kinds") or []),
+            "unknown_is_not_a_pass": True,
+        }
+        return findings
 
     def _normalise(
         self, result: Any, *, batch: Sequence[Mapping[str, Any]], capability: Mapping[str, Any]
@@ -308,8 +426,15 @@ def build_visual_qc_provider(
     *,
     frame_root: Path,
     basis: Mapping[str, Any] | None = None,
+    strict_review: Mapping[str, Any] | None = None,
+    strict_review_factory: Any | None = None,
 ) -> LocalLlmVisualQcProvider:
-    """Build the semantic provider over the configured multimodal profile."""
+    """Build the semantic provider over the configured multimodal profile.
+
+    ``strict_review`` optionally supplies the frozen ``candidate-review.v1`` request for
+    the candidate being checked; when it is present the reply is contract-validated
+    before any verdict is derived (design §C5.5).
+    """
 
     def client_factory() -> Any:
         from local_drama.application.local_llm import LocalLLMService
@@ -345,4 +470,6 @@ def build_visual_qc_provider(
         client_factory=client_factory,
         frame_path_resolver=resolve,
         basis=basis,
+        strict_review=strict_review,
+        strict_review_factory=strict_review_factory,
     )

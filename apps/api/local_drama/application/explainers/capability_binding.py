@@ -202,7 +202,7 @@ def _local_ai_resolution(settings: Any, binding: ExplainerCapabilityBinding) -> 
         "available": True,
         "profile_version_id": None,
         "resolution": "FIRST_PARTY_LOCAL_RUNTIME",
-        "runtime": str(getattr(settings, "local_ai_python")),
+        "runtime": str(settings.local_ai_python),
         "model_root": str(model_root),
     }
 

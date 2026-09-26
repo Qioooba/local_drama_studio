@@ -26,6 +26,52 @@ _SUPPORTED_PROVIDERS = frozenset({"OLLAMA_LOOPBACK", "OPENAI_COMPAT", "LLAMA_CPP
 # and therefore use the proxy-free, redirect-blocking local opener.
 _LOOPBACK_PROVIDERS = frozenset({"OLLAMA_LOOPBACK", "LLAMA_CPP_MANAGED"})
 
+#: JSON Schema keywords that only *validate* an answer, never shape it.
+#:
+#: Both local providers hand the schema to llama.cpp's GBNF converter (Ollama through
+#: ``format``, the managed runtime through ``response_format.json_schema``), and that
+#: converter refuses some of these values outright.  Measured on Ollama 0.x with
+#: qwen3.8:27b: any string/array length bound of exactly 2000 fails with
+#: ``Failed to initialize samplers: failed to parse grammar`` (HTTP 400) while 1999 and
+#: 2001 are accepted.  Every explainer contract carries a ``maxLength: 2000``, so the
+#: raw schema made every model-driven stage fail before the model was even asked.
+#:
+#: Dropping them cannot weaken acceptance: the parsed answer is still validated against
+#: the full Pydantic contract by the caller, so a too-long field is still refused — it
+#: is only no longer refused by the decoder grammar (which would otherwise reject the
+#: request itself).  Structural keywords (``type``/``properties``/``required``/
+#: ``items``/``enum``/``anyOf``/``additionalProperties``) are kept.
+_GRAMMAR_UNSAFE_KEYWORDS = frozenset(
+    {
+        "maxLength",
+        "minLength",
+        "maxItems",
+        "minItems",
+        "uniqueItems",
+        "pattern",
+        "format",
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+    }
+)
+
+
+def grammar_safe_schema(schema: Any) -> Any:
+    """Project a contract schema onto the keywords a local grammar engine accepts."""
+
+    if isinstance(schema, dict):
+        return {
+            key: grammar_safe_schema(value)
+            for key, value in schema.items()
+            if key not in _GRAMMAR_UNSAFE_KEYWORDS
+        }
+    if isinstance(schema, list):
+        return [grammar_safe_schema(item) for item in schema]
+    return schema
+
 
 class LocalLLMClient:
     def __init__(
@@ -379,8 +425,10 @@ class LocalLLMClient:
                 # from surrounding the requested object with prose.  The
                 # response is still validated against the domain contract by
                 # the application service; this only makes transport output
-                # reliably parseable.
-                "format": json_schema or "json",
+                # reliably parseable.  Validation-only keywords are dropped
+                # because the GBNF converter refuses some of their values
+                # (see ``_GRAMMAR_UNSAFE_KEYWORDS``).
+                "format": grammar_safe_schema(json_schema) if json_schema else "json",
                 "options": ollama_options,
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             }
@@ -423,7 +471,12 @@ class LocalLLMClient:
                 if json_schema:
                     payload["response_format"] = {
                         "type": "json_schema",
-                        "json_schema": {"name": "local_drama_response", "schema": json_schema},
+                        "json_schema": {
+                            "name": "local_drama_response",
+                            # Same GBNF converter as the Ollama grammar path, so the same
+                            # validation-only keywords have to be dropped here.
+                            "schema": grammar_safe_schema(json_schema),
+                        },
                     }
                 else:
                     payload["response_format"] = {"type": "json_object"}

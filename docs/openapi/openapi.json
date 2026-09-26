@@ -32201,7 +32201,7 @@
           "explainers"
         ],
         "summary": "Import Explainer Source",
-        "description": "Import one source document through the shared bounded upload path.\n\nThe body is streamed with the same guards the existing importer uses: the\nclient path comes from an ``X-File-Name`` header (never from a client path),\nthe suffix is checked against an allowlist, and the byte budget is enforced\nwhile streaming.  The decoded text becomes an immutable source with its own\nhash and spans — an \"uploaded\" badge never means \"fact-checked\" (design §5.2).",
+        "description": "Import one source document through the shared bounded upload path.\n\nThe body is streamed with the same guards the existing importer uses: the\nclient path comes from an ``X-File-Name`` header (never from a client path),\nthe suffix is checked against an allowlist, and the byte budget is enforced\nwhile streaming.  The decoded text becomes an immutable source with its own\nhash and spans — an \"uploaded\" badge never means \"fact-checked\" (design §5.2).\n\n``encoding_override`` is honoured for plain text only (spec §C2 item 3).  The\nraw uploaded bytes are kept in the project's own\n``01_story/source_documents`` space so the same file can be re-decoded with a\ndifferent encoding without asking the user to upload it again, and the full\nextraction metadata (including ``confidence``) is returned instead of being\ndropped on the way out.",
         "operationId": "importExplainerSource",
         "parameters": [
           {
@@ -32250,6 +32250,23 @@
               "maxLength": 32,
               "default": "DOCUMENT_IMPORT",
               "title": "Source Kind"
+            }
+          },
+          {
+            "name": "encoding_override",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Encoding Override"
             }
           }
         ],
@@ -32550,6 +32567,56 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ExplainerScriptRevisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/breakdown-story": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Breakdown Explainer Story",
+        "operationId": "breakdownExplainerStory",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerBreakdownStoryRequest"
               }
             }
           }
@@ -32888,6 +32955,73 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-runs/{run_id}:recover": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Recover Explainer Run",
+        "description": "Recover a stalled run: re-queue its task Job, or fail the run honestly.\n\n``{run_id}`` is the explainer run, exactly like ``:pause``/``:resume``/\n``:cancel``; the linked ``automation_workflow_run_id`` is the authority the\nrecovery acts on.  The service result (the workflow run view plus its\n``recovery`` receipt) is returned verbatim.",
+        "operationId": "recoverExplainerRun",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerRunControlRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -33369,6 +33503,66 @@
         }
       }
     },
+    "/api/v2/explainer-editions/{edition_id}/narration/{take_id}:adopt": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Adopt Explainer Narration Take",
+        "description": "Adopt an already generated narration take for one paragraph (design §B4).\n\nChoosing between existing takes is a real, recorded human adoption: the take must\nbelong to this edition's clock locale, must carry a measured duration, and the\nselection is written with ``HUMAN`` authority so it is never presented as a\nmachine decision.  No new audio is generated and no text changes.",
+        "operationId": "adoptExplainerNarrationTake",
+        "parameters": [
+          {
+            "name": "edition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Edition Id"
+            }
+          },
+          {
+            "name": "take_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Take Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerNarrationTakeAdoptionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/explainer-editions/{edition_id}/narration:resynthesize": {
       "post": {
         "tags": [
@@ -33495,6 +33689,166 @@
         ],
         "responses": {
           "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-editions/{edition_id}/subtitles:build": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Build Explainer Subtitles",
+        "description": "Build the subtitle revision this edition's declared locales need.\n\nA delivery package must contain a subtitle file for every locale the edition\ndeclares, so this stage is a prerequisite of a complete export.  It used to be\nreachable only from a whole production-graph run, which left an edition driven\npage by page unable to produce a complete package.",
+        "operationId": "buildExplainerSubtitles",
+        "parameters": [
+          {
+            "name": "edition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Edition Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-editions/{edition_id}/narration:align": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Rerun Explainer Narration Align",
+        "description": "Re-measure the alignment clock for every selected take of this edition.\n\nAlignment revisions are append-only and the align stage skips takes that already\nhave one, so a take whose stored clock is unusable — the delivered 1962 film's\naligner rates were 16 kHz positions declared as 48 kHz — could otherwise only be\nre-measured by re-synthesising the audio.",
+        "operationId": "rerunExplainerNarrationAlign",
+        "parameters": [
+          {
+            "name": "edition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Edition Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-editions/{edition_id}/qc:run": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Run Explainer Composition Qc",
+        "description": "Run the technical/session QC layer for this edition's rendered film.\n\nThe delivery package ships the QC report for the render it was built from.  When\nthe film was driven stage by stage the report was written as ``NOT_RUN``, because\n``COMPOSITION_QC`` was only reachable from a whole production-graph run; the\ncommand closes that gap with the same \"real job or an honest blocker\" rule the\nother stage commands follow.",
+        "operationId": "runExplainerCompositionQc",
+        "parameters": [
+          {
+            "name": "edition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Edition Id"
+            }
+          },
+          {
+            "name": "render_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Render Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
@@ -33891,7 +34245,159 @@
           "explainers"
         ],
         "summary": "List Explainer Beat Candidates",
+        "description": "Candidates for one beat, scoped by purpose and edition (design §D7).\n\n``purpose`` and ``edition_id`` are real query scopes, not display filters: step 5\nneeds the adopted first frame (``KEYFRAME``) while step 4 shows the keyframes it\ncan adopt, and neither should receive the other layer's rows.  The response also\ncarries the neutral candidate DTO the shared grid renders, the ACTIVE selection\nfor the same scope, and whether that scope is human-locked.",
         "operationId": "listExplainerBeatCandidates",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "beat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Beat Id"
+            }
+          },
+          {
+            "name": "purpose",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Purpose"
+            }
+          },
+          {
+            "name": "edition_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Edition Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/beats/{beat_id}/candidates/{candidate_id}:archive": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Archive Explainer Candidate",
+        "description": "「不采用」: stop offering a candidate while keeping its media (design §B5.3).",
+        "operationId": "archiveExplainerCandidate",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "beat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Beat Id"
+            }
+          },
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerCandidateArchiveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/beats/{beat_id}": {
+      "patch": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Patch Explainer Beat",
+        "description": "保存镜头描述 / 呈现方式（design §B5.2、§B5.3、§B6.1）.",
+        "operationId": "patchExplainerBeat",
         "parameters": [
           {
             "name": "project_id",
@@ -33912,8 +34418,78 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerBeatPatchRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/beats/{beat_id}/candidates:register": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Register Explainer Candidate From Media",
+        "description": "Register an uploaded / media-library image or video as a candidate (design §B5.3).\n\nThe media becomes a *candidate*, never the adopted choice: adoption stays an\nexplicit click.  The rule the design keeps is that a person may not declare checks\nthat were never run, so the registration records only the facts that can be\nmeasured here (the file is registered and readable) and leaves content, identity\nand readability absent — an absent check is UNKNOWN, never a pass.",
+        "operationId": "registerExplainerCandidateFromMedia",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "beat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Beat Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerCandidateRegistrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
@@ -33962,6 +34538,848 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/beats/{beat_id}/generations:plan": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Plan Explainer Beat Generation",
+        "description": "Read-only generation plan: freezes prompt, style, references, seeds, budget.\n\nIt never creates media, candidates or jobs, so it needs no Idempotency-Key.",
+        "operationId": "planExplainerBeatGeneration",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "beat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Beat Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerGenerationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/beats/{beat_id}/generations": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Submit Explainer Beat Generation",
+        "description": "Submit real candidate jobs for one beat; the receipt names every accepted item.",
+        "operationId": "submitExplainerBeatGeneration",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "beat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Beat Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerGenerationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/assets/{entity_id}/reference-generations:plan": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Plan Explainer Reference Generation",
+        "operationId": "planExplainerReferenceGeneration",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerGenerationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/assets/{entity_id}/reference-generations": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Submit Explainer Reference Generation",
+        "operationId": "submitExplainerReferenceGeneration",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerGenerationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/assets/{entity_id}/candidates": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "List Explainer Entity Candidates",
+        "operationId": "listExplainerEntityCandidates",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          },
+          {
+            "name": "edition_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Edition Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/assets/{entity_id}/references": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Adopt Explainer Entity Reference",
+        "description": "Adopt one reference candidate (or a同项目 image) as the entity's reference.\n\n``lock=false`` only changes the current choice; ``lock=true`` records the\nexplicit human lock.  Either way the effective image becomes a real\n``story_asset_references`` row, which is what the generation input bridge reads.",
+        "operationId": "adoptExplainerEntityReference",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerReferenceAdoptionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/assets/{entity_id}/references:unlock": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Unlock Explainer Entity Reference",
+        "operationId": "unlockExplainerEntityReference",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerReferenceUnlockRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/visual-preferences": {
+      "patch": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Patch Explainer Visual Preferences",
+        "description": "Merge this film's style and candidate-count preferences without accepting render types.\n\nThe per-beat render type stays program-derived from each beat's declared action\nrequirement, so a client can never write an actual render type (spec §D3.1).  The\nretired ``visual_strategy`` route choice is no longer part of this request: the only\nmoving-picture route is a real AI image-to-video generation.",
+        "operationId": "patchExplainerVisualPreferences",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerVisualPreferencesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/story-seed": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Create Explainer Story Seed",
+        "description": "从主题创作原创虚构：生成有边界的设定资料（design §C4.5).\n\nOnly ``CREATE_FROM_TOPIC`` + ``ORIGINAL_FICTION`` may call this.  A factual topic\nkeeps using the research path, which records real sources and never invents one.\nThe seed is registered as an authored-fiction source, so it enters the ordinary\nextraction/writing flow with the correct (non-historical) credibility kind.",
+        "operationId": "createExplainerStorySeed",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerStorySeedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/assets/{entity_id}/reference-design": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Get Explainer Reference Design",
+        "description": "Compile the frozen setting prompt for one entity's reference image (design §C4.4).\n\nDeterministic and read-only: with the known attributes, user settings, adopted\nreference invariants and style already present, no model call is made.  The result\nis the prompt a generation command should use, with the hard view/identity\nrequirements appended by the program so they can never be truncated away.",
+        "operationId": "getExplainerReferenceDesign",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          },
+          {
+            "name": "reference_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "default": "HERO",
+              "title": "Reference Kind"
+            }
+          },
+          {
+            "name": "allow_creative_choices",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Allow Creative Choices"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/readiness": {
+      "get": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Get Explainer Workspace Readiness",
+        "description": "Six-step readiness projection used by the numeric step bar (spec §F2.1).",
+        "operationId": "getExplainerWorkspaceReadiness",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/visual-generation:submit": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Submit Explainer Visual Generation",
+        "description": "Generate the real AI image-to-video clips this film is still missing.\n\nThis is the picture stage as a standalone command.  It exists because the stage\nis the only thing that turns an adopted keyframe into a composable clip, and a\nfilm whose production graph run stopped could otherwise never be finished.  The\nstage reuses every human-adopted keyframe and every beat that already has a READY\nvisual candidate, so pressing it twice never re-draws accepted work.",
+        "operationId": "submitExplainerVisualGeneration",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerVisualGenerationSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainer-runs/{run_id}/collections/{step_binding_id}:continue": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Continue Explainer Collection",
+        "description": "Use the available results and continue a blocked collection stage.\n\nThis is the only business entry point for the replacement-collect flow; the\nmachine MIN_ONE policy calls the same service so a click and an automatic\ndecision can never diverge (spec §D5.1).",
+        "operationId": "continueExplainerCollection",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "step_binding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Step Binding Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerCollectionContinueRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/explainers/{project_id}/beats/{beat_id}/selections:unlock": {
+      "post": {
+        "tags": [
+          "explainers"
+        ],
+        "summary": "Unlock Explainer Selection",
+        "operationId": "unlockExplainerSelection",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "beat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Beat Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainerSelectionUnlockRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -46473,6 +47891,286 @@
         "title": "ExplainerBatchAdoptionRequest",
         "description": "Adopt the generated candidate of every beat that has no active selection.\n\nThis is the operator's batch decision.  Picture adoption is a machine step, but\na machine may only adopt material whose required checks all passed; when a\ncontent check cannot run, the design hands that decision to the human rather\nthan passing unverified material (design §2.5/§6.2).  The body carries the\nreviewer's identity because the adoption is recorded as ``HUMAN`` authority."
       },
+      "ExplainerBeatPatchRequest": {
+        "properties": {
+          "expected_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
+          "visual_intent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visual Intent"
+          },
+          "prompt_intent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Intent"
+          },
+          "negative_prompt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Negative Prompt"
+          },
+          "camera_movement": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Movement"
+          },
+          "on_screen_text": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On Screen Text"
+          },
+          "continuity_note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuity Note"
+          },
+          "render_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "I2V",
+                  "INFOGRAPHIC",
+                  "LICENSED_MEDIA"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Render Type"
+          },
+          "preferred_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 600000.0,
+                "minimum": 200.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Duration Ms"
+          },
+          "must_be_motion": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Must Be Motion"
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor",
+            "default": "local-user"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExplainerBeatPatchRequest",
+        "description": "Edit the current beat's own description and presentation (design §B5.2).\n\nOnly fields a person may legitimately change are accepted: the visual intent, the\nediting fields that are informative for the following shots, the planning/user\nprompts, and the declared presentation.  ``render_type`` is a plan value, so a\nchange to it is recorded as an explicit replan of this one beat and is never\ninferred from another field."
+      },
+      "ExplainerBreakdownStoryRequest": {
+        "properties": {
+          "story_text": {
+            "type": "string",
+            "maxLength": 2000000,
+            "minLength": 10,
+            "title": "Story Text"
+          },
+          "profile_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Version Id"
+          },
+          "target_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 7200.0,
+                "minimum": 30.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Seconds"
+          },
+          "style": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Style"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "story_text"
+        ],
+        "title": "ExplainerBreakdownStoryRequest"
+      },
+      "ExplainerCandidateArchiveRequest": {
+        "properties": {
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor",
+            "default": "local-user"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 400
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExplainerCandidateArchiveRequest",
+        "description": "Stop offering one candidate without deleting its media (design §B5.3 不采用)."
+      },
+      "ExplainerCandidateRegistrationRequest": {
+        "properties": {
+          "media_version_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Media Version Id"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "KEYFRAME",
+              "VISUAL"
+            ],
+            "title": "Purpose",
+            "default": "KEYFRAME"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 400
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor",
+            "default": "local-user"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "media_version_id"
+        ],
+        "title": "ExplainerCandidateRegistrationRequest",
+        "description": "Register an uploaded / media-library item as a candidate (design §B5.3)."
+      },
       "ExplainerChapterRequest": {
         "properties": {
           "code": {
@@ -46594,6 +48292,77 @@
         ],
         "title": "ExplainerClaimPatchRequest"
       },
+      "ExplainerCollectionContinueRequest": {
+        "properties": {
+          "expected_task_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Task Revision"
+          },
+          "expected_old_job_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Old Job Id"
+          },
+          "selected_candidate_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 512,
+            "title": "Selected Candidate Ids"
+          },
+          "failed_candidate_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 512,
+            "title": "Failed Candidate Ids"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExplainerCollectionContinueRequest"
+      },
       "ExplainerCreateRequest": {
         "properties": {
           "title": {
@@ -46640,6 +48409,22 @@
             ],
             "title": "Input Kind",
             "default": "TOPIC"
+          },
+          "script_policy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "PRESERVE_ORIGINAL",
+                  "ADAPT_SOURCES",
+                  "CREATE_FROM_TOPIC"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Script Policy"
           },
           "input_payload": {
             "additionalProperties": true,
@@ -47096,6 +48881,292 @@
         "type": "object",
         "title": "ExplainerExportRequest"
       },
+      "ExplainerGenerationRequest": {
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 8,
+            "title": "Operation Id"
+          },
+          "edition_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edition Id"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "REFERENCE",
+              "KEYFRAME",
+              "VISUAL"
+            ],
+            "title": "Purpose",
+            "default": "VISUAL"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "TEXT_TO_IMAGE",
+              "IMAGE_EDIT",
+              "IMAGE_TO_VIDEO"
+            ],
+            "title": "Mode",
+            "default": "TEXT_TO_IMAGE"
+          },
+          "candidate_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 4.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Count"
+          },
+          "parent_candidate_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Candidate Id"
+          },
+          "expected_beat_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Beat Revision"
+          },
+          "expected_entity_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Entity Revision"
+          },
+          "expected_selection_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Selection Id"
+          },
+          "expected_reference_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Reference Id"
+          },
+          "entity_state_revision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity State Revision Id"
+          },
+          "reference_selections": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainerReferenceSelection"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Reference Selections"
+          },
+          "input_keyframe_selection_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Keyframe Selection Id"
+          },
+          "prompt_override": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Override"
+          },
+          "motion_prompt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 600
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motion Prompt"
+          },
+          "camera_movement": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Movement"
+          },
+          "negative_override": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Negative Override"
+          },
+          "run_overrides": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Run Overrides"
+          },
+          "expected_plan_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Plan Hash"
+          },
+          "candidate_seeds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array",
+                "maxItems": 8
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Seeds"
+          },
+          "execution_profile_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Profile Version Id"
+          },
+          "expected_resolution_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Resolution Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "operation_id"
+        ],
+        "title": "ExplainerGenerationRequest",
+        "description": "The frozen generation command.\n\n``purpose``/``mode``/``candidate_count`` are business choices.  The client may\nalso echo the plan it was shown (``expected_plan_hash`` plus the frozen seeds,\nprofile and resolution hash); the service re-computes the plan and refuses a\nstale echo instead of trusting the client."
+      },
+      "ExplainerNarrationTakeAdoptionRequest": {
+        "properties": {
+          "actor": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Actor",
+            "default": "local-user"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 400
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExplainerNarrationTakeAdoptionRequest",
+        "description": "Choose one already generated narration take (design §B4 已生成版本 → 采用此配音)."
+      },
       "ExplainerOutputRequest": {
         "properties": {
           "edition_key": {
@@ -47204,6 +49275,168 @@
         "additionalProperties": false,
         "type": "object",
         "title": "ExplainerPreflightRequest"
+      },
+      "ExplainerReferenceAdoptionRequest": {
+        "properties": {
+          "candidate_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Id"
+          },
+          "media_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Version Id"
+          },
+          "expected_entity_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Entity Revision"
+          },
+          "expected_reference_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Reference Id"
+          },
+          "entity_state_revision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity State Revision Id"
+          },
+          "lock": {
+            "type": "boolean",
+            "title": "Lock",
+            "default": false
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExplainerReferenceAdoptionRequest"
+      },
+      "ExplainerReferenceSelection": {
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Entity Id"
+          },
+          "entity_state_revision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity State Revision Id"
+          },
+          "reference_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Reference Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "entity_id",
+          "reference_id"
+        ],
+        "title": "ExplainerReferenceSelection"
+      },
+      "ExplainerReferenceUnlockRequest": {
+        "properties": {
+          "reference_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Id"
+          },
+          "expected_entity_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Entity Revision"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExplainerReferenceUnlockRequest"
       },
       "ExplainerRenderRequest": {
         "properties": {
@@ -48010,6 +50243,31 @@
             ],
             "title": "Edition Id"
           },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "REFERENCE",
+              "KEYFRAME",
+              "VISUAL",
+              "COMPOSITION",
+              "INFOGRAPHIC_LAYER",
+              "LICENSED_MEDIA"
+            ],
+            "title": "Purpose",
+            "default": "VISUAL"
+          },
+          "expected_selection_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Selection Id"
+          },
           "lock": {
             "type": "boolean",
             "title": "Lock",
@@ -48034,7 +50292,173 @@
           "expected_revision",
           "candidate_id"
         ],
-        "title": "ExplainerSelectionRequest"
+        "title": "ExplainerSelectionRequest",
+        "description": "Adopt one candidate for one ``(beat, purpose, edition)`` scope.\n\n``lock`` is the explicit human lock: ``lock=False`` is an ordinary adoption and\nmust not lock anything (design §B9 item 2).  ``expected_selection_id`` lets two\ntabs refuse each other instead of silently overwriting the newer choice."
+      },
+      "ExplainerSelectionUnlockRequest": {
+        "properties": {
+          "selection_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Selection Id"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "REFERENCE",
+              "KEYFRAME",
+              "VISUAL",
+              "COMPOSITION",
+              "INFOGRAPHIC_LAYER",
+              "LICENSED_MEDIA"
+            ],
+            "title": "Purpose",
+            "default": "VISUAL"
+          },
+          "edition_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edition Id"
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "selection_id"
+        ],
+        "title": "ExplainerSelectionUnlockRequest"
+      },
+      "ExplainerStorySeedRequest": {
+        "properties": {
+          "revision_request": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Request"
+          },
+          "creative_scope": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creative Scope"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExplainerStorySeedRequest",
+        "description": "Original-fiction topic seeding (design §C4.5).\n\nA non-empty ``revision_request`` is an explicit \"change the story\" instruction; an\nempty one is a first creation that reuses the finished seed for the same input hash."
+      },
+      "ExplainerVisualGenerationSubmitRequest": {
+        "properties": {
+          "edition_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edition Id"
+          },
+          "beat_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 512,
+            "title": "Beat Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExplainerVisualGenerationSubmitRequest",
+        "description": "Run the picture stage for one film's remaining clips.\n\nThe stage reuses every human-adopted keyframe and every beat that already has a\nreal clip, and generates a real AI image-to-video clip for the rest.  ``beat_ids``\nnarrows the run to an explicit画面段 selection; an empty list means the whole film."
+      },
+      "ExplainerVisualPreferencesRequest": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Revision"
+          },
+          "visual_preferences": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visual Preferences"
+          },
+          "channel_profile_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Profile Version Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision"
+        ],
+        "title": "ExplainerVisualPreferencesRequest",
+        "description": "A narrow merge of this film's style and candidate counts.\n\n``render_type`` is deliberately absent: the per-beat render type is derived by\nthe program from each beat's action requirement, and the only moving-picture\ntype is ``I2V``.  The retired ``visual_strategy`` choice (静图推拉 / 关键镜头 AI\n动态 / 全部 AI 动态) is not part of this request any more."
       },
       "FrameAnchor": {
         "properties": {

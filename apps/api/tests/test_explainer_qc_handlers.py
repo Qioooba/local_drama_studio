@@ -432,17 +432,106 @@ def test_a_tampered_sampling_plan_is_rejected(database: Database) -> None:
 
 
 def test_depth_layer_without_a_provider_is_skipped(database: Database) -> None:
+    """A beat-scale depth pass with no image-reading provider is skipped, not run."""
+
     seed = _seed(database)
 
     def sampling(repo: ExplainerRepository, context: dict[str, Any]) -> dict[str, Any]:
         del repo, context
         return {"plan": _valid_plan(seed), "depth_frame_range": [0, 10]}
 
-    report = _run(database, _payload(seed, layers=["DEPTH"]), sampling_reader=sampling)
+    report = _run(
+        database,
+        _payload(seed, layers=["DEPTH"], subject_kind="VISUAL_BEAT", subject_hash="c" * 64),
+        sampling_reader=sampling,
+    )
 
     assert report["status"] == "NOT_RUN"
     assert {"layer": "DEPTH", "reason": "VISUAL_QC_PROVIDER_NOT_CONFIGURED"} in report["layers_skipped"]
     assert report["visual_provider"]["available"] is False
+
+
+def test_a_film_scale_depth_layer_is_skipped_instead_of_failing_the_job(
+    database: Database,
+) -> None:
+    """The delivered 1962 film's COMPOSITION_QC died on the depth layer.
+
+    ``run_depth_check`` is defined over one named shot and rejects the ``(0, 0)``
+    default a film-scale subject supplies, so the whole job failed with
+    ``SCHEMA_INVALID frame_range`` and threw away the technical and subtitle reports
+    it had already measured.
+    """
+
+    seed = _seed(database)
+
+    def sampling(repo: ExplainerRepository, context: dict[str, Any]) -> dict[str, Any]:
+        del repo, context
+        return {"plan": _valid_plan(seed)}
+
+    report = _run(
+        database,
+        _payload(
+            seed,
+            layers=["DEPTH"],
+            subject_kind="COMPOSITION_RENDER",
+            subject_hash="b" * 64,
+        ),
+        sampling_reader=sampling,
+    )
+
+    assert report["status"] == "NOT_RUN"
+    skipped_layers = {str(item["layer"]): str(item["reason"]) for item in report["layers_skipped"]}
+    assert skipped_layers == {"DEPTH": "DEPTH_LAYER_SCOPE_IS_ONE_SHOT"}
+    assert report["unverified_checks"] == ["LAYER_NOT_RUN:DEPTH"]
+
+
+def test_one_unrunnable_layer_keeps_the_reports_the_other_layers_measured(
+    database: Database,
+) -> None:
+    """A layer with nothing to measure is skipped; it is never fatal for the rest."""
+
+    seed = _seed(database)
+
+    def subtitle(repo: ExplainerRepository, context: dict[str, Any]) -> dict[str, Any]:
+        del repo, context
+        return {
+            "cues": [],
+            "safe_area": {"left_px": 96, "top_px": 54, "right_px": 1824, "bottom_px": 1026},
+            "fps_num": 25,
+            "fps_den": 1,
+            "total_frames": 100,
+        }
+
+    def fact(repo: ExplainerRepository, context: dict[str, Any]) -> dict[str, Any]:
+        del repo, context
+        raise ExplainerContractError("NOT_RUN", "没有可核对的主张", {"video_id": seed["video_id"]})
+
+    report = _run(
+        database,
+        _payload(seed, layers=["SUBTITLE", "FACT"]),
+        subtitle_reader=subtitle,
+        fact_reader=fact,
+    )
+
+    assert [item["layer"] for item in report["layers_skipped"]] == ["FACT"]
+    assert report["layers_skipped"][0]["reason"] == "NOT_RUN"
+    assert report["report_count"] == 1
+    assert report["status"] == "PARTIAL"
+
+
+def test_a_real_layer_failure_is_not_swallowed_as_not_run(database: Database) -> None:
+    """Only "this layer has nothing to measure" is tolerated."""
+
+    seed = _seed(database)
+
+    def fact(repo: ExplainerRepository, context: dict[str, Any]) -> dict[str, Any]:
+        del repo, context
+        raise ExplainerContractError("MEDIA_HASH_MISMATCH", "媒体哈希不一致")
+
+    with pytest.raises(ExplainerContractError) as error:
+        _run(database, _payload(seed, layers=["FACT"]), fact_reader=fact)
+
+    assert error.value.code == "MEDIA_HASH_MISMATCH"
 
 
 # --------------------------------------------------------------------- handler

@@ -48,6 +48,11 @@ class ExplainerCreateRequest(BaseModel):
     content_kind: Literal["FACTUAL_EXPLAINER", "ORIGINAL_FICTION"] = "FACTUAL_EXPLAINER"
     project_code: str | None = Field(default=None, min_length=2, max_length=64)
     input_kind: Literal["TOPIC", "PASTED_SCRIPT", "DOCUMENT_IMPORT", "REFERENCE_LINKS"] = "TOPIC"
+    #: How the supplied content may be processed (spec §C1).  Orthogonal to
+    #: ``input_kind``: the channel says *how* content arrived, the policy says what
+    #: the AI may do with it.  Optional so a legacy client keeps working; a missing
+    #: value resolves to ``ADAPT_SOURCES`` (the behaviour of every old row).
+    script_policy: Literal["PRESERVE_ORIGINAL", "ADAPT_SOURCES", "CREATE_FROM_TOPIC"] | None = None
     input_payload: dict[str, Any] = Field(default_factory=dict)
     source_refs: list[SourceRefModel] = Field(default_factory=list)
     reference_urls: list[str] = Field(default_factory=list, max_length=200)
@@ -76,6 +81,12 @@ class ExplainerSourceImportRequest(BaseModel):
     packet_id: str | None = Field(default=None, max_length=36)
     title: str = Field(default="", max_length=300)
     language: str | None = Field(default=None, max_length=32)
+    #: Optional text-encoding override (spec §C2 item 3).  Only meaningful for
+    #: plain text; a container format (DOCX/PDF/EPUB) refuses it because its bytes
+    #: are not a text stream.
+    encoding_override: Literal[
+        "utf-8", "utf-8-sig", "gb18030", "utf-16", "utf-16-le", "utf-16-be", "utf-32", "utf-32-le", "utf-32-be"
+    ] | None = None
     source_kind: Literal["DOCUMENT_IMPORT", "WEB_PAGE", "REFERENCE_LINK", "LICENSED_MEDIA", "AUTHORED_FICTION_PACK"] = "DOCUMENT_IMPORT"
     url: str | None = Field(default=None, max_length=2000)
     rights: dict[str, Any] = Field(default_factory=dict)
@@ -211,10 +222,19 @@ class ExplainerBatchAdoptionRequest(BaseModel):
 
 
 class ExplainerSelectionRequest(BaseModel):
+    """Adopt one candidate for one ``(beat, purpose, edition)`` scope.
+
+    ``lock`` is the explicit human lock: ``lock=False`` is an ordinary adoption and
+    must not lock anything (design §B9 item 2).  ``expected_selection_id`` lets two
+    tabs refuse each other instead of silently overwriting the newer choice.
+    """
+
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
     candidate_id: str = Field(min_length=1, max_length=36)
     edition_id: str | None = Field(default=None, max_length=36)
+    purpose: Literal["REFERENCE", "KEYFRAME", "VISUAL", "COMPOSITION", "INFOGRAPHIC_LAYER", "LICENSED_MEDIA"] = "VISUAL"
+    expected_selection_id: str | None = Field(default=None, max_length=36)
     lock: bool = False
     actor: str | None = Field(default=None, max_length=120)
 
@@ -341,3 +361,197 @@ class ExplainerBreakdownStoryRequest(BaseModel):
     target_seconds: int | None = Field(default=None, ge=30, le=7200)
     style: str | None = Field(default=None, max_length=100)
     title: str | None = Field(default=None, max_length=200)
+
+
+# --------------------------------------------------------------------------- #
+# Per-object generation, reference adoption and collection recovery
+# (design §D4/D7).  Names and field sets follow the frozen request/response
+# examples in §D7.1; unknown fields are rejected so a client cannot write an
+# execution-snapshot field, an actual render type, a completed status or
+# consumed-reference evidence.
+# --------------------------------------------------------------------------- #
+PURPOSE_VALUES = ("REFERENCE", "KEYFRAME", "VISUAL", "COMPOSITION", "INFOGRAPHIC_LAYER", "LICENSED_MEDIA")
+#: A composable moving clip can only come from a real image-to-video generation, so
+#: the retired deterministic ``STILL_MOTION`` mode is not accepted any more.
+GENERATION_MODE_VALUES = ("TEXT_TO_IMAGE", "IMAGE_EDIT", "IMAGE_TO_VIDEO")
+
+
+class ExplainerReferenceSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    entity_id: str = Field(min_length=1, max_length=64)
+    entity_state_revision_id: str | None = Field(default=None, max_length=64)
+    reference_id: str = Field(min_length=1, max_length=64)
+
+
+class ExplainerGenerationRequest(BaseModel):
+    """The frozen generation command.
+
+    ``purpose``/``mode``/``candidate_count`` are business choices.  The client may
+    also echo the plan it was shown (``expected_plan_hash`` plus the frozen seeds,
+    profile and resolution hash); the service re-computes the plan and refuses a
+    stale echo instead of trusting the client.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    operation_id: str = Field(min_length=8, max_length=80)
+    edition_id: str | None = Field(default=None, max_length=64)
+    purpose: Literal["REFERENCE", "KEYFRAME", "VISUAL"] = "VISUAL"
+    mode: Literal["TEXT_TO_IMAGE", "IMAGE_EDIT", "IMAGE_TO_VIDEO"] = "TEXT_TO_IMAGE"
+    candidate_count: int | None = Field(default=None, ge=1, le=4)
+    parent_candidate_id: str | None = Field(default=None, max_length=64)
+    expected_beat_revision: int | None = Field(default=None, ge=0)
+    expected_entity_revision: int | None = Field(default=None, ge=0)
+    expected_selection_id: str | None = Field(default=None, max_length=64)
+    expected_reference_id: str | None = Field(default=None, max_length=64)
+    entity_state_revision_id: str | None = Field(default=None, max_length=64)
+    reference_selections: list[ExplainerReferenceSelection] = Field(default_factory=list, max_length=8)
+    input_keyframe_selection_id: str | None = Field(default=None, max_length=64)
+    prompt_override: str | None = Field(default=None, max_length=2000)
+    motion_prompt: str | None = Field(default=None, max_length=600)
+    camera_movement: str | None = Field(default=None, max_length=120)
+    negative_override: str | None = Field(default=None, max_length=1000)
+    run_overrides: dict[str, Any] = Field(default_factory=dict)
+    expected_plan_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    candidate_seeds: list[int] | None = Field(default=None, max_length=8)
+    execution_profile_version_id: str | None = Field(default=None, max_length=64)
+    expected_resolution_hash: str | None = Field(default=None, max_length=128)
+
+
+class ExplainerReferenceAdoptionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str | None = Field(default=None, max_length=64)
+    media_version_id: str | None = Field(default=None, max_length=64)
+    expected_entity_revision: int | None = Field(default=None, ge=0)
+    expected_reference_id: str | None = Field(default=None, max_length=64)
+    entity_state_revision_id: str | None = Field(default=None, max_length=64)
+    lock: bool = False
+    actor: str | None = Field(default=None, max_length=120)
+
+
+class ExplainerReferenceUnlockRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reference_id: str | None = Field(default=None, max_length=64)
+    expected_entity_revision: int | None = Field(default=None, ge=0)
+    actor: str | None = Field(default=None, max_length=120)
+
+
+class ExplainerSelectionUnlockRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    selection_id: str = Field(min_length=1, max_length=64)
+    purpose: Literal["REFERENCE", "KEYFRAME", "VISUAL", "COMPOSITION", "INFOGRAPHIC_LAYER", "LICENSED_MEDIA"] = "VISUAL"
+    edition_id: str | None = Field(default=None, max_length=64)
+    expected_revision: int | None = Field(default=None, ge=0)
+    actor: str | None = Field(default=None, max_length=120)
+
+
+class ExplainerVisualPreferencesRequest(BaseModel):
+    """A narrow merge of this film's style and candidate counts.
+
+    ``render_type`` is deliberately absent: the per-beat render type is derived by
+    the program from each beat's action requirement, and the only moving-picture
+    type is ``I2V``.  The retired ``visual_strategy`` choice (静图推拉 / 关键镜头 AI
+    动态 / 全部 AI 动态) is not part of this request any more.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=0)
+    visual_preferences: dict[str, Any] | None = None
+    channel_profile_version_id: str | None = Field(default=None, max_length=64)
+
+
+class ExplainerVisualGenerationSubmitRequest(BaseModel):
+    """Run the picture stage for one film's remaining clips.
+
+    The stage reuses every human-adopted keyframe and every beat that already has a
+    real clip, and generates a real AI image-to-video clip for the rest.  ``beat_ids``
+    narrows the run to an explicit画面段 selection; an empty list means the whole film.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    edition_id: str | None = Field(default=None, max_length=64)
+    beat_ids: list[str] = Field(default_factory=list, max_length=512)
+
+
+class ExplainerCollectionContinueRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_task_revision: int | None = Field(default=None, ge=0)
+    expected_old_job_id: str | None = Field(default=None, max_length=64)
+    selected_candidate_ids: list[str] = Field(default_factory=list, max_length=512)
+    failed_candidate_ids: list[str] = Field(default_factory=list, max_length=512)
+    actor: str | None = Field(default=None, max_length=120)
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+class ExplainerNarrationTakeAdoptionRequest(BaseModel):
+    """Choose one already generated narration take (design §B4 已生成版本 → 采用此配音)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    actor: str = Field(default="local-user", min_length=1, max_length=120)
+    reason: str | None = Field(default=None, max_length=400)
+
+
+class ExplainerCandidateArchiveRequest(BaseModel):
+    """Stop offering one candidate without deleting its media (design §B5.3 不采用)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    actor: str = Field(default="local-user", min_length=1, max_length=120)
+    reason: str | None = Field(default=None, max_length=400)
+
+
+class ExplainerCandidateRegistrationRequest(BaseModel):
+    """Register an uploaded / media-library item as a candidate (design §B5.3)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    media_version_id: str = Field(min_length=1, max_length=64)
+    purpose: Literal["KEYFRAME", "VISUAL"] = "KEYFRAME"
+    note: str | None = Field(default=None, max_length=400)
+    actor: str = Field(default="local-user", min_length=1, max_length=120)
+
+
+class ExplainerStorySeedRequest(BaseModel):
+    """Original-fiction topic seeding (design §C4.5).
+
+    A non-empty ``revision_request`` is an explicit "change the story" instruction; an
+    empty one is a first creation that reuses the finished seed for the same input hash.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    revision_request: str | None = Field(default=None, max_length=2000)
+    creative_scope: dict[str, Any] | None = None
+
+
+class ExplainerBeatPatchRequest(BaseModel):
+    """Edit the current beat's own description and presentation (design §B5.2).
+
+    Only fields a person may legitimately change are accepted: the visual intent, the
+    editing fields that are informative for the following shots, the planning/user
+    prompts, and the declared presentation.  ``render_type`` is a plan value, so a
+    change to it is recorded as an explicit replan of this one beat and is never
+    inferred from another field.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int | None = Field(default=None, ge=0)
+    visual_intent: str | None = Field(default=None, min_length=1, max_length=4000)
+    prompt_intent: str | None = Field(default=None, max_length=4000)
+    negative_prompt: str | None = Field(default=None, max_length=2000)
+    camera_movement: str | None = Field(default=None, max_length=64)
+    on_screen_text: list[str] | None = Field(default=None, max_length=32)
+    continuity_note: str | None = Field(default=None, max_length=2000)
+    render_type: Literal["I2V", "INFOGRAPHIC", "LICENSED_MEDIA"] | None = None
+    preferred_duration_ms: int | None = Field(default=None, ge=200, le=600_000)
+    must_be_motion: bool | None = None
+    actor: str = Field(default="local-user", min_length=1, max_length=120)
+

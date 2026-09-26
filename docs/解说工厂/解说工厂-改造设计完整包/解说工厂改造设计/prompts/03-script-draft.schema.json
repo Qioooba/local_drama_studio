@@ -1,0 +1,165 @@
+{
+  "$defs": {
+    "Chapter": {
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "maxLength": 300,
+          "title": "Title",
+          "type": "string"
+        },
+        "audience_question": {
+          "maxLength": 2000,
+          "title": "Audience Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "audience_question"
+      ],
+      "title": "Chapter",
+      "type": "object"
+    },
+    "DraftSegment": {
+      "additionalProperties": false,
+      "properties": {
+        "chapter_index": {
+          "minimum": 0,
+          "title": "Chapter Index",
+          "type": "integer"
+        },
+        "display_text": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Display Text",
+          "type": "string"
+        },
+        "statement_type": {
+          "enum": [
+            "FACT",
+            "ORIGINAL_EXPLANATION",
+            "TRANSITION",
+            "FICTION",
+            "QUESTION"
+          ],
+          "title": "Statement Type",
+          "type": "string"
+        },
+        "claim_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Claim Ids",
+          "type": "array"
+        },
+        "entity_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Entity Ids",
+          "type": "array"
+        },
+        "pronunciation_suggestions": {
+          "items": {
+            "$ref": "#/$defs/Pronunciation"
+          },
+          "maxItems": 64,
+          "title": "Pronunciation Suggestions",
+          "type": "array"
+        },
+        "pause_after_ms": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Pause After Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "chapter_index",
+        "display_text",
+        "statement_type",
+        "claim_ids",
+        "entity_ids",
+        "pronunciation_suggestions",
+        "pause_after_ms"
+      ],
+      "title": "DraftSegment",
+      "type": "object"
+    },
+    "Pronunciation": {
+      "additionalProperties": false,
+      "properties": {
+        "display": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Display",
+          "type": "string"
+        },
+        "spoken": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Spoken",
+          "type": "string"
+        }
+      },
+      "required": [
+        "display",
+        "spoken"
+      ],
+      "title": "Pronunciation",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "localdrama.explainer.script-draft.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "outline": {
+      "items": {
+        "$ref": "#/$defs/Chapter"
+      },
+      "maxItems": 160,
+      "title": "Outline",
+      "type": "array"
+    },
+    "segments": {
+      "items": {
+        "$ref": "#/$defs/DraftSegment"
+      },
+      "maxItems": 320,
+      "title": "Segments",
+      "type": "array"
+    },
+    "insufficient_content": {
+      "title": "Insufficient Content",
+      "type": "boolean"
+    },
+    "missing_content_note": {
+      "maxLength": 2000,
+      "title": "Missing Content Note",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "outline",
+    "segments",
+    "insufficient_content",
+    "missing_content_note"
+  ],
+  "title": "ScriptDraft",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:localdrama:explainer:design:03-script-draft",
+  "description": "Design contract, not yet integrated. Static validation does not establish reference membership, project ownership, coverage, factuality or approval. Apply README service checks."
+}

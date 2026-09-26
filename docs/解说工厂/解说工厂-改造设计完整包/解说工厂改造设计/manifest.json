@@ -1,0 +1,198 @@
+{
+  "title": "解说工厂改造设计交付包",
+  "source_commit": "d91a4107b6733a4783d860689fb819720463214a",
+  "artifact_kind": "DESIGN_AND_IMPLEMENTATION_SPECIFICATION",
+  "production_code_modified": false,
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 1397,
+      "sha256": "e93237486244df4c75277694ee7816617e777cddfdeebae6e86b90f82085c957"
+    },
+    {
+      "path": "evidence/historical-screenshots-manifest.json",
+      "bytes": 1138,
+      "sha256": "7c1c4c7ead524ce1b3542e7823526bbd9dce05ce74ca421b43c7353e9a867d0e"
+    },
+    {
+      "path": "evidence/prototype-static-check.json",
+      "bytes": 859,
+      "sha256": "b5fd4d3ca5aaafb77e60380945637a70e4cba7fb784aff472ebf75a171431262"
+    },
+    {
+      "path": "evidence/runtime-checks-summary.json",
+      "bytes": 3214,
+      "sha256": "f12dd5d41c25e1136d384eb9bc6411f665a5774265b7d4c544cc430dca907bb3"
+    },
+    {
+      "path": "evidence/历史-导演台候选.png",
+      "bytes": 409255,
+      "sha256": "7a73fa04a74abe571e41704ddd1c9a27b4d024c98295b54891960533a7fbe01c"
+    },
+    {
+      "path": "evidence/历史-导演台深色.png",
+      "bytes": 171028,
+      "sha256": "06382af6c7fde2a1c05de6cda269fa4b35da20a5f1f48282e6b8df9d41f27748"
+    },
+    {
+      "path": "evidence/历史-故事工作区.png",
+      "bytes": 106300,
+      "sha256": "bc9a810c3c06358746aba06d8633ae3a03cd4d7ff7930b90304885c0ee6e5516"
+    },
+    {
+      "path": "evidence/历史视觉参考.md",
+      "bytes": 1977,
+      "sha256": "cf363e4e9b6f8ba648c8f3c8552fa981862b539c934c9515b2a99b2ee384d5e3"
+    },
+    {
+      "path": "evidence/本次交付静态检查.json",
+      "bytes": 2321,
+      "sha256": "e1ca8e4e966ea52621c638d3410ee6c7f36bdfc55f2d2701f13ed574199dcefa"
+    },
+    {
+      "path": "evidence/运行核验.md",
+      "bytes": 7503,
+      "sha256": "cdee6f3e5982abaef0a4917cbadbd258cdc1f7eb8f66fead86e94b781f2732d1"
+    },
+    {
+      "path": "prompts/01-content-extract.example.json",
+      "bytes": 1055,
+      "sha256": "84fb6635e75f140380ba9b9d2e8d241aa445952a2b2539b79cda9e0deffc4159"
+    },
+    {
+      "path": "prompts/01-content-extract.prompt.md",
+      "bytes": 2234,
+      "sha256": "7fb06464854ef78ba51225e672d52e8381925d33b01067b9ea9ea9f1aa75ed67"
+    },
+    {
+      "path": "prompts/01-content-extract.schema.json",
+      "bytes": 11787,
+      "sha256": "0799a45eeb9c97941a0766dd1ac8a6930bc2ef60974c91c627c34e03b28a07fe"
+    },
+    {
+      "path": "prompts/02-preserved-script-annotations.example.json",
+      "bytes": 488,
+      "sha256": "4063b09764da28ff266675590157aad2fae83431cafcfd7be7c8735edb096e98"
+    },
+    {
+      "path": "prompts/02-preserved-script-annotations.prompt.md",
+      "bytes": 1538,
+      "sha256": "b6a6ca3e686d74cad33a9d34eeed331fa9e95bcd3f169180598741788951bd1a"
+    },
+    {
+      "path": "prompts/02-preserved-script-annotations.schema.json",
+      "bytes": 4017,
+      "sha256": "a6ca09350646b363991fbf6e73d0ce0a5b5705e74f8b42fd2dc07077f3268d19"
+    },
+    {
+      "path": "prompts/03-script-draft.example.json",
+      "bytes": 587,
+      "sha256": "88605e91d42ddf7b8ad5dd4a84cfdfc539644418f2999a6a079f99138a0686d9"
+    },
+    {
+      "path": "prompts/03-script-draft.prompt.md",
+      "bytes": 2214,
+      "sha256": "87772d5905db81f786fecbdc05303f14770b2b370e2f5330459ddaa6a4becab3"
+    },
+    {
+      "path": "prompts/03-script-draft.schema.json",
+      "bytes": 3987,
+      "sha256": "aecb8fe735fa29e8156a84c8dd7a2ea47dd0619cb4095d214fbdc309b4be5f5f"
+    },
+    {
+      "path": "prompts/04-storyboard.example.json",
+      "bytes": 1271,
+      "sha256": "a21ed2d4dc06ee4eb2eadae31ea5f5dc87b071cb6505f25cf2e06243960f6004"
+    },
+    {
+      "path": "prompts/04-storyboard.prompt.md",
+      "bytes": 2743,
+      "sha256": "102c276c51f12fe47fe8c9bf1d9e707996bb332f08086cbe6dc035354534e0b5"
+    },
+    {
+      "path": "prompts/04-storyboard.schema.json",
+      "bytes": 7707,
+      "sha256": "3e8f5fd02cedc85e83661faf593dce67ab94d552eface499281c0d5815d26461"
+    },
+    {
+      "path": "prompts/05-candidate-review.example.json",
+      "bytes": 639,
+      "sha256": "b50fb6e0d457971a327c383f55240075475e82583177a52a5cf80e5c3bcf411d"
+    },
+    {
+      "path": "prompts/05-candidate-review.prompt.md",
+      "bytes": 1866,
+      "sha256": "2aa9c9d390ed8039f8164ae6872d74d0378180fa6b48795ffcf4f2ecc9902c16"
+    },
+    {
+      "path": "prompts/05-candidate-review.schema.json",
+      "bytes": 4132,
+      "sha256": "16aaec55ea9d99585a1dc0ba800713daae69e2c67f75b73170a2d95ab0bacf88"
+    },
+    {
+      "path": "prompts/06-reference-design.example.json",
+      "bytes": 646,
+      "sha256": "885e9f51e1274e080f925bd334dadeabd44c4fc24321e2824b6a335057959b5e"
+    },
+    {
+      "path": "prompts/06-reference-design.prompt.md",
+      "bytes": 2550,
+      "sha256": "7ffd253e064931a068b4ef0051001de46cab06dd6d05222edb002c6bb9139a42"
+    },
+    {
+      "path": "prompts/06-reference-design.schema.json",
+      "bytes": 4131,
+      "sha256": "9b5252719932de61ab59cc634a3226f4dd3180170e2418fbf7958e0b1c662f12"
+    },
+    {
+      "path": "prompts/07-fiction-seed.example.json",
+      "bytes": 1148,
+      "sha256": "1e38e5dc66f3e81fe5af918b2fb9dbdc989dbe594f56a956dee9d6d87ddb0d87"
+    },
+    {
+      "path": "prompts/07-fiction-seed.prompt.md",
+      "bytes": 2180,
+      "sha256": "322886be2890a7bff2e7c3c60465b464cf11b01bbe5fdc3af83c75c4a0416f40"
+    },
+    {
+      "path": "prompts/07-fiction-seed.schema.json",
+      "bytes": 3978,
+      "sha256": "02c598f34aeb7d1cbe1fef10fbcdec7c1d9e5891979fa0711c787a6c50fedfa8"
+    },
+    {
+      "path": "prompts/README.md",
+      "bytes": 15903,
+      "sha256": "2af667bc5d016b5cbca5f7b09362043e9327e306fccdcb3ebbe14d095dada0e3"
+    },
+    {
+      "path": "prompts/validation-report.json",
+      "bytes": 1765,
+      "sha256": "09f059966af8327834c9733eca29ad8e323c265b874e99e58e98da5f0d93f29c"
+    },
+    {
+      "path": "原型说明.md",
+      "bytes": 4513,
+      "sha256": "474d48b8be1048788861e9393d21b54a60369a8038ebeb106c546fcdbb740482"
+    },
+    {
+      "path": "解说工厂-交互原型.html",
+      "bytes": 90667,
+      "sha256": "90ac1d40a6de2f712e128c15d05107b6be6b626f0bc3f416378410843496b94e"
+    },
+    {
+      "path": "解说工厂-体验功能与代码改造实施规范.md",
+      "bytes": 205987,
+      "sha256": "1a16b08c0c3120942048e966b342e13da08bc3c1d497b71ea29c7dddda53399f"
+    },
+    {
+      "path": "解说工厂-布局设计.png",
+      "bytes": 207417,
+      "sha256": "488e332e31c52eecc3764aea89c03b7e592873ecf49e5b59132363fe0fb704e7"
+    },
+    {
+      "path": "解说工厂-布局设计.svg",
+      "bytes": 39718,
+      "sha256": "0d0bf16369a99a5dfbf55299835b46849d367a99b7e36888ab1239c8eeef888b"
+    }
+  ]
+}

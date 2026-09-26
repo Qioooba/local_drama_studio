@@ -1,0 +1,19 @@
+{
+  "schema_version": "localdrama.explainer.reference-design.v1",
+  "items": [
+    {
+      "entity_id": "provided-entity-id",
+      "asset_kind": "SCENE",
+      "reference_kind": "HERO",
+      "description_prompt": "沿用给定场景记录中的空间布局与材质，清晰展示前景到后景的通行关系。",
+      "negative_prompt": "额外人物、文字、水印、与已确认布局冲突的入口。",
+      "known_attribute_keys": [
+        "provided-layout-attribute-key"
+      ],
+      "user_setting_keys": [],
+      "reference_media_version_ids": [],
+      "creative_choices": [],
+      "unresolved_constraints": []
+    }
+  ]
+}

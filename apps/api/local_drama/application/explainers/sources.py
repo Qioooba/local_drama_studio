@@ -195,11 +195,82 @@ def normalise_document_text(text: str) -> str:
     Windows newline translation must not be able to desynchronise a span offset
     from the stored body, so CRLF/CR are folded to LF and the whole string is
     stripped once, here, before any offset is computed.
+
+    This is the *evidence* body.  A manuscript the user declared as a finished
+    narration script uses :func:`canonical_script_source_text` instead, which
+    keeps leading/trailing whitespace (§C2 item 5); the two are related by
+    :func:`canonical_body_offset_map`, never by re-normalising one into the other.
     """
 
     if not text:
         return ""
     return text.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def canonical_script_source_text(text: str) -> str:
+    """The exact preserved-mode manuscript: newline folding and nothing else.
+
+    No ``strip()``, no punctuation change, no character substitution: the body is
+    the user's own definition and every later step must be able to reproduce it
+    byte-for-byte from the stored slices (§C2 item 5, §C4.1).  A single leading
+    BOM is dropped because it is a transport byte-order marker rather than
+    manuscript content — the same rule the pasted-manuscript record uses, so one
+    file cannot produce two different "canonical" bodies.
+    """
+
+    if not isinstance(text, str):
+        raise ExplainerContractError(
+            "SCHEMA_INVALID", "原稿正文必须是字符串", {"received_type": type(text).__name__}
+        )
+    folded = text.replace("\r\n", "\n").replace("\r", "\n")
+    return folded[1:] if folded.startswith("\ufeff") else folded
+
+
+def script_source_hash(text: str) -> str:
+    """SHA-256 of the canonical preserved-mode manuscript."""
+
+    return text_hash(canonical_script_source_text(text))
+
+
+def canonical_body_offset_map(canonical_text: str, body: str) -> dict[str, Any]:
+    """Explicit mapping between the exact manuscript and the evidence body.
+
+    The two normalisations must never be mixed when computing an offset, so the
+    relation is recorded instead of being assumed: ``body`` is located inside the
+    canonical text and every canonical offset converts by a single ``shift``.
+
+    A leading U+FEFF in the *evidence* body is a transport marker rather than
+    manuscript content, so it is dropped before locating the body and the drop is
+    reported as ``bom_normalised``.  Without this, a file whose bytes carried a
+    BOM would look like a one-character offset drift between the two texts.
+    """
+
+    canonical = canonical_script_source_text(canonical_text)
+    body_text = str(body or "")
+    bom_normalised = body_text.startswith("\ufeff")
+    if bom_normalised:
+        body_text = body_text[1:]
+    if not body_text:
+        return {
+            "explicit_offset_mapping": True,
+            "body_is_substring": False,
+            "bom_normalised": bom_normalised,
+            "offset_shift": None,
+            "body_start_in_canonical": None,
+            "canonical_character_count": len(canonical),
+            "body_character_count": 0,
+        }
+    index = canonical.find(body_text)
+    return {
+        "explicit_offset_mapping": True,
+        "body_is_substring": index >= 0,
+        "bom_normalised": bom_normalised,
+        "offset_shift": index,
+        "body_start_in_canonical": index if index >= 0 else None,
+        "canonical_character_count": len(canonical),
+        "body_character_count": len(body_text),
+        "leading_whitespace_characters": index if index >= 0 else None,
+    }
 
 
 def detect_newline_style(text: str) -> str:

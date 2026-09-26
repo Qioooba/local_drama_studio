@@ -115,6 +115,10 @@ tests/e2e/temp-results/
 # agent working directories
 .codex-tmp/
 
+# throw-away instance created by scripts/audit_explainer_llm.py (its own data/projects
+# roots, so a real-model audit never touches the operator's database)
+.llm-audit-instance/
+
 # local API runtime logs and repo-root dev database
 apps/api/logs/
 /local_drama.db

@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit
 
+from local_drama.application.explainers.sources import script_source_hash
 from local_drama.application.ports.database import DatabaseUnitOfWork
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.explainers.contracts import ProductKind, content_hash
@@ -136,6 +137,11 @@ class ExplainerCreateCommand:
     content_kind: str = "FACTUAL_EXPLAINER"
     project_code: str | None = None
     input_kind: str = "TOPIC"
+    #: Content-processing policy (spec §C1), orthogonal to ``input_kind``.  The
+    #: channel (paste/file/link) says how the content arrived; the policy says what
+    #: the AI may do with it.  ``None`` keeps a legacy client working and resolves
+    #: to ``ADAPT_SOURCES``, which is what every pre-existing row meant.
+    script_policy: str | None = None
     source_refs: tuple[Mapping[str, Any], ...] = ()
     reference_urls: tuple[str, ...] = ()
     pasted_text: str | None = None
@@ -169,6 +175,7 @@ class ExplainerCreateCommand:
             "content_kind": self.content_kind,
             "project_code": self.project_code,
             "input_kind": self.input_kind,
+            "script_policy": self.resolved_script_policy(),
             "source_refs": [dict(item) for item in self.source_refs],
             "reference_urls": list(self.reference_urls),
             "pasted_text_sha256": (
@@ -206,20 +213,58 @@ class ExplainerCreateCommand:
         A pasted manuscript is stored as an immutable record with its own content
         hash, so "which text was this work created from" is answerable after a
         restart without the browser.
+
+        ``script_policy`` lives here rather than in a new table (spec §C1).  For
+        ``PRESERVE_ORIGINAL`` the *exact* manuscript is additionally recorded
+        under ``script_source_text`` together with its hash: only CRLF/CR fold to
+        LF, so no ``strip()`` and no punctuation change can desynchronise the
+        preserved slices from the stored revision (§C2 item 5).
         """
 
+        policy = self.resolved_script_policy()
         payload: dict[str, Any] = {
             "source_refs": [dict(item) for item in self.source_refs],
             "reference_urls": list(self.reference_urls),
             "reference_url_count": len(self.reference_urls),
             "input_kind": self.input_kind,
+            "script_policy": policy,
             "normalisation": "unicode_nfkc_newlines_lf" if self.pasted_text is not None else None,
         }
         if self.pasted_text is not None:
             payload["pasted_text"] = pasted_text_record(self.pasted_text, locale=self.source_locale)
         else:
             payload["pasted_text"] = None
+        if policy == "PRESERVE_ORIGINAL" and self.pasted_text is not None:
+            from local_drama.application.explainers.sources import (
+                canonical_script_source_text,
+                script_source_hash,
+            )
+
+            exact = canonical_script_source_text(self.pasted_text)
+            payload["preserved_original"] = {
+                "script_source_text": exact,
+                "script_source_hash": script_source_hash(exact),
+                "character_count": len(exact),
+                "normalisation": "newlines_lf_only",
+                "whitespace_preserved": True,
+            }
         return payload
+
+    def resolved_script_policy(self) -> str:
+        """The definite processing policy of this command (legacy ⇒ ADAPT)."""
+
+        from local_drama.application.explainers.contracts_v2 import resolve_script_policy
+
+        return resolve_script_policy(self.script_policy)
+
+    def preserved_source_text(self) -> str | None:
+        """The exact manuscript when this command declares preserved mode."""
+
+        if self.resolved_script_policy() != "PRESERVE_ORIGINAL" or self.pasted_text is None:
+            return None
+        from local_drama.application.explainers.sources import canonical_script_source_text
+
+        return canonical_script_source_text(self.pasted_text)
 
     def resolved_topic(self) -> str:
         """The research topic, without ever substituting the title for the body.
@@ -349,6 +394,20 @@ class ExplainerCreationService:
                     "request_digest": request_digest,
                     "operation_id": operation_id or str(uuid.uuid4()),
                 }
+                # Audit A4 / §B2.1: "已有口播稿" must be usable immediately.  The
+                # preflight gate refuses a pasted-script work without a script
+                # revision, so the exact manuscript is registered deterministically
+                # *inside this same transaction*, before any plan can demand it.
+                preserved = self._register_preserved_script_in_transaction(
+                    connection,
+                    command=command,
+                    project_id=str(project_id),
+                    video_id=str(video["id"]),
+                    project_code=project_code,
+                )
+                if preserved is not None:
+                    response["preserved_script_revision_id"] = preserved["script_revision_id"]
+                    response["preserved_script_source_hash"] = preserved["script_source_hash"]
                 if idempotency_key:
                     connection.execute(
                         "INSERT INTO command_idempotencies "
@@ -372,9 +431,91 @@ class ExplainerCreationService:
             "idempotent_replay": False,
             "operation_id": response["operation_id"],
             "request_digest": request_digest,
+            "preserved_script_revision_id": response.get("preserved_script_revision_id"),
+            "preserved_script_source_hash": response.get("preserved_script_source_hash"),
         }
 
     # ----------------------------------------------------------------- private
+    def _register_preserved_script_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        command: ExplainerCreateCommand,
+        project_id: str,
+        video_id: str,
+        project_code: str,
+    ) -> dict[str, Any] | None:
+        """Register the exact pasted manuscript as a preserved script revision.
+
+        Returns ``None`` when this command is not a preserved-mode paste.  The
+        registration reuses the narration service's own authority
+        (``create_script_revision``/``freeze_script``); it never writes the
+        narration tables directly, so the preserved body goes through exactly the
+        same equivalence proof as every other revision.
+        """
+
+        source_text = command.preserved_source_text()
+        if not source_text:
+            return None
+        # Port-style factory: the concrete service is named in ``build_*``, which
+        # is the one place the architecture guard allows it.
+        from local_drama.application.explainers.narration import build_narration_service
+        from local_drama.infrastructure.database.explainer_repository import ExplainerRepository
+
+        service = build_narration_service(ExplainerRepository(connection))
+        script_source_file = self._write_script_source_file(
+            source_text,
+            script_source_hash=script_source_hash(source_text),
+            project_code=project_code,
+        )
+        registered = service.register_preserved_script(
+            project_id=project_id,
+            video_id=video_id,
+            locale=command.source_locale,
+            title=command.title,
+            script_source_text=source_text,
+            actor=command.actor,
+            freeze=True,
+            extra_provenance={
+                "registered_at": "EXPLAINER_CREATE",
+                "input_kind": command.input_kind,
+                "content_sha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+                "script_source_file": script_source_file,
+            },
+        )
+        revision = registered["script_revision"]
+        return {
+            "script_revision_id": str(revision["id"]),
+            "script_source_hash": registered["script_source_hash"],
+            "segment_count": len(registered["segments"]),
+            "frozen": bool(registered["frozen"]),
+            "validation": registered["validation"],
+            "script_source_file": script_source_file,
+        }
+
+    def _write_script_source_file(
+        self, source_text: str, *, script_source_hash: str, project_code: str
+    ) -> str | None:
+        """Keep the exact preserved manuscript as a UTF-8 file (§C2 item 5).
+
+        The content hash is the file's name stem, so the stored file and the
+        recorded hash cannot drift apart, and the text is written byte-for-byte
+        (no BOM, no added newline).  A filesystem that cannot be written is
+        reported as ``None`` instead of failing the whole creation: the exact text
+        is also stored in the input projection and in the revision provenance.
+        """
+
+        try:
+            project_root = Path(self.settings.projects_root) / project_code
+            directory = project_root / "01_story" / "source_documents"
+            directory.mkdir(parents=True, exist_ok=True)
+            target = directory / f"{script_source_hash}.script-source.txt"
+            if not target.is_file():
+                target.write_text(source_text, encoding="utf-8", newline="")
+            return target.relative_to(project_root).as_posix()
+        except OSError:
+            return None
+
     def _replay(
         self, idempotency_key: str, request_digest: str, project_code: str
     ) -> dict[str, Any] | None:
@@ -411,11 +552,20 @@ class ExplainerCreationService:
                     "幂等记录指向的解说作品已不存在，请用新的操作键重新创建",
                     {"project_code": project_code, "project_id": project_id},
                 )
+            from local_drama.infrastructure.database.explainer_repository import ExplainerRepository
+
+            preserved = ExplainerRepository(connection).preserved_script_revision(video_id)
         return {
             **self._read_back(project_id, video_id),
             "idempotent_replay": True,
             "operation_id": stored.get("operation_id"),
             "request_digest": request_digest,
+            "preserved_script_revision_id": str(preserved["id"]) if preserved else None,
+            "preserved_script_source_hash": (
+                str((preserved.get("provenance_json") or {}).get("script_source_hash"))
+                if preserved
+                else None
+            ),
         }
 
     def _claim_project_root(

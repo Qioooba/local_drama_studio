@@ -56,6 +56,8 @@ from html.parser import HTMLParser
 from typing import Any, NoReturn
 from urllib.parse import unquote, urljoin, urlsplit
 
+from local_drama.application.explainers.contracts_v2 import merge_decision_metadata
+from local_drama.application.explainers.entity_assets import ensure_entity_story_asset
 from local_drama.application.explainers.sources import (
     classify_source_credibility,
     normalise_document_text,
@@ -1603,7 +1605,12 @@ class ExplainerResearchService:
                 "importance": importance,
                 "confidence_reason": str(claim_payload.get("confidence_reason") or ""),
                 "verified_as_history": False,
-                "disambiguation_json": {},
+                # Never erase an operator's disambiguation record: an apply pass with
+                # nothing new to say keeps the previous decision (design §C3.2).
+                "disambiguation_json": merge_decision_metadata(
+                    existing.get("disambiguation_json") if existing else None,
+                    claim_payload.get("disambiguation"),
+                ),
                 "verification_json": verification,
             }
             if existing and str(existing.get("packet_id") or "") not in {"", packet_id}:
@@ -1650,7 +1657,14 @@ class ExplainerResearchService:
 
         entities_result = self._apply_entities(video_id=video_id, project_id=project_id, payload=payload, is_fiction=is_fiction)
         entity_index = {item["code"]: item["id"] for item in entities_result}
-        events_result = self._apply_events(video_id=video_id, payload=payload, claim_index=claim_index, entity_index=entity_index)
+        unresolved_participants: list[dict[str, Any]] = []
+        events_result = self._apply_events(
+            video_id=video_id,
+            payload=payload,
+            claim_index=claim_index,
+            entity_index=entity_index,
+            unresolved=unresolved_participants,
+        )
 
         packet_hash = str(packet.get("content_hash") or "")
         return {
@@ -1661,6 +1675,14 @@ class ExplainerResearchService:
             "claims": claims_result,
             "events": events_result,
             "entities": entities_result,
+            # A participant code the model cited but never extracted is a recoverable
+            # model error: the event itself is still persisted and the dangling
+            # reference is reported here instead of aborting the whole stage.  This is
+            # measured, not hypothetical: two of fourteen audited genres
+            # (07 人物特写, 08 体育报道) failed FACT_EXTRACT entirely with
+            # ``引用了不存在的人物/实体：E004`` while ten claims, three events and five
+            # entities had already been extracted correctly.
+            "unresolved_event_participants": unresolved_participants,
             "evidence_created": evidence_created,
             "evidence_skipped_duplicates": evidence_skipped,
             "claims_created": sum(1 for item in claims_result if not item["reused_existing_claim"]),
@@ -1984,6 +2006,21 @@ class ExplainerResearchService:
             )
         return str(entity["id"])
 
+    def _entity_id_or_none(self, video_id: str, reference: str) -> str | None:
+        """Resolve an entity reference, or answer ``None`` when it does not exist.
+
+        Used where the reference is *optional metadata* rather than the backbone of
+        the stage: an event's participant list can lose one dangling entry and stay
+        useful, while the claims/evidence links must keep failing loudly.
+        """
+
+        entity = self._entity_by_code(video_id, reference)
+        if entity is None:
+            candidate = self.repo.find("explainer_entities", reference)
+            if candidate is not None and str(candidate.get("video_id")) == video_id:
+                entity = candidate
+        return str(entity["id"]) if entity is not None else None
+
     def _resolve_claim_id(self, video_id: str, reference: str, claim_index: Mapping[str, str]) -> str:
         if reference in claim_index:
             return claim_index[reference]
@@ -2012,6 +2049,7 @@ class ExplainerResearchService:
             # omits the flag: an invented character must never be treated as a
             # real person downstream.
             fictional = is_fiction or entity_type == EntityType.FICTIONAL_CHARACTER.value
+            existing = self._entity_by_code(video_id, code)
             fields: dict[str, Any] = {
                 "video_id": video_id,
                 "project_id": project_id,
@@ -2022,10 +2060,15 @@ class ExplainerResearchService:
                 "aliases_json": [str(item) for item in (entity_payload.get("aliases") or [])],
                 "fictional": fictional,
                 "descriptive_only": bool(entity_payload.get("descriptive_only") or False),
-                "disambiguation_json": {},
+                # An operator's SAME/DIFFERENT decision, or an explicit human merge,
+                # survives a later extraction pass; a fresh machine verdict cannot
+                # overwrite it (design §C3.2).
+                "disambiguation_json": merge_decision_metadata(
+                    existing.get("disambiguation_json") if existing else None,
+                    entity_payload.get("disambiguation"),
+                ),
                 "status": "ACTIVE",
             }
-            existing = self._entity_by_code(video_id, code)
             if existing:
                 entity = self.repo.update("explainer_entities", str(existing["id"]), fields)
             else:
@@ -2035,6 +2078,15 @@ class ExplainerResearchService:
             revision = self._apply_entity_state(video_id=video_id, entity_id=entity_id, state=state) if state else None
             if revision is not None:
                 self.repo.update("explainer_entities", entity_id, {"canonical_state_revision_id": str(revision["id"])})
+            # Design §B3.3: detection "生成实体建议并复用已存在资产；匹配已有 ID".  A
+            # detected object that never gets a shared asset cannot hold a step-2
+            # reference at all, so the link is established here (idempotent) rather
+            # than left for the user to discover when adoption is refused.
+            asset_link = ensure_entity_story_asset(
+                self.repo,
+                project_id=project_id,
+                entity=self.repo.get("explainer_entities", entity_id),
+            )
             results.append(
                 {
                     "id": entity_id,
@@ -2043,6 +2095,8 @@ class ExplainerResearchService:
                     "fictional": fictional,
                     "reused_existing_entity": bool(existing),
                     "state_revision_id": str(revision["id"]) if revision else None,
+                    "story_asset_id": asset_link["story_asset_id"],
+                    "story_asset_created": bool(asset_link["created"]),
                 }
             )
         return results
@@ -2102,6 +2156,7 @@ class ExplainerResearchService:
         payload: Mapping[str, Any],
         claim_index: Mapping[str, str],
         entity_index: Mapping[str, str],
+        unresolved: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         for event_payload in payload.get("events") or []:
@@ -2117,7 +2172,16 @@ class ExplainerResearchService:
             participants: list[str] = []
             for reference in event_payload.get("participant_entity_codes") or []:
                 reference_text = str(reference)
-                participants.append(entity_index.get(reference_text) or self._resolve_entity_id(video_id, reference_text))
+                resolved_participant = entity_index.get(reference_text)
+                if resolved_participant is None:
+                    # Try the stored ledger before giving up: a code may belong to an
+                    # entity extracted by an earlier run of the same film.
+                    resolved_participant = self._entity_id_or_none(video_id, reference_text)
+                if resolved_participant is None:
+                    if unresolved is not None:
+                        unresolved.append({"event_code": code, "participant_ref": reference_text})
+                    continue
+                participants.append(resolved_participant)
             claim_ids: list[str] = []
             for reference in event_payload.get("claim_codes") or []:
                 claim_ids.append(self._resolve_claim_id(video_id, str(reference), claim_index))

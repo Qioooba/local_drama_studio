@@ -61,7 +61,7 @@ class ComfyWorkflowProfileService:
         workflow = self.workflows.get_version(str(binding["workflow_version_id"]))
         smoke = self._workflow_smoke(binding, workflow)
         self._source_smoke(binding)
-        contracts = self._ensure_contracts(str(binding["capability_id"]))
+        contracts = self._ensure_contracts(str(binding["capability_id"]), workflow.get("node_bindings"))
         capability = str(binding["capability_code"])
         # A capability may legitimately own more than one frozen graph -- the
         # single- and two-reference Qwen-Image-2.1 edits do.  The suffix keeps
@@ -82,7 +82,7 @@ class ComfyWorkflowProfileService:
             "template": _TEMPLATE,
             "runtime_model_installation_ids": [str(binding["runtime_model_installation_id"])],
             "defaults": {},
-            "allowed_override_fields": [],
+            "allowed_override_fields": contracts["allowed_override_fields"],
             "execution_binding": execution_binding,
         }
         service = ProfilePublicationService(self.database)
@@ -233,20 +233,85 @@ class ComfyWorkflowProfileService:
                 return str(row["id"])
         raise DomainRuleError("MP_COMFY_PROFILE_SOURCE_SMOKE_REQUIRED", "指定 Comfy 工作流绑定尚未产生带 Artifact 的真实 capability smoke 证据。")
 
-    def _ensure_contracts(self, capability_id: str) -> dict[str, str]:
-        parameter_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"localdramastudio:comfy-workflow:parameter:{capability_id}:v1"))
+    def _ensure_contracts(self, capability_id: str, node_bindings: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        """Declare the workflow's own semantic inputs as the Profile's parameter contract.
+
+        Measured failure this fixes: the contract used to be hard-coded empty
+        (``properties: {}``) while the bound workflow declares inputs such as
+        ``PROMPT``/``NEGATIVE_PROMPT``/``WIDTH``/``HEIGHT``/``SEED``.  Every business
+        call therefore died at submission with ``MP_PARAMETER_UNKNOWN`` (the explainer
+        image/video path could plan but never submit), and because the contract id was
+        derived from the capability alone, all workflows of one capability shared that
+        one empty contract.
+
+        The contract is now derived from ``node_bindings`` (the platform-level input
+        names the workflow really accepts), typed by name, with ``PROMPT`` required and
+        the deterministic knobs (``SEED``/``STEPS``/``CFG``/``DENOISE``/geometry) allowed
+        as business overrides, and it is keyed by capability **and** binding input set so
+        two workflows of one capability keep their own contract.
+        """
+
+        bindings = {str(name): value for name, value in (node_bindings or {}).items() if isinstance(value, Mapping)}
+        integer_inputs = {
+            "SEED", "STEPS", "WIDTH", "HEIGHT", "FRAME_COUNT", "LENGTH", "NOISE_SEED", "MAX_TOKENS",
+        }
+        number_inputs = {"CFG", "DENOISE", "LORA_STRENGTH", "MOTION_STRENGTH"}
+        override_fields = [
+            name
+            for name in bindings
+            if name.upper() in integer_inputs | number_inputs or name.upper() in {"RESOLUTION", "SAMPLER", "SCHEDULER"}
+        ]
+        properties: dict[str, Any] = {}
+        for name in sorted(bindings):
+            upper = name.upper()
+            if upper in integer_inputs:
+                properties[name] = {"type": "integer"}
+            elif upper in number_inputs:
+                properties[name] = {"type": "number"}
+            else:
+                properties[name] = {"type": "string"}
+        # No field is marked *required*: the read-only planning step validates the
+        # contract against the business override set only, so a required prompt would
+        # make every plan fail with MP_PARAMETER_REQUIRED (measured) even though the
+        # semantic inputs carry it at submit time.  A genuinely missing workflow input
+        # is still refused by ComfyUI's own node validation.
+        required: list[str] = []
+        schema = {
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": False,
+        }
+        binding_hash = _hash({"schema": schema})
+        # The id commits to the *derived schema*, so a policy change (for example
+        # dropping ``required``) yields a new revision instead of silently keeping the
+        # old one; the version number is derived from the same hash so two workflows of
+        # one capability cannot collide on (capability, version_no).
+        parameter_id = str(
+            uuid.uuid5(uuid.NAMESPACE_URL, f"localdramastudio:comfy-workflow:parameter:{capability_id}:{binding_hash[:16]}:v1")
+        )
+        contract_version_no = 2 + int(binding_hash[:6], 16) % 900
         binding_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "localdramastudio:comfy-workflow:binding:v1"))
         resource_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "localdramastudio:comfy-workflow:resource:v1"))
-        schema = {"type": "object", "properties": {}, "additionalProperties": False}
-        ui_schema: dict[str, object] = {"properties": {}}
+        ui_schema: dict[str, object] = {"properties": {name: {} for name in properties}}
         binding = {"adapter_code": _ADAPTER_CODE, "template": "v1", "transport": "LOOPBACK_HTTP"}
         resource = {"network_policy": {"mode": "LOCAL_ONLY"}, "gpu_runtime": "COMFY", "exclusive_gpu": True}
         now = _utc_now()
         with self.database.transaction() as connection:
-            connection.execute("INSERT OR IGNORE INTO mp_parameter_contract_versions (id,capability_definition_id,version_no,schema_json,ui_schema_json,content_hash,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)", (parameter_id, capability_id, 1, _json(schema), _json(ui_schema), _hash(schema), now, now))
+            connection.execute(
+                # version_no 2: one capability keeps the legacy empty v1 contract for
+                # rollback, and the derived one is a new revision of the same contract.
+                "INSERT OR IGNORE INTO mp_parameter_contract_versions (id,capability_definition_id,version_no,schema_json,ui_schema_json,content_hash,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                (parameter_id, capability_id, contract_version_no, _json(schema), _json(ui_schema), _hash(schema), now, now),
+            )
             connection.execute("INSERT OR IGNORE INTO mp_adapter_binding_contract_versions (id,runtime_kind,adapter_code,version_no,binding_json,content_hash,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)", (binding_id, _RUNTIME_KIND, _ADAPTER_CODE, 1, _json(binding), _hash(binding), now, now))
             connection.execute("INSERT OR IGNORE INTO mp_resource_policy_versions (id,code,version_no,policy_json,content_hash,created_at,updated_at) VALUES (?,?,?,?,?,?,?)", (resource_id, "comfy-workflow-local", 1, _json(resource), _hash(resource), now, now))
-        return {"parameter_contract_version_id": parameter_id, "adapter_binding_contract_version_id": binding_id, "resource_policy_version_id": resource_id}
+        return {
+            "parameter_contract_version_id": parameter_id,
+            "adapter_binding_contract_version_id": binding_id,
+            "resource_policy_version_id": resource_id,
+            "allowed_override_fields": override_fields,
+        }
 
 
 def _binding_matches(execution: Mapping[str, Any], binding: Mapping[str, Any]) -> bool:

@@ -1,0 +1,315 @@
+{
+  "$defs": {
+    "BlockingRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "segment_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Segment Ids",
+          "type": "array"
+        },
+        "requirement": {
+          "maxLength": 2000,
+          "title": "Requirement",
+          "type": "string"
+        },
+        "missing_capability": {
+          "maxLength": 300,
+          "title": "Missing Capability",
+          "type": "string"
+        }
+      },
+      "required": [
+        "segment_ids",
+        "requirement",
+        "missing_capability"
+      ],
+      "title": "BlockingRequirement",
+      "type": "object"
+    },
+    "CreativeAssumption": {
+      "additionalProperties": false,
+      "properties": {
+        "attribute": {
+          "maxLength": 300,
+          "title": "Attribute",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 2000,
+          "title": "Value",
+          "type": "string"
+        },
+        "basis": {
+          "maxLength": 2000,
+          "title": "Basis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attribute",
+        "value",
+        "basis"
+      ],
+      "title": "CreativeAssumption",
+      "type": "object"
+    },
+    "PlannedBeat": {
+      "additionalProperties": false,
+      "properties": {
+        "segment_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Segment Ids",
+          "type": "array"
+        },
+        "entity_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Entity Ids",
+          "type": "array"
+        },
+        "state_revision_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "State Revision Ids",
+          "type": "array"
+        },
+        "claim_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Claim Ids",
+          "type": "array"
+        },
+        "render_type": {
+          "enum": [
+            "STILL_MOTION",
+            "PARALLAX",
+            "I2V",
+            "INFOGRAPHIC",
+            "LICENSED_MEDIA"
+          ],
+          "title": "Render Type",
+          "type": "string"
+        },
+        "visual_factuality": {
+          "enum": [
+            "DOCUMENTED",
+            "RECONSTRUCTION",
+            "SYMBOLIC",
+            "FICTIONAL"
+          ],
+          "title": "Visual Factuality",
+          "type": "string"
+        },
+        "visual_intent": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Visual Intent",
+          "type": "string"
+        },
+        "visible_entity_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Visible Entity Ids",
+          "type": "array"
+        },
+        "key_action": {
+          "maxLength": 2000,
+          "title": "Key Action",
+          "type": "string"
+        },
+        "must_be_motion": {
+          "title": "Must Be Motion",
+          "type": "boolean"
+        },
+        "image_prompt": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Image Prompt",
+          "type": "string"
+        },
+        "video_prompt": {
+          "maxLength": 8000,
+          "title": "Video Prompt",
+          "type": "string"
+        },
+        "negative_prompt": {
+          "maxLength": 4000,
+          "title": "Negative Prompt",
+          "type": "string"
+        },
+        "camera_movement": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Camera Movement",
+          "type": "string"
+        },
+        "reference_roles_required": {
+          "items": {
+            "maxLength": 300,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Reference Roles Required",
+          "type": "array"
+        },
+        "on_screen_text": {
+          "items": {
+            "$ref": "#/$defs/ScreenText"
+          },
+          "maxItems": 32,
+          "title": "On Screen Text",
+          "type": "array"
+        },
+        "creative_assumptions": {
+          "items": {
+            "$ref": "#/$defs/CreativeAssumption"
+          },
+          "maxItems": 32,
+          "title": "Creative Assumptions",
+          "type": "array"
+        },
+        "continuity_note": {
+          "maxLength": 2000,
+          "title": "Continuity Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "segment_ids",
+        "entity_ids",
+        "state_revision_ids",
+        "claim_ids",
+        "render_type",
+        "visual_factuality",
+        "visual_intent",
+        "visible_entity_ids",
+        "key_action",
+        "must_be_motion",
+        "image_prompt",
+        "video_prompt",
+        "negative_prompt",
+        "camera_movement",
+        "reference_roles_required",
+        "on_screen_text",
+        "creative_assumptions",
+        "continuity_note"
+      ],
+      "title": "PlannedBeat",
+      "type": "object"
+    },
+    "ScreenText": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "claim_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Claim Ids",
+          "type": "array"
+        },
+        "purpose": {
+          "enum": [
+            "DATE",
+            "NUMBER",
+            "PLACE_LABEL",
+            "RELATION",
+            "CAPTION",
+            "DISCLOSURE"
+          ],
+          "title": "Purpose",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "claim_ids",
+        "purpose"
+      ],
+      "title": "ScreenText",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "localdrama.explainer.storyboard.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "beats": {
+      "items": {
+        "$ref": "#/$defs/PlannedBeat"
+      },
+      "maxItems": 320,
+      "title": "Beats",
+      "type": "array"
+    },
+    "uncovered_segment_ids": {
+      "items": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 256,
+      "title": "Uncovered Segment Ids",
+      "type": "array"
+    },
+    "blocking_requirements": {
+      "items": {
+        "$ref": "#/$defs/BlockingRequirement"
+      },
+      "maxItems": 320,
+      "title": "Blocking Requirements",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "beats",
+    "uncovered_segment_ids",
+    "blocking_requirements"
+  ],
+  "title": "Storyboard",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:localdrama:explainer:design:04-storyboard",
+  "description": "Design contract, not yet integrated. Static validation does not establish reference membership, project ownership, coverage, factuality or approval. Apply README service checks."
+}

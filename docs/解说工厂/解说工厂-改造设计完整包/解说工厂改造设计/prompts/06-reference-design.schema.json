@@ -1,0 +1,164 @@
+{
+  "$defs": {
+    "CreativeAssumption": {
+      "additionalProperties": false,
+      "properties": {
+        "attribute": {
+          "maxLength": 300,
+          "title": "Attribute",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 2000,
+          "title": "Value",
+          "type": "string"
+        },
+        "basis": {
+          "maxLength": 2000,
+          "title": "Basis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attribute",
+        "value",
+        "basis"
+      ],
+      "title": "CreativeAssumption",
+      "type": "object"
+    },
+    "ReferenceDesignItem": {
+      "additionalProperties": false,
+      "properties": {
+        "entity_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "asset_kind": {
+          "enum": [
+            "CHARACTER",
+            "SCENE",
+            "PROP",
+            "COSTUME"
+          ],
+          "title": "Asset Kind",
+          "type": "string"
+        },
+        "reference_kind": {
+          "enum": [
+            "HERO",
+            "FRONT",
+            "LEFT",
+            "RIGHT",
+            "BACK",
+            "SCENE_WIDE",
+            "SCENE_REVERSE",
+            "DETAIL"
+          ],
+          "title": "Reference Kind",
+          "type": "string"
+        },
+        "description_prompt": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Description Prompt",
+          "type": "string"
+        },
+        "negative_prompt": {
+          "maxLength": 4000,
+          "title": "Negative Prompt",
+          "type": "string"
+        },
+        "known_attribute_keys": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Known Attribute Keys",
+          "type": "array"
+        },
+        "user_setting_keys": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "User Setting Keys",
+          "type": "array"
+        },
+        "reference_media_version_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Reference Media Version Ids",
+          "type": "array"
+        },
+        "creative_choices": {
+          "items": {
+            "$ref": "#/$defs/CreativeAssumption"
+          },
+          "maxItems": 32,
+          "title": "Creative Choices",
+          "type": "array"
+        },
+        "unresolved_constraints": {
+          "items": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Unresolved Constraints",
+          "type": "array"
+        }
+      },
+      "required": [
+        "entity_id",
+        "asset_kind",
+        "reference_kind",
+        "description_prompt",
+        "negative_prompt",
+        "known_attribute_keys",
+        "user_setting_keys",
+        "reference_media_version_ids",
+        "creative_choices",
+        "unresolved_constraints"
+      ],
+      "title": "ReferenceDesignItem",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "localdrama.explainer.reference-design.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/ReferenceDesignItem"
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "items"
+  ],
+  "title": "ReferenceDesign",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:localdrama:explainer:design:06-reference-design",
+  "description": "Design contract, not yet integrated. Static validation does not establish reference membership, project ownership, coverage, factuality or approval. Apply README service checks."
+}

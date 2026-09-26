@@ -105,8 +105,31 @@ export const queryKeys = {
     segments: (projectId: string, revision?: ScopeId) => ["explainers", projectId, "segments", scopeId(revision)] as const,
     assets: (projectId: string) => ["explainers", projectId, "assets"] as const,
     beats: (projectId: string, editionId?: ScopeId) => ["explainers", projectId, "beats", scopeId(editionId)] as const,
-    beatCandidates: (projectId: string, beatId: string) => ["explainers", projectId, "beat", beatId, "candidates"] as const,
+    /**
+     * Candidate lists are scoped by owner (beat or entity), purpose and edition so
+     * that adopting a reference cannot invalidate a beat's keyframe list, and so a
+     * language/edition switch never leaves another edition's candidates on screen
+     * (spec D2.2/D7: purpose and edition are part of the scope, not a UI filter).
+     */
+    candidates: (projectId: string, ownerKind: string, ownerId: string, purpose?: ScopeId, editionId?: ScopeId) =>
+      ["explainers", projectId, "candidates", ownerKind, ownerId, scopeId(purpose), scopeId(editionId)] as const,
+    beatCandidates: (projectId: string, beatId: string, purpose?: ScopeId, editionId?: ScopeId) =>
+      ["explainers", projectId, "candidates", "BEAT", beatId, scopeId(purpose), scopeId(editionId)] as const,
+    entityCandidates: (projectId: string, entityId: string) =>
+      ["explainers", projectId, "candidates", "ENTITY", entityId, "REFERENCE", scopeId(null)] as const,
     beatImpact: (projectId: string, beatId: string) => ["explainers", projectId, "beat", beatId, "impact"] as const,
+    /** Six-step readiness projection that drives the numeric step bar (spec F2.1). */
+    readiness: (projectId: string) => ["explainers", projectId, "readiness"] as const,
+    generatedClips: (projectId: string, editionId?: ScopeId) => ["explainers", projectId, "clips", scopeId(editionId)] as const,
+    claimEvidence: (projectId: string, claimId: string) => ["explainers", projectId, "claim", claimId, "evidence"] as const,
+    /**
+     * The program-compiled reference-design prompt for one entity (design §C4.4).  It is
+     * deterministic and read-only, so it is keyed per entity rather than per candidate.
+     */
+    referenceDesign: (projectId: string, entityId: string) =>
+      ["explainers", projectId, "assets", entityId, "reference-design"] as const,
+    clipCandidates: (projectId: string, beatId: string, editionId?: ScopeId) =>
+      ["explainers", projectId, "clips", beatId, scopeId(editionId)] as const,
     editions: (projectId: string) => ["explainers", projectId, "editions"] as const,
     narration: (editionId: string, locale?: ScopeId) => ["explainers", "edition", editionId, "narration", scopeId(locale)] as const,
     subtitles: (editionId: string, locale?: ScopeId, format?: string) =>

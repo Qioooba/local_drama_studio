@@ -376,7 +376,36 @@ def test_repair_submits_a_real_job_for_a_rerunnable_responsible_step(database: D
 
 
 def test_repair_reports_unschedulable_steps_instead_of_faking_success(database: Database) -> None:
-    """A beat's picture has no standalone command: say so, create nothing."""
+    """A step with no standalone command (the storyboard) is reported, not faked."""
+
+    _seed(database)
+    service = build_explainers_command_service(database)
+    before = _counts(database)["jobs"]
+    result = service.submit_repair(
+        project_id=PROJECT_ID,
+        video_id=VIDEO_ID,
+        issue_ids=["issue-1"],
+        responsible_steps=["EXPLAINER_STORYBOARD"],
+        beat_ids=["beat-1"],
+        revision=1,
+        idempotency_key="repair-2",
+    )
+    assert result["status"] == "REPAIR_NOT_SCHEDULABLE"
+    assert result["submitted"] is False
+    assert result["job_ids"] == []
+    assert result["unschedulable"][0]["responsible_step_code"] == "EXPLAINER_STORYBOARD"
+    assert result["unschedulable"][0]["reason"] == "NO_STANDALONE_REPAIR_COMMAND"
+    assert _counts(database)["jobs"] == before
+
+
+def test_repair_schedules_the_real_i2v_picture_stage_for_a_beat_picture(database: Database) -> None:
+    """A beat's picture now owns a standalone command: the real image-to-video stage.
+
+    ``VISUAL_GENERATION`` used to be reachable only through the whole production graph,
+    so a film whose graph run had stopped could never get its remaining clips.  It now
+    produces the real I2V clip itself, so a repair of a beat's picture is schedulable
+    and must create one claimable job instead of being reported as impossible.
+    """
 
     _seed(database)
     service = build_explainers_command_service(database)
@@ -388,14 +417,16 @@ def test_repair_reports_unschedulable_steps_instead_of_faking_success(database: 
         responsible_steps=["VISUAL_GENERATION"],
         beat_ids=["beat-1"],
         revision=1,
-        idempotency_key="repair-2",
+        idempotency_key="repair-visual",
     )
-    assert result["status"] == "REPAIR_NOT_SCHEDULABLE"
-    assert result["submitted"] is False
-    assert result["job_ids"] == []
-    assert result["unschedulable"][0]["responsible_step_code"] == "VISUAL_GENERATION"
-    assert result["unschedulable"][0]["reason"] == "NO_STANDALONE_REPAIR_COMMAND"
-    assert _counts(database)["jobs"] == before
+    assert result["status"] == "ACCEPTED"
+    assert result["submitted"] is True
+    assert len(result["job_ids"]) == 1
+    assert result["unschedulable"] == []
+    assert _counts(database)["jobs"] == before + 1
+    with database.connect() as connection:
+        job = connection.execute("SELECT * FROM jobs WHERE id = ?", (result["job_ids"][0],)).fetchone()
+    assert str(job["type"]) == EXPLAINER_STAGE_JOB_TYPES["VISUAL_GENERATION"]
 
 
 def test_repair_mixes_schedulable_and_unschedulable_steps(database: Database) -> None:
@@ -406,14 +437,14 @@ def test_repair_mixes_schedulable_and_unschedulable_steps(database: Database) ->
         project_id=PROJECT_ID,
         video_id=VIDEO_ID,
         issue_ids=["issue-1"],
-        responsible_steps=["COMPOSITION_RENDER", "VISUAL_GENERATION"],
+        responsible_steps=["COMPOSITION_RENDER", "EXPLAINER_STORYBOARD"],
         revision=1,
         idempotency_key="repair-3",
     )
     assert result["status"] == "ACCEPTED"
     assert result["submitted"] is True
     assert len(result["job_ids"]) == 1
-    assert [item["responsible_step_code"] for item in result["unschedulable"]] == ["VISUAL_GENERATION"]
+    assert [item["responsible_step_code"] for item in result["unschedulable"]] == ["EXPLAINER_STORYBOARD"]
     # Only the schedulable step produced a job.
     assert _counts(database)["jobs"] == before + 1
 

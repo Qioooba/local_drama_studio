@@ -23,6 +23,7 @@ The rules it exists to enforce:
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Any, Mapping, Sequence
 
@@ -752,7 +753,7 @@ class ExplainerProductionService:
                     _explicit(
                         resolved_fallback,
                         "allowed_visual_fallbacks",
-                        ("I2V_TO_MOTION_STILL", "I2V_TO_INFORMATION_GRAPHIC"),
+                        ("I2V_TO_INFORMATION_GRAPHIC",),
                     )
                 ),
                 script_rewrite_policy=str(

@@ -1,0 +1,69 @@
+{
+  "status": "DESIGN_ARTIFACT_VALIDATION_ONLY",
+  "validator": "Pydantic 2.13.5 model_validate; schemas generated from the same strict extra=forbid models",
+  "json_schema_dialect": "2020-12",
+  "example_count": 7,
+  "negative_cases": 17,
+  "domain_enums_verified": [
+    "StatementType",
+    "EntityType",
+    "EvidenceStance",
+    "RenderType",
+    "VisualFactuality",
+    "StoryAsset.KINDS",
+    "AssetBible.REFERENCE_KINDS (supported subset)"
+  ],
+  "contracts": [
+    {
+      "contract": "01-content-extract",
+      "example": "PASS",
+      "extra_field_rejected": true,
+      "wrong_version_rejected": true
+    },
+    {
+      "contract": "02-preserved-script-annotations",
+      "example": "PASS",
+      "extra_field_rejected": true,
+      "wrong_version_rejected": true
+    },
+    {
+      "contract": "03-script-draft",
+      "example": "PASS",
+      "extra_field_rejected": true,
+      "wrong_version_rejected": true
+    },
+    {
+      "contract": "04-storyboard",
+      "example": "PASS",
+      "extra_field_rejected": true,
+      "wrong_version_rejected": true
+    },
+    {
+      "contract": "05-candidate-review",
+      "example": "PASS",
+      "extra_field_rejected": true,
+      "wrong_version_rejected": true
+    },
+    {
+      "contract": "06-reference-design",
+      "example": "PASS",
+      "extra_field_rejected": true,
+      "wrong_version_rejected": true
+    },
+    {
+      "contract": "07-fiction-seed",
+      "example": "PASS",
+      "extra_field_rejected": true,
+      "wrong_version_rejected": true
+    }
+  ],
+  "not_validated": [
+    "external ID membership",
+    "source and script coverage",
+    "same-project ownership",
+    "factual truth",
+    "runtime execution",
+    "actual image reference consumption",
+    "human approval"
+  ]
+}

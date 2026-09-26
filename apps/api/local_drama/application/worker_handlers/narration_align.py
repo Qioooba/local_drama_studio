@@ -39,6 +39,11 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
+from local_drama.application.explainers.aligner_timestamps import (
+    ALIGNER_TIMESTAMP_GRID_MS,
+    DEFAULT_ALIGNER_SAMPLE_RATE_HZ,
+    rescale_word_timings,
+)
 from local_drama.domain.errors import DomainRuleError
 from local_drama.domain.explainers.contracts import content_hash, normalize_locale, utc_now_iso
 from local_drama.infrastructure.database.explainer_repository import ExplainerRepository
@@ -713,6 +718,18 @@ def run_narration_align_job(
     detector_version = str(aligned.get("detector_version") or "")
     expected_tokens = tokenize_spoken(spoken_text)
     word_timings = _match_chunks_to_tokens(chunks=chunks, expected_tokens=expected_tokens)
+    # The aligner's sample positions are in the aligner's own rate (16 kHz for the
+    # locked Qwen3-ForcedAligner), while this revision declares the *take's*
+    # ``sample_rate_hz``.  Storing them unchanged made every consumer read a 16 kHz
+    # clock as 48 kHz — the delivered 1962 film's first cue held 13 characters for
+    # 773 ms.  The conversion happens once, before anything reads the timings.
+    aligner_rate = int(aligned.get("aligner_sample_rate_hz") or DEFAULT_ALIGNER_SAMPLE_RATE_HZ)
+    timing_scale = 1.0
+    if aligner_rate > 0 and aligner_rate != sample_rate_hz:
+        timing_scale = sample_rate_hz / aligner_rate
+        word_timings = rescale_word_timings(
+            word_timings, from_rate=aligner_rate, to_rate=sample_rate_hz
+        )
     unaligned = _unaligned_tokens(
         expected_tokens=expected_tokens, word_timings=word_timings, chunks_seen=len(chunks)
     )
@@ -731,6 +748,15 @@ def run_narration_align_job(
         word_timings=word_timings,
     )
     skipped_punctuation = punctuation_units(spoken_text)
+    # The revision schema has no column for the aligner's own rate, so the clock the
+    # samples were converted from is recorded as evidence next to the review facts:
+    # without it a 3x conversion is invisible in the audit trail.
+    alignment_clock = {
+        "aligner_sample_rate_hz": aligner_rate,
+        "take_sample_rate_hz": sample_rate_hz,
+        "timing_scale": round(float(timing_scale), 6),
+        "timestamp_grid_ms": ALIGNER_TIMESTAMP_GRID_MS,
+    }
     if asr is not None:
         asr_result = asr.transcribe(
             media_path=media_path, locale=locale, timeout_seconds=int(snapshot.get("asr_timeout_seconds") or 180)
@@ -757,6 +783,7 @@ def run_narration_align_job(
             "skipped_punctuation": skipped_punctuation,
         }
         issue_facts = []
+    asr_review["alignment_clock"] = alignment_clock
     measured_duration_ms = take.get("measured_duration_ms")
     total_samples = None
     if measured_duration_ms and sample_rate_hz:

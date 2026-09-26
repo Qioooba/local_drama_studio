@@ -431,6 +431,30 @@ class LlamaServerManager:
         self._remove_pidfile()
         return False
 
+    def stop_recorded_process(self) -> bool:
+        """Terminate the live process this manager's PID file records.
+
+        Ownership is proven by the PID file the manager itself wrote, so
+        terminating does not need a launch spec.  That matters when the current
+        machine configuration can no longer build one (for example
+        ``LOCAL_DRAMA_LLAMA_SERVER_BIN`` was unset after a run): the surviving
+        child still owns its VRAM, and refusing to evict it because the *config*
+        changed would pin the device and fail every other runtime's switch.
+        Returns whether a live recorded process was terminated.
+        """
+
+        try:
+            pid = int(self._pid_path.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            self._remove_pidfile()
+            return False
+        if self._process_state(pid) not in {ProcessState.RUNNING, ProcessState.UNKNOWN}:
+            self._remove_pidfile()
+            return False
+        self._adopted_pid = pid
+        self._active_spec = None
+        return self.stop()
+
     def stop(self) -> bool:
         """Terminate the server and wait for OS-level process exit."""
 
